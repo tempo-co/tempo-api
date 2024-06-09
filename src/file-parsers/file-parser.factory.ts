@@ -1,10 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { FileParser } from './file-parser.interface';
-import { XlsParser } from './service/xls-parser.service';
+import { XlsFileParser } from './service/xls-file-parser.service';
 
 @Injectable()
 export class FileParserFactory {
-  constructor(private readonly xlsParser: XlsParser) {}
+  constructor(private readonly xlsParser: XlsFileParser) {}
 
   create(mimetype: string): FileParser {
     switch (mimetype) {
