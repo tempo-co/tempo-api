@@ -1,16 +1,17 @@
+import { Injectable } from '@nestjs/common';
 import { FileParser } from './file-parser.interface';
 import { XlsParser } from './service/xls-parser.service';
 
+@Injectable()
 export class FileParserFactory {
-  private static parsers: { [key: string]: new () => FileParser } = {
-    'application/vnd.ms-excel': XlsParser,
-  };
+  constructor(private readonly xlsParser: XlsParser) {}
 
-  static createParser(fileType: string): FileParser {
-    const Parser = this.parsers[fileType];
-    if (!Parser) {
-      throw new Error(`Unsupported file type: ${fileType}`);
+  create(mimetype: string): FileParser {
+    switch (mimetype) {
+      case 'application/vnd.ms-excel':
+        return this.xlsParser;
+      default:
+        throw new Error(`Unsupported file type: ${mimetype}`);
     }
-    return new Parser();
   }
 }
