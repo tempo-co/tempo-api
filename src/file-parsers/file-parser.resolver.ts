@@ -1,16 +1,22 @@
 import { Resolver, Mutation, Args } from '@nestjs/graphql';
 import { GraphQLUpload, FileUpload } from 'graphql-upload';
 import { FileParserFactory } from './file-parser.factory';
-import { CreateTransactionDto } from 'src/transaction/dto/create-transaction.dto';
+import { Bank } from 'src/bank-transaction-adapter/constants/bank';
+import { Transaction } from 'src/transaction/model/transaction.model';
+import { BankTransactionAdapterFactory } from 'src/bank-transaction-adapter/bank-transaction-adapter.factory';
 
 @Resolver()
 export class FileParserResolver {
-  constructor(private readonly fileParserFactory: FileParserFactory) {}
+  constructor(
+    private readonly fileParserFactory: FileParserFactory,
+    private readonly bankTransactionAdapterFactory: BankTransactionAdapterFactory,
+  ) {}
 
-  @Mutation(() => [CreateTransactionDto])
+  @Mutation(() => [Transaction])
   async parse(
     @Args({ name: 'file', type: () => GraphQLUpload })
     { createReadStream, mimetype }: FileUpload,
+    @Args('bank') bank: Bank,
   ) {
     const stream = createReadStream();
     const chunks: Buffer[] = [];
@@ -20,8 +26,11 @@ export class FileParserResolver {
     }
     const buffer = Buffer.concat(chunks);
 
-    const parser = this.fileParserFactory.create(mimetype);
-    const transactions = parser.parse(buffer);
+    const data = this.fileParserFactory.create(mimetype).parse(buffer);
+    const transactions = this.bankTransactionAdapterFactory
+      .create(bank)
+      .map(data);
+
     return transactions;
   }
 }
