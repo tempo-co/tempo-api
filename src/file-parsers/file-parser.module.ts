@@ -1,9 +1,9 @@
 import { Module } from '@nestjs/common';
-import { FileParserController } from './file-parser.controller';
 import { FileParserFactory } from './file-parser.factory';
+import { XlsParser } from './service/xls-parser.service';
+import { FileParserResolver } from './file-parser.resolver';
 
 @Module({
-  controllers: [FileParserController],
-  providers: [FileParserFactory],
+  providers: [XlsParser, FileParserFactory, FileParserResolver],
 })
 export class FileParserModule {}

@@ -1,9 +1,7 @@
-import { Injectable } from '@nestjs/common';
 import { FileParser } from 'src/file-parsers/file-parser.interface';
 import { read, utils } from 'xlsx';
 import { CreateTransactionDto } from 'src/transaction/dto/create-transaction.dto';
 
-@Injectable()
 export class XlsParser implements FileParser {
   async parse(fileBuffer: Buffer): Promise<CreateTransactionDto[]> {
     const workbook = read(fileBuffer, { type: 'buffer' });
@@ -12,7 +10,6 @@ export class XlsParser implements FileParser {
     const worksheet = workbook.Sheets[worksheetName];
 
     const transactions = utils.sheet_to_json(worksheet, { raw: false });
-    console.log(transactions);
 
     return transactions.map((transaction: any) => {
       const dto = new CreateTransactionDto();
