@@ -3,7 +3,7 @@ import { read, utils } from 'xlsx';
 import { CreateTransactionDto } from 'src/transaction/dto/create-transaction.dto';
 
 export class XlsParser implements FileParser {
-  async parse(fileBuffer: Buffer): Promise<CreateTransactionDto[]> {
+  parse(fileBuffer: Buffer): CreateTransactionDto[] {
     const workbook = read(fileBuffer, { type: 'buffer' });
 
     const worksheetName = workbook.SheetNames[0];
