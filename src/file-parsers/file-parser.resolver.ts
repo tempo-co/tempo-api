@@ -5,21 +5,23 @@ import { CreateTransactionDto } from 'src/transaction/dto/create-transaction.dto
 
 @Resolver()
 export class FileParserResolver {
+  constructor(private readonly fileParserFactory: FileParserFactory) {}
+
   @Mutation(() => [CreateTransactionDto])
   async parse(
     @Args({ name: 'file', type: () => GraphQLUpload })
     { createReadStream, mimetype }: FileUpload,
   ) {
-    const buffer = await new Promise<Buffer>((resolve, reject) => {
-      const bufs: Buffer[] = [];
-      const stream = createReadStream();
-      stream.on('data', (chunk: Buffer) => bufs.push(chunk));
-      stream.on('end', () => resolve(Buffer.concat(bufs)));
-      stream.on('error', reject);
-    });
+    const stream = createReadStream();
+    const chunks: Buffer[] = [];
 
-    const parser = FileParserFactory.createParser(mimetype);
-    const result = parser.parse(buffer);
-    return result;
+    for await (const chunk of stream) {
+      chunks.push(chunk);
+    }
+    const buffer = Buffer.concat(chunks);
+
+    const parser = this.fileParserFactory.create(mimetype);
+    const transactions = parser.parse(buffer);
+    return transactions;
   }
 }
