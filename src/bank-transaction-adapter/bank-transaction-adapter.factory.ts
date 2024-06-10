@@ -7,16 +7,16 @@ import { Bank } from './constants/bank';
 @Injectable()
 export class BankTransactionAdapterFactory {
   constructor(
-    private readonly abnAmroTransactionMapper: AbnAmroTransactionAdapter,
-    private readonly revolutTransactionMapper: RevolutTransactionAdapter,
+    private readonly abnAmroAdapter: AbnAmroTransactionAdapter,
+    private readonly revolutAdapter: RevolutTransactionAdapter,
   ) {}
 
   create(bank: Bank): BankTransactionAdapter {
     switch (bank) {
       case Bank.ABN_AMRO:
-        return this.abnAmroTransactionMapper;
+        return this.abnAmroAdapter;
       case Bank.REVOLUT:
-        return this.revolutTransactionMapper;
+        return this.revolutAdapter;
       default:
         throw new Error(`Unsupported bank: ${bank}`);
     }
