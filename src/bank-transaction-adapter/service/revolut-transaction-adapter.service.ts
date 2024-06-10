@@ -1,9 +1,29 @@
 import { Transaction } from 'src/transaction/model/transaction.model';
 import { BankTransactionAdapter } from '../bank-transaction-adapter.interface';
-import { NotImplementedException } from '@nestjs/common';
+
+type RevolutTransaction = {
+  type: string;
+  product: string;
+  startedDate: string;
+  completedDate: string;
+  description: string;
+  amount: string;
+  fee: string;
+  currency: string;
+  state: string;
+  balance: string;
+};
 
 export class RevolutTransactionAdapter implements BankTransactionAdapter {
-  map(): Transaction[] {
-    throw new NotImplementedException();
+  map(data: RevolutTransaction[]): Transaction[] {
+    return data.map((txn) => {
+      const transaction = new Transaction();
+      transaction.startedDate = new Date(txn.startedDate);
+      transaction.completedDate = new Date(txn.completedDate);
+      transaction.description = txn.description.replace(/\s+/g, ' ').trim();
+      transaction.amount = parseFloat(txn.amount);
+      transaction.currency = txn.currency;
+      return transaction;
+    });
   }
 }
