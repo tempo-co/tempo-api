@@ -17,8 +17,6 @@ export class AbnAmroTransactionAdapter implements BankTransactionAdapter {
       const transaction = new Transaction();
       transaction.startedDate = this.parseDate(txn.transactiondate);
       transaction.completedDate = this.parseDate(txn.valuedate);
-      transaction.startBalance = parseFloat(txn.startsaldo);
-      transaction.endBalance = parseFloat(txn.endsaldo);
       transaction.description = txn.description.replace(/\s+/g, ' ').trim();
       transaction.amount = parseFloat(txn.amount);
       transaction.currency = txn.mutationcode;

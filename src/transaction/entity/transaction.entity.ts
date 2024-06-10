@@ -11,12 +11,6 @@ export class Transaction {
   @Column({ type: 'date' })
   completedDate: Date;
 
-  @Column({ type: 'decimal', precision: 12, scale: 2 })
-  startBalance: number;
-
-  @Column({ type: 'decimal', precision: 12, scale: 2 })
-  endBalance: number;
-
   @Column({ type: 'varchar', length: 255 })
   description: string;
 

@@ -6,8 +6,6 @@ type Transaction {
   id: ID!
   startedDate: DateTime!
   completedDate: DateTime!
-  startBalance: Float!
-  endBalance: Float!
   description: String!
   amount: Float!
   currency: String!

@@ -14,18 +14,6 @@ export class Transaction {
   @IsDate()
   completedDate: Date;
 
-  @Field(() => Float)
-  @IsNumber({ maxDecimalPlaces: 2 })
-  @Min(0)
-  @Max(999999999999.99)
-  startBalance: number;
-
-  @Field(() => Float)
-  @IsNumber({ maxDecimalPlaces: 2 })
-  @Min(0)
-  @Max(999999999999.99)
-  endBalance: number;
-
   @Field()
   @IsString()
   @Length(1, 255)

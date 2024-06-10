@@ -8,8 +8,6 @@ export class TransactionService {
       id: '1',
       startedDate: new Date(),
       completedDate: new Date(),
-      startBalance: 1000,
-      endBalance: 2000,
       description: 'Test transaction',
       amount: 1000,
       currency: 'EUR',
