@@ -1,10 +1,12 @@
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Module } from '@nestjs/common';
-import { FileParserModule } from './file-parsers/file-parser.module';
 import { GraphQLModule } from '@nestjs/graphql';
 import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
 import { TransactionModule } from './transaction/transaction.module';
 import { ApolloServerPluginLandingPageLocalDefault } from '@apollo/server/plugin/landingPage/default';
+import { FileParserModule } from './file-parser/file-parser.module';
+import { AuthModule } from './auth/auth.module';
+import { UserModule } from './user/user.module';
 
 @Module({
   imports: [
@@ -27,6 +29,8 @@ import { ApolloServerPluginLandingPageLocalDefault } from '@apollo/server/plugin
     }),
     FileParserModule,
     TransactionModule,
+    AuthModule,
+    UserModule,
   ],
 })
 export class AppModule {}
