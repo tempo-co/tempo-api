@@ -11,4 +11,4 @@ import { RevolutTransactionAdapter } from './service/revolut-transaction-adapter
   ],
   exports: [BankTransactionAdapterFactory],
 })
-export class TransactionAdapterModule {}
+export class BankTransactionAdapterModule {}
