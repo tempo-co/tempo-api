@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { AbnAmroTransactionAdapter } from './service/abnamro-transaction-adapter.service';
 import { RevolutTransactionAdapter } from './service/revolut-transaction-adapter.service';
 import { BankTransactionAdapter } from './bank-transaction-adapter.interface';
-import { Bank } from './constants/bank';
+import { Bank } from './constant/bank';
 
 @Injectable()
 export class BankTransactionAdapterFactory {
