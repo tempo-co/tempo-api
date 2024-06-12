@@ -15,9 +15,10 @@ export class FileParserResolver {
   @Mutation(() => [Transaction])
   async parse(
     @Args({ name: 'file', type: () => GraphQLUpload })
-    { createReadStream, mimetype }: FileUpload,
+    file: FileUpload,
     @Args('bank') bank: Bank,
   ) {
+    const { createReadStream, mimetype } = file;
     const stream = createReadStream();
     const chunks: Buffer[] = [];
 
