@@ -1,9 +1,9 @@
 import { Resolver, Mutation } from '@nestjs/graphql';
 import { AuthService } from './auth.service';
-import { User } from 'src/user/model/user.model';
+import { User } from 'src/user/models/user.model';
 import { UseGuards } from '@nestjs/common';
-import { Public } from './decorator/public.decorator';
-import { CurrentUser } from './decorator/current-user.decorator';
+import { Public } from './decorators/public.decorator';
+import { CurrentUser } from './decorators/current-user.decorator';
 import { AuthGuard } from '@nestjs/passport';
 
 @Resolver(() => User)
