@@ -5,7 +5,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { GqlExecutionContext } from '@nestjs/graphql';
 
 /**
- * Checks for a JWT unless the route is public.
+ * Checks for a JWT unless the route uses the @Public decorator.
  * Overrides getRequest to adapt the guard to work with GraphQL.
  */
 @Injectable()
