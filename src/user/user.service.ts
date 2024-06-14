@@ -2,6 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from './entities/user.entity';
+import { CreateUserArgs } from './dto/create-user.args';
+import { plainToClass } from 'class-transformer';
 
 @Injectable()
 export class UserService {
@@ -24,5 +26,10 @@ export class UserService {
 
   async remove(id: string): Promise<void> {
     await this.userRepository.delete(id);
+  }
+
+  async create(createUserArgs: CreateUserArgs): Promise<User> {
+    const user = plainToClass(User, createUserArgs);
+    return this.userRepository.save(user);
   }
 }
