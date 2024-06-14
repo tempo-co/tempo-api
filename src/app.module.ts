@@ -7,6 +7,7 @@ import { ApolloServerPluginLandingPageLocalDefault } from '@apollo/server/plugin
 import { FileParserModule } from './file-parser/file-parser.module';
 import { AuthModule } from './auth/auth.module';
 import { UserModule } from './user/user.module';
+import { User } from './user/entities/user.entity';
 
 @Module({
   imports: [
@@ -18,13 +19,13 @@ import { UserModule } from './user/user.module';
       plugins: [ApolloServerPluginLandingPageLocalDefault()],
     }),
     TypeOrmModule.forRoot({
-      type: 'mysql',
+      type: 'postgres',
       host: 'localhost',
-      port: 3306,
-      username: 'root',
+      port: 5432,
+      username: 'postgres',
       password: 'root',
       database: 'flair',
-      entities: [],
+      entities: [User],
       synchronize: true,
     }),
     FileParserModule,
