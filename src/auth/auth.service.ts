@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { UserService } from 'src/user/user.service';
 import { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
@@ -28,7 +28,7 @@ export class AuthService {
       createUserArgs.email,
     );
     if (existingUser) {
-      throw new Error('User already exists');
+      throw new ConflictException(`An account with this email already exists.`);
     }
 
     const hash = await argon2.hash(createUserArgs.password);
