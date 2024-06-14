@@ -10,6 +10,8 @@ import { UserModule } from './user/user.module';
 import { User } from './user/entities/user.entity';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { validate } from './config/env.validation';
+import { ThrottlerGuard, ThrottlerModule, minutes } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
 
 @Module({
   imports: [
@@ -43,10 +45,22 @@ import { validate } from './config/env.validation';
         entities: [User],
       }),
     }),
+    ThrottlerModule.forRoot([
+      {
+        ttl: minutes(1),
+        limit: 500,
+      },
+    ]),
     FileParserModule,
     TransactionModule,
     AuthModule,
     UserModule,
+  ],
+  providers: [
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
   ],
 })
 export class AppModule {}
