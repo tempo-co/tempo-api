@@ -16,6 +16,14 @@ A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date
 """
 scalar DateTime
 
+type User {
+  id: ID!
+  name: String!
+  email: String!
+  isActive: Boolean!
+  createdDate: DateTime!
+}
+
 type AccessToken {
   access_token: String!
 }
@@ -23,17 +31,15 @@ type AccessToken {
 type Query {
   transaction(id: String!): Transaction!
   transactions: [Transaction!]!
+  users: [User!]!
+  user(id: String!): User!
 }
 
 type Mutation {
   parse(file: Upload!, bank: String!): [Transaction!]!
-  logIn(loginInput: LoginInput!): AccessToken!
+  logIn(email: String!, password: String!): AccessToken!
+  signUp(name: String!, email: String!, password: String!): AccessToken!
 }
 
 """The `Upload` scalar type represents a file upload."""
 scalar Upload
-
-input LoginInput {
-  email: String!
-  password: String!
-}
