@@ -32,10 +32,10 @@ export class AuthService {
     }
 
     const hash = await argon2.hash(createUserArgs.password);
-    createUserArgs.password = hash;
+    const user = { ...createUserArgs, password: hash };
 
-    const user = await this.userService.create(createUserArgs);
-    return plainToClass(User, user);
+    const createdUser = await this.userService.create(user);
+    return plainToClass(User, createdUser);
   }
 
   async signAccessToken(user: User): Promise<AccessToken> {
