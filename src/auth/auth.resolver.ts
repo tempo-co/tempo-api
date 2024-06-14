@@ -4,9 +4,10 @@ import { User } from 'src/user/models/user.model';
 import { UseGuards } from '@nestjs/common';
 import { Public } from './decorators/public.decorator';
 import { CurrentUser } from './decorators/current-user.decorator';
-import { AccessToken } from './outputs/access-token.output';
-import { LoginInput } from './inputs/login.input';
+import { AccessToken } from './dto/access-token.output';
+import { LoginArgs } from './dto/login.args';
 import { LocalAuthGuard } from './guards/local-auth.guard';
+import { CreateUserArgs } from 'src/user/dto/create-user.args';
 
 @Resolver(() => User)
 export class AuthResolver {
@@ -15,10 +16,17 @@ export class AuthResolver {
   @Public()
   @UseGuards(LocalAuthGuard)
   @Mutation(() => AccessToken)
-  logIn(
-    @Args('loginInput') _loginInput: LoginInput,
-    @CurrentUser() user: User,
-  ) {
-    return this.authService.signAccessToken(user);
+  async logIn(@Args() _loginArgs: LoginArgs, @CurrentUser() user: User) {
+    const accessToken = await this.authService.signAccessToken(user);
+    return accessToken;
+  }
+
+  @Public()
+  @Mutation(() => AccessToken)
+  async signUp(@Args() createUserArgs: CreateUserArgs) {
+    const user = await this.authService.createUser(createUserArgs);
+
+    const accessToken = await this.authService.signAccessToken(user);
+    return accessToken;
   }
 }
