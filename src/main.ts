@@ -5,9 +5,32 @@ import { ValidationPipe } from '@nestjs/common';
 import { graphqlUploadExpress } from 'graphql-upload';
 import { altairExpress } from 'altair-express-middleware';
 import { ConfigService } from '@nestjs/config';
+import helmet from 'helmet';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+
+  app.use(
+    helmet({
+      crossOriginEmbedderPolicy: false,
+      // Config to solve issues with CSP when using Apollo Sandbox
+      contentSecurityPolicy: {
+        directives: {
+          imgSrc: [
+            `'self'`,
+            'data:',
+            'apollo-server-landing-page.cdn.apollographql.com',
+          ],
+          scriptSrc: [`'self'`, `https: 'unsafe-inline'`],
+          manifestSrc: [
+            `'self'`,
+            'apollo-server-landing-page.cdn.apollographql.com',
+          ],
+          frameSrc: [`'self'`, 'sandbox.embed.apollographql.com'],
+        },
+      },
+    }),
+  );
 
   app.useGlobalPipes(new ValidationPipe());
   app.use(
@@ -17,8 +40,7 @@ async function bootstrap() {
     }),
   );
 
-  // http://localhost:3000/altair
-  // Uses Altair graphql client to test file upload since Apollo Server
+  // Uses Altair client to test file upload since Apollo Sandbox
   // sends all files as application/octet-stream MIME type
   app.use(
     '/altair',
