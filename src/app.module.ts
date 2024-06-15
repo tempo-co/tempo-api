@@ -10,8 +10,9 @@ import { UserModule } from './app/user/user.module';
 import { User } from './app/user/entities/user.entity';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { validate } from './config/env.validation';
-import { ThrottlerGuard, ThrottlerModule, minutes } from '@nestjs/throttler';
+import { ThrottlerModule, minutes } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
+import { GqlThrottlerGuard } from './config/guards/throttler.guard';
 
 @Module({
   imports: [
@@ -30,6 +31,10 @@ import { APP_GUARD } from '@nestjs/core';
       playground: false,
       introspection: true,
       plugins: [ApolloServerPluginLandingPageLocalDefault()],
+      context: ({ req, res }: { req: Request; res: Response }) => ({
+        req,
+        res,
+      }),
     }),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
@@ -59,7 +64,7 @@ import { APP_GUARD } from '@nestjs/core';
   providers: [
     {
       provide: APP_GUARD,
-      useClass: ThrottlerGuard,
+      useClass: GqlThrottlerGuard,
     },
   ],
 })
