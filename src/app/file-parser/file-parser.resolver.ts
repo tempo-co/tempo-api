@@ -1,7 +1,7 @@
 import { Resolver, Mutation, Args } from '@nestjs/graphql';
 import { GraphQLUpload, FileUpload } from 'graphql-upload';
-import { Bank } from 'src/bank-transaction-adapter/constants/bank';
-import { Transaction } from 'src/transaction/models/transaction.model';
+import { Bank } from 'src/app/bank-transaction-adapter/constants/bank';
+import { Transaction } from 'src/app/transaction/models/transaction.model';
 import { FileParserService } from './file-parser.service';
 
 @Resolver()

@@ -1,4 +1,4 @@
-import { Transaction } from 'src/transaction/models/transaction.model';
+import { Transaction } from 'src/app/transaction/models/transaction.model';
 import { BankTransactionAdapter } from '../bank-transaction-adapter.interface';
 
 type RevolutTransaction = {
