@@ -4,12 +4,12 @@ import { FileParser } from '../file-parser.interface';
 export class CsvFileParser implements FileParser {
   parse(fileBuffer: Buffer): unknown[] {
     const fileContent = fileBuffer.toString();
-    const records = parse(fileContent, {
+    const data = parse(fileContent, {
       columns: (header) =>
         header.map((columnName: string) => this.toCamelCase(columnName)),
       skip_empty_lines: true,
     });
-    return records;
+    return data;
   }
 
   private toCamelCase(str: string): string {
