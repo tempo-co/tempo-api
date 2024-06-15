@@ -4,6 +4,7 @@ import { UserResolver } from './user.resolver';
 import { randomUUID } from 'crypto';
 import { faker } from '@faker-js/faker';
 import { User } from './entities/user.entity';
+import { NotFoundException } from '@nestjs/common';
 
 describe('UserResolver', () => {
   let userResolver: UserResolver;
@@ -32,23 +33,39 @@ describe('UserResolver', () => {
     expect(userResolver).toBeDefined();
   });
 
-  it('should return all users', async () => {
-    const result: User[] = [];
-    jest.spyOn(userService, 'findAll').mockResolvedValue(result);
-    expect(await userResolver.users()).toBe(result);
+  describe('users', () => {
+    it('should return all users', async () => {
+      const result: User[] = [];
+      jest.spyOn(userService, 'findAll').mockResolvedValue(result);
+      expect(await userResolver.users()).toBe(result);
+    });
   });
 
-  it('should return a user by id', async () => {
-    const id = randomUUID();
-    const result: User = {
-      id: id,
-      name: faker.person.fullName(),
-      email: faker.internet.email(),
-      isActive: true,
-      createdDate: new Date(),
-      password: faker.internet.password(),
-    };
-    jest.spyOn(userService, 'findById').mockResolvedValue(result);
-    expect(await userResolver.user(id)).toBe(result);
+  describe('user', () => {
+    it('should return a user by id', async () => {
+      const id = randomUUID();
+      const result: User = {
+        id: id,
+        name: faker.person.fullName(),
+        email: faker.internet.email(),
+        isActive: true,
+        createdDate: new Date(),
+        password: faker.internet.password(),
+      };
+
+      jest.spyOn(userService, 'findById').mockResolvedValue(result);
+      expect(await userResolver.user(id)).toBe(result);
+    });
+
+    it('should throw NotFoundException if user not found by id', async () => {
+      const nonExistingId = randomUUID();
+
+      jest.spyOn(userService, 'findById').mockImplementation(() => {
+        throw new NotFoundException();
+      });
+      await expect(userResolver.user(nonExistingId)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
   });
 });
