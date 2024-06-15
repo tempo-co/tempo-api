@@ -1,6 +1,5 @@
 import { Resolver, Mutation, Args } from '@nestjs/graphql';
 import { AuthService } from './auth.service';
-import { User } from 'src/app/user/models/user.model';
 import { UseGuards } from '@nestjs/common';
 import { Public } from './decorators/public.decorator';
 import { CurrentUser } from './decorators/current-user.decorator';
@@ -8,6 +7,7 @@ import { AccessToken } from './dto/access-token.output';
 import { LoginArgs } from './dto/login.args';
 import { LocalAuthGuard } from './guards/local-auth.guard';
 import { CreateUserArgs } from 'src/app/user/dto/create-user.args';
+import { User } from '../user/entities/user.entity';
 
 @Resolver(() => User)
 export class AuthResolver {
