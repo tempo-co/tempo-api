@@ -1,4 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from './entities/user.entity';
@@ -15,12 +19,22 @@ export class UserService {
     return this.userRepository.find();
   }
 
-  findById(id: string): Promise<User | null> {
-    return this.userRepository.findOne({ where: { id } });
+  async findById(id: string): Promise<User | null> {
+    const user = await this.userRepository.findOne({ where: { id } });
+
+    if (!user) {
+      throw new NotFoundException(`User with id ${id} not found.`);
+    }
+    return user;
   }
 
-  findByEmail(email: string): Promise<User | null> {
-    return this.userRepository.findOne({ where: { email } });
+  async findByEmail(email: string): Promise<User | null> {
+    const user = await this.userRepository.findOne({ where: { email } });
+
+    if (!user) {
+      throw new NotFoundException(`User with email ${email} not found.`);
+    }
+    return user;
   }
 
   async remove(id: string): Promise<void> {
@@ -28,6 +42,13 @@ export class UserService {
   }
 
   async create(createUserArgs: CreateUserArgs): Promise<User> {
+    const existingUser = await this.userRepository.findOne({
+      where: { email: createUserArgs.email },
+    });
+
+    if (existingUser) {
+      throw new ConflictException(`An account with this email already exists.`);
+    }
     return this.userRepository.save(createUserArgs);
   }
 }
