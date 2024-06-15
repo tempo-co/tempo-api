@@ -2,6 +2,10 @@ import { ExecutionContext, Injectable } from '@nestjs/common';
 import { GqlExecutionContext } from '@nestjs/graphql';
 import { ThrottlerGuard } from '@nestjs/throttler';
 
+/**
+ * Used for rate limiting.
+ * Overrides getRequestResponse to extract the req and res from GraphQL context.
+ */
 @Injectable()
 export class GqlThrottlerGuard extends ThrottlerGuard {
   getRequestResponse(context: ExecutionContext) {
