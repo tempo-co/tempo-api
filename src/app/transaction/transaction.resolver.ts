@@ -4,17 +4,15 @@ import { Transaction } from './models/transaction.model';
 
 @Resolver(() => Transaction)
 export class TransactionResolver {
-  constructor(private transactionService: TransactionService) {}
+  constructor(private readonly transactionService: TransactionService) {}
 
-  @Query(() => Transaction, { name: 'transaction' })
-  async getTransaction(
-    @Args('id', { type: () => String }) id: string,
-  ): Promise<Transaction> {
-    return this.transactionService.findOne(id);
+  @Query(() => [Transaction])
+  transactions(): Promise<Transaction[]> {
+    return this.transactionService.findAll();
   }
 
-  @Query(() => [Transaction], { name: 'transactions' })
-  async getTransactions(): Promise<Transaction[]> {
-    return this.transactionService.findAll();
+  @Query(() => Transaction)
+  transaction(@Args('id') id: string): Promise<Transaction | null> {
+    return this.transactionService.findById(id);
   }
 }

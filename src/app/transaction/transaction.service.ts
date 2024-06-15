@@ -1,30 +1,20 @@
 import { Injectable } from '@nestjs/common';
-import { Transaction } from './models/transaction.model';
+import { Transaction } from './entities/transaction.entity';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 
 @Injectable()
 export class TransactionService {
-  private transactions: Transaction[] = [
-    {
-      id: '1',
-      startedDate: new Date(),
-      completedDate: new Date(),
-      description: 'Test transaction',
-      amount: 1000,
-      currency: 'EUR',
-    },
-  ];
+  constructor(
+    @InjectRepository(Transaction)
+    private readonly transactionRepository: Repository<Transaction>,
+  ) {}
 
-  findOne(id: string): Transaction {
-    const transaction = this.transactions.find(
-      (transaction) => transaction.id === id,
-    );
-    if (!transaction) {
-      throw new Error(`Transaction with id ${id} not found`);
-    }
-    return transaction;
+  findAll(): Promise<Transaction[]> {
+    return this.transactionRepository.find();
   }
 
-  findAll(): Transaction[] {
-    return this.transactions;
+  findById(id: string): Promise<Transaction | null> {
+    return this.transactionRepository.findOne({ where: { id } });
   }
 }

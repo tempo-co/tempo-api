@@ -29,8 +29,8 @@ type AccessToken {
 }
 
 type Query {
-  transaction(id: String!): Transaction!
   transactions: [Transaction!]!
+  transaction(id: String!): Transaction!
   users: [User!]!
   user(id: String!): User!
 }
