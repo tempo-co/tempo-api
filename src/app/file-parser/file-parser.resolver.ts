@@ -13,9 +13,8 @@ export class FileParserResolver {
     @Args({ name: 'file', type: () => GraphQLUpload })
     file: FileUpload,
     @Args('bank') bank: Bank,
-  ) {
+  ): Promise<Transaction[]> {
     const transactions = await this.fileParserService.parse(file, bank);
-
     return transactions;
   }
 }
