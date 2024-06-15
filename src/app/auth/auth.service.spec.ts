@@ -14,7 +14,7 @@ describe('AuthService', () => {
   let jwtService: JwtService;
 
   beforeEach(async () => {
-    faker.seed(123);
+    faker.seed(545);
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuthService,
