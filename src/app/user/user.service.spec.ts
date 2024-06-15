@@ -40,6 +40,7 @@ describe('UserService', () => {
   describe('findAll', () => {
     it('should return all users', async () => {
       const result: User[] = [];
+
       jest.spyOn(userRepository, 'find').mockResolvedValue(result);
       expect(await userService.findAll()).toBe(result);
     });
@@ -48,13 +49,23 @@ describe('UserService', () => {
   describe('findById', () => {
     it('should return a user by id', async () => {
       const id = randomUUID();
-      const result: User = new User();
-      jest.spyOn(userRepository, 'findOne').mockResolvedValue(result);
-      expect(await userService.findById(id)).toBe(result);
+      const user: User = {
+        id: id,
+        name: faker.person.fullName(),
+        email: faker.internet.email(),
+        isActive: true,
+        createdDate: new Date(),
+        password: faker.internet.password(),
+      };
+
+      jest.spyOn(userRepository, 'findOne').mockResolvedValue(user);
+      expect(await userService.findById(id)).toEqual(user);
+      expect(userRepository.findOne).toHaveBeenCalledWith({ where: { id } });
     });
 
     it('should throw NotFoundException if user not found by id', async () => {
       const nonExistingId = randomUUID();
+
       jest.spyOn(userRepository, 'findOne').mockResolvedValue(null);
       await expect(userService.findById(nonExistingId)).rejects.toThrow(
         NotFoundException,
@@ -65,13 +76,22 @@ describe('UserService', () => {
   describe('findByEmail', () => {
     it('should return a user by email', async () => {
       const email = faker.internet.email();
-      const result: User = new User();
-      jest.spyOn(userRepository, 'findOne').mockResolvedValue(result);
-      expect(await userService.findByEmail(email)).toBe(result);
+      const user: User = {
+        id: randomUUID(),
+        name: faker.person.fullName(),
+        email: email,
+        isActive: true,
+        createdDate: new Date(),
+        password: faker.internet.password(),
+      };
+
+      jest.spyOn(userRepository, 'findOne').mockResolvedValue(user);
+      expect(await userService.findByEmail(email)).toBe(user);
     });
 
     it('should throw NotFoundException if user not found by email', async () => {
       const email = faker.internet.email();
+
       jest.spyOn(userRepository, 'findOne').mockResolvedValue(null);
       await expect(userService.findByEmail(email)).rejects.toThrow(
         NotFoundException,
@@ -82,6 +102,7 @@ describe('UserService', () => {
   describe('remove', () => {
     it('should delete a user', async () => {
       const id = randomUUID();
+
       jest
         .spyOn(userRepository, 'delete')
         .mockResolvedValue(new DeleteResult());
@@ -91,6 +112,7 @@ describe('UserService', () => {
 
     it('should not throw an error when deleting a non-existing user', async () => {
       const nonExistingId = randomUUID();
+
       jest
         .spyOn(userRepository, 'delete')
         .mockResolvedValue(new DeleteResult());
