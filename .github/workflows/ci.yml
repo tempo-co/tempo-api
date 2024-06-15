@@ -1,17 +1,16 @@
-# This workflow will do a clean installation of node dependencies, cache/restore them, 
+# This workflow will do a clean installation of node dependencies, cache/restore them,
 # build the source code and run tests across different versions of node
 
 name: Node.js CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ['main']
   pull_request:
-    branches: [ "main" ]
+    branches: ['main']
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
     strategy:
@@ -20,24 +19,27 @@ jobs:
         # See supported Node.js release schedule at https://nodejs.org/en/about/releases/
 
     steps:
-    - uses: actions/checkout@v4
-    - name: Use Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v3
-      with:
-        node-version: ${{ matrix.node-version }}
-        cache: 'npm'
-    - name: Set up environment variables
-      run: |
-        echo "NODE_ENV=${{ secrets.NODE_ENV }}" >> $GITHUB_ENV
-        echo "PORT=${{ secrets.PORT }}" >> $GITHUB_ENV
-        echo "DB_TYPE=${{ secrets.DB_TYPE }}" >> $GITHUB_ENV
-        echo "DB_HOST=${{ secrets.DB_HOST }}" >> $GITHUB_ENV
-        echo "DB_PORT=${{ secrets.DB_PORT }}" >> $GITHUB_ENV
-        echo "DB_USERNAME=${{ secrets.DB_USERNAME }}" >> $GITHUB_ENV
-        echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" >> $GITHUB_ENV
-        echo "DB_NAME=${{ secrets.DB_NAME }}" >> $GITHUB_ENV
-        echo "DB_SYNCHRONIZE=${{ secrets.DB_SYNCHRONIZE }}" >> $GITHUB_ENV
-        echo "JWT_SECRET=${{ secrets.JWT_SECRET }}" >> $GITHUB_ENV
-    - run: npm ci
-    - run: npm run build
-    - run: npm run test
+      - uses: actions/checkout@v4
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+      - name: Set up environment variables
+        run: |
+          echo "
+          NODE_ENV=${{ secrets.NODE_ENV }}
+          PORT=${{ secrets.PORT }}
+          DB_TYPE=${{ secrets.DB_TYPE }}
+          DB_HOST=${{ secrets.DB_HOST }}
+          DB_PORT=${{ secrets.DB_PORT }}
+          DB_USERNAME=${{ secrets.DB_USERNAME }}
+          DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+          DB_NAME=${{ secrets.DB_NAME }}
+          DB_SYNCHRONIZE=${{ secrets.DB_SYNCHRONIZE }}
+          JWT_SECRET=${{ secrets.JWT_SECRET }}
+          " >> $GITHUB_ENV
+      - run: npm ci
+      - run: npm run build
+      - run: npm run check-format
+      - run: npm run test
