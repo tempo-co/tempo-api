@@ -1,11 +1,11 @@
 import { ConflictException, Injectable } from '@nestjs/common';
-import { UserService } from 'src/user/user.service';
+import { UserService } from 'src/app/user/user.service';
 import { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
 import { AccessToken } from './dto/access-token.output';
 import { plainToClass } from 'class-transformer';
-import { User } from 'src/user/models/user.model';
-import { CreateUserArgs } from 'src/user/dto/create-user.args';
+import { User } from 'src/app/user/models/user.model';
+import { CreateUserArgs } from 'src/app/user/dto/create-user.args';
 
 @Injectable()
 export class AuthService {

@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { FileParserFactory } from './file-parser.factory';
 import { FileUpload } from 'graphql-upload';
-import { BankTransactionAdapterFactory } from 'src/bank-transaction-adapter/bank-transaction-adapter.factory';
-import { Transaction } from 'src/transaction/models/transaction.model';
-import { Bank } from 'src/bank-transaction-adapter/constants/bank';
+import { BankTransactionAdapterFactory } from 'src/app/bank-transaction-adapter/bank-transaction-adapter.factory';
+import { Transaction } from 'src/app/transaction/models/transaction.model';
+import { Bank } from 'src/app/bank-transaction-adapter/constants/bank';
 import { ReadStream } from 'fs-capacitor';
 
 @Injectable()

@@ -2,7 +2,7 @@ import { Strategy } from 'passport-local';
 import { PassportStrategy } from '@nestjs/passport';
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { AuthService } from '../auth.service';
-import { User } from 'src/user/models/user.model';
+import { User } from 'src/app/user/models/user.model';
 
 /**
  * Implements local authentication strategy via AuthService (email/password).
