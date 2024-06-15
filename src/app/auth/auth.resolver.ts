@@ -6,8 +6,8 @@ import { CurrentUser } from './decorators/current-user.decorator';
 import { AccessToken } from './dto/access-token.output';
 import { LoginArgs } from './dto/login.args';
 import { LocalAuthGuard } from './guards/local-auth.guard';
-import { CreateUserArgs } from 'src/app/user/dto/create-user.args';
 import { User } from '../user/entities/user.entity';
+import { CreateUserArgs } from '../user/dto/create-user.args';
 
 @Resolver(() => User)
 export class AuthResolver {
