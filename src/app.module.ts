@@ -18,7 +18,7 @@ import { GqlThrottlerGuard } from './config/guards/throttler.guard';
   imports: [
     ConfigModule.forRoot({
       validate,
-      envFilePath: '.env.development',
+      envFilePath: ['.env.development.local', '.env.development'],
       cache: true,
       validationOptions: {
         allowUnknown: false,
