@@ -37,85 +37,99 @@ describe('UserService', () => {
     expect(userService).toBeDefined();
   });
 
-  it('should return all users', async () => {
-    const result: User[] = [];
-    jest.spyOn(userRepository, 'find').mockResolvedValue(result);
-    expect(await userService.findAll()).toBe(result);
+  describe('findAll', () => {
+    it('should return all users', async () => {
+      const result: User[] = [];
+      jest.spyOn(userRepository, 'find').mockResolvedValue(result);
+      expect(await userService.findAll()).toBe(result);
+    });
   });
 
-  it('should return a user by id', async () => {
-    const id = randomUUID();
-    const result: User = new User();
-    jest.spyOn(userRepository, 'findOne').mockResolvedValue(result);
-    expect(await userService.findById(id)).toBe(result);
+  describe('findById', () => {
+    it('should return a user by id', async () => {
+      const id = randomUUID();
+      const result: User = new User();
+      jest.spyOn(userRepository, 'findOne').mockResolvedValue(result);
+      expect(await userService.findById(id)).toBe(result);
+    });
+
+    it('should throw NotFoundException if user not found by id', async () => {
+      const nonExistingId = randomUUID();
+      jest.spyOn(userRepository, 'findOne').mockResolvedValue(null);
+      await expect(userService.findById(nonExistingId)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
   });
 
-  it('should throw NotFoundException if user not found by id', async () => {
-    const nonExistingId = randomUUID();
-    jest.spyOn(userRepository, 'findOne').mockResolvedValue(null);
-    await expect(userService.findById(nonExistingId)).rejects.toThrow(
-      NotFoundException,
-    );
+  describe('findByEmail', () => {
+    it('should return a user by email', async () => {
+      const email = faker.internet.email();
+      const result: User = new User();
+      jest.spyOn(userRepository, 'findOne').mockResolvedValue(result);
+      expect(await userService.findByEmail(email)).toBe(result);
+    });
+
+    it('should throw NotFoundException if user not found by email', async () => {
+      const email = faker.internet.email();
+      jest.spyOn(userRepository, 'findOne').mockResolvedValue(null);
+      await expect(userService.findByEmail(email)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
   });
 
-  it('should return a user by email', async () => {
-    const email = faker.internet.email();
-    const result: User = new User();
-    jest.spyOn(userRepository, 'findOne').mockResolvedValue(result);
-    expect(await userService.findByEmail(email)).toBe(result);
+  describe('remove', () => {
+    it('should delete a user', async () => {
+      const id = randomUUID();
+      jest
+        .spyOn(userRepository, 'delete')
+        .mockResolvedValue(new DeleteResult());
+      await userService.remove(id);
+      expect(userRepository.delete).toHaveBeenCalledWith(id);
+    });
+
+    it('should not throw an error when deleting a non-existing user', async () => {
+      const nonExistingId = randomUUID();
+      jest
+        .spyOn(userRepository, 'delete')
+        .mockResolvedValue(new DeleteResult());
+      await expect(userService.remove(nonExistingId)).resolves.not.toThrow();
+    });
   });
 
-  it('should throw NotFoundException if user not found by email', async () => {
-    const email = faker.internet.email();
-    jest.spyOn(userRepository, 'findOne').mockResolvedValue(null);
-    await expect(userService.findByEmail(email)).rejects.toThrow(
-      NotFoundException,
-    );
-  });
+  describe('create', () => {
+    it('should create a user', async () => {
+      const createUserArgs: CreateUserArgs = {
+        name: faker.person.fullName(),
+        email: faker.internet.email(),
+        password: faker.internet.password(),
+      };
 
-  it('should delete a user', async () => {
-    const id = randomUUID();
-    jest.spyOn(userRepository, 'delete').mockResolvedValue(new DeleteResult());
-    await userService.remove(id);
-    expect(userRepository.delete).toHaveBeenCalledWith(id);
-  });
+      const createdUser: User = {
+        id: randomUUID(),
+        ...createUserArgs,
+        isActive: true,
+        createdDate: new Date(),
+      };
 
-  it('should not throw an error when deleting a non-existing user', async () => {
-    const nonExistingId = randomUUID();
-    jest.spyOn(userRepository, 'delete').mockResolvedValue(new DeleteResult());
-    await expect(userService.remove(nonExistingId)).resolves.not.toThrow();
-  });
+      jest.spyOn(userRepository, 'findOne').mockResolvedValue(null);
+      jest.spyOn(userRepository, 'save').mockResolvedValue(createdUser);
+      expect(await userService.create(createUserArgs)).toEqual(createdUser);
+    });
 
-  it('should create a user', async () => {
-    const createUserArgs: CreateUserArgs = {
-      name: faker.person.fullName(),
-      email: faker.internet.email(),
-      password: faker.internet.password(),
-    };
+    it('should throw ConflictException when attempting to create a user with an email that already exists', async () => {
+      const user: User = {
+        id: randomUUID(),
+        name: faker.person.fullName(),
+        email: faker.internet.email(),
+        isActive: true,
+        createdDate: new Date(),
+        password: faker.internet.password(),
+      };
 
-    const createdUser: User = {
-      id: randomUUID(),
-      ...createUserArgs,
-      isActive: true,
-      createdDate: new Date(),
-    };
-
-    jest.spyOn(userRepository, 'findOne').mockResolvedValue(null);
-    jest.spyOn(userRepository, 'save').mockResolvedValue(createdUser);
-    expect(await userService.create(createUserArgs)).toEqual(createdUser);
-  });
-
-  it('should throw ConflictException when attempting to create a user with an email that already exists', async () => {
-    const user: User = {
-      id: randomUUID(),
-      name: faker.person.fullName(),
-      email: faker.internet.email(),
-      isActive: true,
-      createdDate: new Date(),
-      password: faker.internet.password(),
-    };
-
-    jest.spyOn(userRepository, 'findOne').mockResolvedValue(user);
-    await expect(userService.create(user)).rejects.toThrow(ConflictException);
+      jest.spyOn(userRepository, 'findOne').mockResolvedValue(user);
+      await expect(userService.create(user)).rejects.toThrow(ConflictException);
+    });
   });
 });
