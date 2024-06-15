@@ -3,9 +3,8 @@ import { UserService } from 'src/app/user/user.service';
 import { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
 import { AccessToken } from './dto/access-token.output';
-import { plainToClass } from 'class-transformer';
-import { User } from 'src/app/user/models/user.model';
 import { CreateUserArgs } from 'src/app/user/dto/create-user.args';
+import { User } from '../user/entities/user.entity';
 
 @Injectable()
 export class AuthService {
@@ -34,8 +33,7 @@ export class AuthService {
     const hash = await argon2.hash(createUserArgs.password);
     const user = { ...createUserArgs, password: hash };
 
-    const createdUser = await this.userService.create(user);
-    return plainToClass(User, createdUser);
+    return this.userService.create(user);
   }
 
   async signAccessToken(user: User): Promise<AccessToken> {
