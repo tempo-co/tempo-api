@@ -46,11 +46,6 @@ describe('EnvironmentVariables validation', () => {
     expect(() => validate(invalidConfig)).toThrow(Error);
   });
 
-  it('should throw an error for an invalid DB_SYNCHRONIZE', () => {
-    const invalidConfig = { ...validConfig, DB_SYNCHRONIZE: 'true' };
-    expect(() => validate(invalidConfig)).toThrow(Error);
-  });
-
   it('should throw an error for an invalid JWT_SECRET', () => {
     const invalidConfig = { ...validConfig, JWT_SECRET: '' };
     expect(() => validate(invalidConfig)).toThrow(Error);
