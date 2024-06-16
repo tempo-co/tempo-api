@@ -1,5 +1,5 @@
-import { Transaction } from 'src/app/transaction/models/transaction.model';
+import { CreateTransactionDto } from '../transaction/dto/create-transaction.dto';
 
 export interface BankTransactionAdapter {
-  map(data: unknown[]): Transaction[];
+  map(data: unknown[]): CreateTransactionDto[];
 }
