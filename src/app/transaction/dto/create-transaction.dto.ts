@@ -5,6 +5,8 @@ import {
   IsNumber,
   IsString,
   Length,
+  Max,
+  Min,
 } from 'class-validator';
 
 @ArgsType()
@@ -23,7 +25,9 @@ export class CreateTransactionDto {
   description: string;
 
   @IsNotEmpty()
-  @IsNumber()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(999999999999.99)
   amount: number;
 
   @IsNotEmpty()
