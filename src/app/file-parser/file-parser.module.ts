@@ -5,9 +5,10 @@ import { CsvFileParser } from './impl/csv-file-parser';
 import { FileParserResolver } from './file-parser.resolver';
 import { BankTransactionAdapterModule } from 'src/app/bank-transaction-adapter/bank-transaction-adapter.module';
 import { FileParserService } from './file-parser.service';
+import { TransactionModule } from '../transaction/transaction.module';
 
 @Module({
-  imports: [BankTransactionAdapterModule],
+  imports: [BankTransactionAdapterModule, TransactionModule],
   providers: [
     XlsFileParser,
     CsvFileParser,
