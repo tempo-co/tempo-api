@@ -9,7 +9,7 @@ import { randomUUID } from 'crypto';
 import { CreateUserArgs } from '../user/dto/create-user.args';
 
 describe('AuthService', () => {
-  let service: AuthService;
+  let authService: AuthService;
   let userService: UserService;
   let jwtService: JwtService;
 
@@ -34,13 +34,13 @@ describe('AuthService', () => {
       ],
     }).compile();
 
-    service = module.get<AuthService>(AuthService);
+    authService = module.get<AuthService>(AuthService);
     userService = module.get<UserService>(UserService);
     jwtService = module.get<JwtService>(JwtService);
   });
 
   it('should be defined', () => {
-    expect(service).toBeDefined();
+    expect(authService).toBeDefined();
   });
 
   describe('validateUser', () => {
@@ -59,7 +59,7 @@ describe('AuthService', () => {
       user.password = await argon2.hash(password);
       userService.findByEmail = jest.fn().mockResolvedValue(user);
 
-      expect(await service.validateUser(email, password)).toBe(user);
+      expect(await authService.validateUser(email, password)).toBe(user);
     });
 
     it('should return null if the password is invalid', async () => {
@@ -76,7 +76,9 @@ describe('AuthService', () => {
       user.password = await argon2.hash(password);
       userService.findByEmail = jest.fn().mockResolvedValue(user);
 
-      expect(await service.validateUser(email, 'wrong-password')).toBeNull();
+      expect(
+        await authService.validateUser(email, 'wrong-password'),
+      ).toBeNull();
     });
   });
 
@@ -101,7 +103,7 @@ describe('AuthService', () => {
       };
       userService.create = jest.fn().mockResolvedValue(user);
 
-      expect(await service.createUser(createUserArgs)).toBe(user);
+      expect(await authService.createUser(createUserArgs)).toBe(user);
     });
   });
 
@@ -117,7 +119,7 @@ describe('AuthService', () => {
       };
 
       jwtService.signAsync = jest.fn().mockResolvedValue('access_token');
-      expect(await service.signAccessToken(user)).toEqual({
+      expect(await authService.signAccessToken(user)).toEqual({
         access_token: 'access_token',
       });
     });
