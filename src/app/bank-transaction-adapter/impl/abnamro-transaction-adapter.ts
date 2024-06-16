@@ -1,5 +1,5 @@
-import { Transaction } from 'src/app/transaction/models/transaction.model';
 import { BankTransactionAdapter } from '../bank-transaction-adapter.interface';
+import { CreateTransactionDto } from 'src/app/transaction/dto/create-transaction.dto';
 
 type AbnAmroTransaction = {
   transactiondate: string;
@@ -12,16 +12,18 @@ type AbnAmroTransaction = {
 };
 
 export class AbnAmroTransactionAdapter implements BankTransactionAdapter {
-  map(data: AbnAmroTransaction[]): Transaction[] {
-    return data.map((txn) => {
-      const transaction = new Transaction();
-      transaction.startedDate = this.parseDate(txn.transactiondate);
-      transaction.completedDate = this.parseDate(txn.valuedate);
-      transaction.description = txn.description.replace(/\s+/g, ' ').trim();
-      transaction.amount = parseFloat(txn.amount);
-      transaction.currency = txn.mutationcode;
-      return transaction;
+  map(data: AbnAmroTransaction[]) {
+    const transactions: CreateTransactionDto[] = [];
+    data.forEach((transaction) => {
+      transactions.push({
+        startedDate: this.parseDate(transaction.transactiondate),
+        completedDate: this.parseDate(transaction.valuedate),
+        description: transaction.description.replace(/\s+/g, ' ').trim(),
+        amount: parseFloat(transaction.amount),
+        currency: transaction.mutationcode,
+      });
     });
+    return transactions;
   }
 
   private parseDate(dateString: string): Date {

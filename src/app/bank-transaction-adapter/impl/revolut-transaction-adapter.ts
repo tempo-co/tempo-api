@@ -1,5 +1,5 @@
-import { Transaction } from 'src/app/transaction/models/transaction.model';
 import { BankTransactionAdapter } from '../bank-transaction-adapter.interface';
+import { CreateTransactionDto } from 'src/app/transaction/dto/create-transaction.dto';
 
 type RevolutTransaction = {
   type: string;
@@ -15,15 +15,17 @@ type RevolutTransaction = {
 };
 
 export class RevolutTransactionAdapter implements BankTransactionAdapter {
-  map(data: RevolutTransaction[]): Transaction[] {
-    return data.map((txn) => {
-      const transaction = new Transaction();
-      transaction.startedDate = new Date(txn.startedDate);
-      transaction.completedDate = new Date(txn.completedDate);
-      transaction.description = txn.description.replace(/\s+/g, ' ').trim();
-      transaction.amount = parseFloat(txn.amount);
-      transaction.currency = txn.currency;
-      return transaction;
+  map(data: RevolutTransaction[]) {
+    const transactions: CreateTransactionDto[] = [];
+    data.forEach((transaction) => {
+      transactions.push({
+        startedDate: new Date(transaction.startedDate),
+        completedDate: new Date(transaction.completedDate),
+        description: transaction.description.replace(/\s+/g, ' ').trim(),
+        amount: parseFloat(transaction.amount),
+        currency: transaction.currency,
+      });
     });
+    return transactions;
   }
 }
