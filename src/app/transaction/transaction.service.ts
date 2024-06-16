@@ -29,8 +29,4 @@ export class TransactionService {
   create(transactions: CreateTransactionDto[]): Promise<Transaction[]> {
     return this.transactionRepository.save(transactions);
   }
-
-  create(transactions: CreateTransactionDto[]): Promise<Transaction[]> {
-    return this.transactionRepository.save(transactions);
-  }
 }
