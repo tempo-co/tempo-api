@@ -18,8 +18,8 @@ export class FileParserService {
   async parse(file: FileUpload, bank: Bank): Promise<Transaction[]> {
     const { createReadStream, mimetype } = file;
     const stream = createReadStream();
-
     const buffer = await this.readStream(stream);
+
     const fileParser = this.fileParserFactory.create(mimetype);
     const data = fileParser.parse(buffer);
 
@@ -29,7 +29,6 @@ export class FileParserService {
     const transactions = await this.transactionService.create(
       createTransactionDtos,
     );
-
     return transactions;
   }
 
