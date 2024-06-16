@@ -1,4 +1,4 @@
-import { BankTransactionAdapter } from '../bank-transaction-adapter.interface';
+import { BankTransactionAdapter } from '../bank-transaction-adapter.abstract';
 import { CreateTransactionDto } from 'src/app/transaction/dto/create-transaction.dto';
 
 type AbnAmroTransaction = {
@@ -11,18 +11,22 @@ type AbnAmroTransaction = {
   mutationcode: string;
 };
 
-export class AbnAmroTransactionAdapter implements BankTransactionAdapter {
-  map(data: AbnAmroTransaction[]) {
+export class AbnAmroTransactionAdapter extends BankTransactionAdapter {
+  async map(data: AbnAmroTransaction[]) {
     const transactions: CreateTransactionDto[] = [];
-    data.forEach((transaction) => {
-      transactions.push({
-        startedDate: this.parseDate(transaction.transactiondate),
-        completedDate: this.parseDate(transaction.valuedate),
-        description: transaction.description.replace(/\s+/g, ' ').trim(),
-        amount: parseFloat(transaction.amount),
-        currency: transaction.mutationcode,
-      });
-    });
+
+    for (const rawTxn of data) {
+      const transaction: CreateTransactionDto = {
+        startedDate: this.parseDate(rawTxn.transactiondate),
+        completedDate: this.parseDate(rawTxn.valuedate),
+        description: rawTxn.description.replace(/\s+/g, ' ').trim(),
+        amount: parseFloat(rawTxn.amount),
+        currency: rawTxn.mutationcode,
+      };
+
+      await super.validateTransaction(transaction);
+      transactions.push(transaction);
+    }
     return transactions;
   }
 
