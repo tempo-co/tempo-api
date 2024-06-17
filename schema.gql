@@ -71,9 +71,10 @@ type Query {
 }
 
 type Mutation {
-  parse(file: Upload!, bank: String!): [Transaction!]!
   logIn(email: String!, password: String!): AccessToken!
   signUp(name: String!, email: String!, password: String!): AccessToken!
+  uploadStatement(file: Upload!, accountId: String!): [Transaction!]!
+  create(alias: String!, bank: String!): Account!
 }
 
 """The `Upload` scalar type represents a file upload."""
