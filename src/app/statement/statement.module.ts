@@ -5,7 +5,7 @@ import { Statement } from './entities/statement.entity';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AccountModule } from '../account/account.module';
 import { FileParserModule } from '../file-parser/file-parser.module';
-import { BankTransactionAdapterModule } from '../bank-transaction-adapter/bank-transaction-adapter.module';
+import { TransactionMapperModule } from '../transaction-mapper/transaction-mapper.module';
 import { TransactionModule } from '../transaction/transaction.module';
 
 @Module({
@@ -13,7 +13,7 @@ import { TransactionModule } from '../transaction/transaction.module';
     TypeOrmModule.forFeature([Statement]),
     AccountModule,
     FileParserModule,
-    BankTransactionAdapterModule,
+    TransactionMapperModule,
     TransactionModule,
   ],
   providers: [StatementService, StatementResolver],

@@ -1,9 +1,9 @@
 import { validate } from 'class-validator';
 import { CreateTransactionDto } from '../transaction/dto/create-transaction.dto';
 
-export abstract class BankTransactionAdapter {
+export abstract class TransactionMapper {
   /**
-   * Abstract method to be implemented by specific BankTransactionAdapters.
+   * Abstract method to be implemented by specific BankTransactionMappers.
    */
   abstract map(data: unknown[]): Promise<CreateTransactionDto[]>;
 

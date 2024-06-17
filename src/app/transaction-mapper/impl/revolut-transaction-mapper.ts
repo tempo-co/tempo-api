@@ -1,4 +1,4 @@
-import { BankTransactionAdapter } from '../bank-transaction-adapter.abstract';
+import { TransactionMapper } from '../transaction-mapper.abstract';
 import { CreateTransactionDto } from 'src/app/transaction/dto/create-transaction.dto';
 
 type RevolutTransaction = {
@@ -14,7 +14,7 @@ type RevolutTransaction = {
   balance: string;
 };
 
-export class RevolutTransactionAdapter extends BankTransactionAdapter {
+export class RevolutTransactionMapper extends TransactionMapper {
   async map(data: RevolutTransaction[]) {
     const transactions: CreateTransactionDto[] = [];
 
