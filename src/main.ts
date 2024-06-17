@@ -1,10 +1,10 @@
-import { NestFactory } from '@nestjs/core';
-import { AppModule } from './app/api/graphql/app.module';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { ValidationPipe } from '@nestjs/common';
-import { graphqlUploadExpress } from 'graphql-upload';
-import { altairExpress } from 'altair-express-middleware';
-import { ConfigService } from '@nestjs/config';
+import {NestFactory} from '@nestjs/core';
+import {AppModule} from './app/api/graphql/app.module';
+import {DocumentBuilder, SwaggerModule} from '@nestjs/swagger';
+import {ValidationPipe} from '@nestjs/common';
+import {graphqlUploadExpress} from 'graphql-upload';
+import {altairExpress} from 'altair-express-middleware';
+import {ConfigService} from '@nestjs/config';
 import helmet from 'helmet';
 
 async function bootstrap() {
@@ -16,16 +16,9 @@ async function bootstrap() {
       // Config to solve issues with CSP when using Apollo Sandbox
       contentSecurityPolicy: {
         directives: {
-          imgSrc: [
-            `'self'`,
-            'data:',
-            'apollo-server-landing-page.cdn.apollographql.com',
-          ],
+          imgSrc: [`'self'`, 'data:', 'apollo-server-landing-page.cdn.apollographql.com'],
           scriptSrc: [`'self'`, `https: 'unsafe-inline'`],
-          manifestSrc: [
-            `'self'`,
-            'apollo-server-landing-page.cdn.apollographql.com',
-          ],
+          manifestSrc: [`'self'`, 'apollo-server-landing-page.cdn.apollographql.com'],
           frameSrc: [`'self'`, 'sandbox.embed.apollographql.com'],
         },
       },
