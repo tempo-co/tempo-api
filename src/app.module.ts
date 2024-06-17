@@ -16,7 +16,7 @@ import { GqlThrottlerGuard } from './config/guards/throttler.guard';
 import { Account } from './app/account/entities/account.entity';
 import { Transaction } from './app/transaction/entities/transaction.entity';
 import { Statement } from './app/statement/entities/statement.entity';
-import { Category } from './category/entities/category.entity';
+import { Category } from './app/category/entities/category.entity';
 import { StatementModule } from './app/statement/statement.module';
 
 @Module({

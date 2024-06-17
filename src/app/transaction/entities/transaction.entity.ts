@@ -1,6 +1,6 @@
 import { Account } from 'src/app/account/entities/account.entity';
 import { Statement } from 'src/app/statement/entities/statement.entity';
-import { Category } from 'src/category/entities/category.entity';
+import { Category } from 'src/app/category/entities/category.entity';
 import { Entity, Column, PrimaryGeneratedColumn, ManyToOne } from 'typeorm';
 
 @Entity()
