@@ -2,7 +2,7 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
 import { AccessToken } from './dto/access-token.output';
-import { User } from '../user/entities/user.entity';
+import { User } from '../entities/user/user.entity';
 import { UserService } from '../user/user.service';
 import { CreateUserArgs } from '../user/dto/create-user.args';
 

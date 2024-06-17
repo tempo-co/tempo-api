@@ -2,22 +2,22 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { Module } from '@nestjs/common';
 import { GraphQLModule } from '@nestjs/graphql';
 import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
-import { TransactionModule } from './app/transaction/transaction.module';
+import { TransactionModule } from '../../transaction/transaction.module';
 import { ApolloServerPluginLandingPageLocalDefault } from '@apollo/server/plugin/landingPage/default';
-import { FileParserModule } from './app/file-parser/file-parser.module';
-import { AuthModule } from './app/auth/auth.module';
-import { UserModule } from './app/user/user.module';
-import { User } from './app/user/entities/user.entity';
+import { FileParserModule } from '../../file-parser/file-parser.module';
+import { AuthModule } from '../../auth/auth.module';
+import { UserModule } from '../../user/user.module';
+import { User } from '../../entities/user/user.entity';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { validate } from './config/env.validation';
+import { validate } from '../../../config/env.validation';
 import { ThrottlerModule, minutes } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
-import { GqlThrottlerGuard } from './config/guards/throttler.guard';
-import { Account } from './app/account/entities/account.entity';
-import { Transaction } from './app/transaction/entities/transaction.entity';
-import { Statement } from './app/statement/entities/statement.entity';
-import { Category } from './app/category/entities/category.entity';
-import { StatementModule } from './app/statement/statement.module';
+import { GqlThrottlerGuard } from '../../../config/guards/throttler.guard';
+import { Account } from '../../entities/account/account.entity';
+import { Transaction } from '../../entities/transaction/transaction.entity';
+import { Statement } from '../../entities/statement/statement.entity';
+import { Category } from '../../entities/category/category.entity';
+import { StatementModule } from '../../statement/statement.module';
 
 @Module({
   imports: [

@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Statement } from './entities/statement.entity';
+import { Statement } from '../entities/statement/statement.entity';
 import { AccountService } from '../account/account.service';
-import { Transaction } from '../transaction/entities/transaction.entity';
+import { Transaction } from '../entities/transaction/transaction.entity';
 import { FileParserService } from '../file-parser/file-parser.service';
 import { TransactionMapperService } from '../transaction-mapper/transaction-mapper.service';
 import { TransactionService } from '../transaction/transaction.service';

@@ -3,7 +3,7 @@ import { UserService } from './user.service';
 import { UserResolver } from './user.resolver';
 import { randomUUID } from 'crypto';
 import { faker } from '@faker-js/faker';
-import { User } from './entities/user.entity';
+import { User } from '../entities/user/user.entity';
 import { NotFoundException } from '@nestjs/common';
 
 describe('UserResolver', () => {

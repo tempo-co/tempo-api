@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { Account } from './entities/account.entity';
+import { Account } from '../entities/account/account.entity';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AccountService } from './account.service';
 import { AccountResolver } from './account.resolver';

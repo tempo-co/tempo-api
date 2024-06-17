@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { StatementService } from './statement.service';
 import { StatementResolver } from './statement.resolver';
-import { Statement } from './entities/statement.entity';
+import { Statement } from '../entities/statement/statement.entity';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AccountModule } from '../account/account.module';
 import { FileParserModule } from '../file-parser/file-parser.module';

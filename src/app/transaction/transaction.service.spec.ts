@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { TransactionService } from './transaction.service';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { Transaction } from './entities/transaction.entity';
+import { Transaction } from '../entities/transaction/transaction.entity';
 import { DeepPartial, Repository } from 'typeorm';
 import { NotFoundException } from '@nestjs/common';
 import { faker } from '@faker-js/faker';
