@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Account } from './entities/account.entity';
@@ -28,5 +28,16 @@ export class AccountService {
 
   async findAllByUserId(userId: string): Promise<Account[]> {
     return this.accountRepository.find({ where: { user: { id: userId } } });
+  }
+
+  async findById(id: string): Promise<Account> {
+    const account = await this.accountRepository.findOne({
+      where: { id },
+    });
+
+    if (!account) {
+      throw new NotFoundException(`Account with id ${id} not found.`);
+    }
+    return account;
   }
 }
