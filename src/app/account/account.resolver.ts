@@ -1,4 +1,4 @@
-import { Args, Query, Resolver } from '@nestjs/graphql';
+import { Args, Mutation, Resolver } from '@nestjs/graphql';
 import { Account } from './models/account.model';
 import { AccountService } from './account.service';
 import { CreateAccountArgs } from './dto/create-account.args';
@@ -9,7 +9,7 @@ import { User } from '../user/entities/user.entity';
 export class AccountResolver {
   constructor(private readonly accountService: AccountService) {}
 
-  @Query(() => Account)
+  @Mutation(() => Account)
   create(
     @Args() createAccountArgs: CreateAccountArgs,
     @CurrentUser() user: User,
