@@ -1,4 +1,4 @@
-import { Bank } from 'src/app/bank-transaction-adapter/constants/bank';
+import { Bank } from 'src/app/bank-transaction-adapter/models/bank.model';
 import { Statement } from 'src/app/statement/entities/statement.entity';
 import { Transaction } from 'src/app/transaction/entities/transaction.entity';
 import { User } from 'src/app/user/entities/user.entity';

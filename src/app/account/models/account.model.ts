@@ -1,8 +1,8 @@
 import { Field, Float, ID, ObjectType } from '@nestjs/graphql';
-import { Bank } from 'src/app/bank-transaction-adapter/constants/bank';
 import { Transaction } from 'src/app/transaction/models/transaction.model';
 import { Statement } from 'src/app/statement/models/statement.model';
 import { User } from 'src/app/user/models/user.model';
+import { Bank } from 'src/app/bank-transaction-adapter/models/bank.model';
 
 @ObjectType()
 export class Account {
