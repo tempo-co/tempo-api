@@ -27,7 +27,7 @@ export class TransactionService {
     return transaction;
   }
 
-  create(dtos: InputTransactionCreate[], account: Account): Promise<Transaction[]> {
+  create(dtos: InputTransactionCreate[], account?: Account): Promise<Transaction[]> {
     const transactions = dtos.map((dto) => {
       const transaction = this.transactionRepository.create(dto);
       transaction.account = account;

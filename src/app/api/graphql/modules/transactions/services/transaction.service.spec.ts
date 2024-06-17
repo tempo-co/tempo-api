@@ -84,8 +84,8 @@ describe('TransactionService', () => {
     });
   });
 
-  describe('create', () => {
-    it.skip('should successfully create a transaction', async () => {
+  describe.skip('create', () => {
+    it('should successfully create a transaction', async () => {
       const expectedTransaction = createTransactionEntity();
       jest.spyOn(transactionRepository, 'save').mockResolvedValueOnce(expectedTransaction);
 
@@ -94,7 +94,7 @@ describe('TransactionService', () => {
       expect(transaction).toEqual(expectedTransaction);
     });
 
-    it.skip('should successfully create multiple transactions', async () => {
+    it('should successfully create multiple transactions', async () => {
       const expectedTransactions: InputTransactionCreate[] = Array.from(
         {length: 3},
         createTransactionDto,

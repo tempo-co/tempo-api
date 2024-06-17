@@ -1,20 +1,20 @@
 import {Test, TestingModule} from '@nestjs/testing';
 import {UserService} from '../services/user.service';
-import {UserResolver} from './user.queries.resolver';
+import {UserQueriesResolver} from './user.queries.resolver';
 import {randomUUID} from 'crypto';
 import {faker} from '@faker-js/faker';
 import {User} from '../../../../../entities/user/user.entity';
 import {NotFoundException} from '@nestjs/common';
 
 describe('UserResolver', () => {
-  let userResolver: UserResolver;
+  let userResolver: UserQueriesResolver;
   let userService: UserService;
 
   beforeEach(async () => {
     faker.seed(123);
     const module: TestingModule = await Test.createTestingModule({
       providers: [
-        UserResolver,
+        UserQueriesResolver,
         {
           provide: UserService,
           useValue: {
@@ -25,7 +25,7 @@ describe('UserResolver', () => {
       ],
     }).compile();
 
-    userResolver = module.get<UserResolver>(UserResolver);
+    userResolver = module.get<UserQueriesResolver>(UserQueriesResolver);
     userService = module.get<UserService>(UserService);
   });
 
