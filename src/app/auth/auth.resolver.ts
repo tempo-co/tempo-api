@@ -6,7 +6,7 @@ import { CurrentUser } from './decorators/current-user.decorator';
 import { AccessToken } from './dto/access-token.output';
 import { LoginArgs } from './dto/login.args';
 import { LocalAuthGuard } from './guards/local-auth.guard';
-import { User } from '../user/entities/user.entity';
+import { User } from '../entities/user/user.entity';
 import { CreateUserArgs } from '../user/dto/create-user.args';
 
 @Resolver()

@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AuthService } from './auth.service';
 import { AuthResolver } from './auth.resolver';
-import { User } from '../user/entities/user.entity';
+import { User } from '../entities/user/user.entity';
 import { AccessToken } from './dto/access-token.output';
 import { CreateUserArgs } from '../user/dto/create-user.args';
 import { faker } from '@faker-js/faker';

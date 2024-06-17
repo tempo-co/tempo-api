@@ -3,7 +3,7 @@ import { Account } from './models/account.model';
 import { AccountService } from './account.service';
 import { CreateAccountArgs } from './dto/create-account.args';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { User } from '../user/entities/user.entity';
+import { User } from '../entities/user/user.entity';
 
 @Resolver(() => Account)
 export class AccountResolver {

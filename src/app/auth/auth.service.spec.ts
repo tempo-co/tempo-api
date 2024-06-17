@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { AuthService } from './auth.service';
 import { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
-import { User } from '../user/entities/user.entity';
+import { User } from '../entities/user/user.entity';
 import { UserService } from '../user/user.service';
 import { faker } from '@faker-js/faker';
 import { randomUUID } from 'crypto';

@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DeleteResult, Repository } from 'typeorm';
-import { User } from './entities/user.entity';
+import { User } from '../entities/user/user.entity';
 import { UserService } from './user.service';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { faker } from '@faker-js/faker';
