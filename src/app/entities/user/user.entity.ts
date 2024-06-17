@@ -1,5 +1,5 @@
-import {Account} from '../account/account.entity';
 import {Entity, Column, PrimaryGeneratedColumn, OneToMany} from 'typeorm';
+import {Account} from '../account/account.entity';
 
 //TODO: Use class validator
 @Entity()

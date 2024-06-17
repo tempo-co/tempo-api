@@ -1,6 +1,6 @@
-import {Account} from 'src/app/entities/account/account.entity';
-import {Transaction} from 'src/app/entities/transaction/transaction.entity';
 import {Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToMany} from 'typeorm';
+import {Account} from '../account/account.entity';
+import {Transaction} from '../transaction/transaction.entity';
 
 @Entity()
 export class Statement {
