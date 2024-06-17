@@ -23,5 +23,6 @@ export class User {
   createdDate: Date;
 
   @OneToMany(() => Account, (account) => account.user)
-  accounts: Account[];
+  // Why is this an array?
+  accounts?: Account[];
 }
