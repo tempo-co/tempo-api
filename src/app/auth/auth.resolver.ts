@@ -9,7 +9,7 @@ import { LocalAuthGuard } from './guards/local-auth.guard';
 import { User } from '../user/entities/user.entity';
 import { CreateUserArgs } from '../user/dto/create-user.args';
 
-@Resolver(() => User)
+@Resolver()
 export class AuthResolver {
   constructor(private readonly authService: AuthService) {}
 
