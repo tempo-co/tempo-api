@@ -3,6 +3,7 @@ import { Transaction } from './entities/transaction.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
+import { Account } from '../account/entities/account.entity';
 
 @Injectable()
 export class TransactionService {
@@ -26,7 +27,16 @@ export class TransactionService {
     return transaction;
   }
 
-  create(transactions: CreateTransactionDto[]): Promise<Transaction[]> {
+  create(
+    dtos: CreateTransactionDto[],
+    account: Account,
+  ): Promise<Transaction[]> {
+    const transactions = dtos.map((dto) => {
+      const transaction = this.transactionRepository.create(dto);
+      transaction.account = account;
+      return transaction;
+    });
+
     return this.transactionRepository.save(transactions);
   }
 }
