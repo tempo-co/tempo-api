@@ -5,7 +5,7 @@ import { Statement } from './entities/statement.entity';
 import { AccountService } from '../account/account.service';
 import { Transaction } from '../transaction/entities/transaction.entity';
 import { FileParserService } from '../file-parser/file-parser.service';
-import { BankTransactionAdapterService } from '../bank-transaction-adapter/bank-transaction-adapter.service';
+import { TransactionMapperService } from '../transaction-mapper/transaction-mapper.service';
 import { TransactionService } from '../transaction/transaction.service';
 import { UploadStatementArgs } from './dto/upload-statement.args';
 
@@ -16,7 +16,7 @@ export class StatementService {
     private readonly statementRepository: Repository<Statement>,
     private readonly accountService: AccountService,
     private readonly fileParserService: FileParserService,
-    private readonly bankTransactionAdapterService: BankTransactionAdapterService,
+    private readonly transactionMapperService: TransactionMapperService,
     private readonly transactionService: TransactionService,
   ) {}
 
@@ -35,7 +35,7 @@ export class StatementService {
 
     const data = this.fileParserService.parse(buffer, mimetype);
 
-    const createTransactionDtos = await this.bankTransactionAdapterService.map(
+    const createTransactionDtos = await this.transactionMapperService.map(
       data,
       account.bank,
     );
