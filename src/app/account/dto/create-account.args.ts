@@ -1,6 +1,6 @@
 import { Field, ArgsType } from '@nestjs/graphql';
 import { IsEnum, Length } from 'class-validator';
-import { Bank } from 'src/app/bank-transaction-adapter/constants/bank';
+import { Bank } from 'src/app/bank-transaction-adapter/models/bank.model';
 
 @ArgsType()
 export class CreateAccountArgs {
