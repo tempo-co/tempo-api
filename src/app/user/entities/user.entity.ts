@@ -1,4 +1,5 @@
-import { Entity, Column, PrimaryGeneratedColumn } from 'typeorm';
+import { Account } from 'src/app/account/entities/account.entity';
+import { Entity, Column, PrimaryGeneratedColumn, OneToMany } from 'typeorm';
 
 @Entity()
 export class User {
@@ -19,4 +20,7 @@ export class User {
 
   @Column({ type: 'date', default: () => 'CURRENT_DATE' })
   createdDate: Date;
+
+  @OneToMany(() => Account, (account) => account.user)
+  accounts: Account[];
 }

@@ -13,6 +13,10 @@ import { validate } from './config/env.validation';
 import { ThrottlerModule, minutes } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { GqlThrottlerGuard } from './config/guards/throttler.guard';
+import { Account } from './app/account/entities/account.entity';
+import { Transaction } from './app/transaction/entities/transaction.entity';
+import { Statement } from './app/statement/entities/statement.entity';
+import { Category } from './category/entities/category.entity';
 
 @Module({
   imports: [
@@ -47,7 +51,7 @@ import { GqlThrottlerGuard } from './config/guards/throttler.guard';
         password: config.get<string>('DB_PASSWORD'),
         database: config.get<string>('DB_NAME'),
         synchronize: config.get<boolean>('DB_SYNCHRONIZE'),
-        entities: [User],
+        entities: [User, Account, Transaction, Statement, Category],
       }),
     }),
     ThrottlerModule.forRoot([

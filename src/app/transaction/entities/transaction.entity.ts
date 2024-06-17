@@ -1,4 +1,7 @@
-import { Entity, Column, PrimaryGeneratedColumn } from 'typeorm';
+import { Account } from 'src/app/account/entities/account.entity';
+import { Statement } from 'src/app/statement/entities/statement.entity';
+import { Category } from 'src/category/entities/category.entity';
+import { Entity, Column, PrimaryGeneratedColumn, ManyToOne } from 'typeorm';
 
 @Entity()
 export class Transaction {
@@ -19,4 +22,13 @@ export class Transaction {
 
   @Column({ type: 'varchar', length: 3 })
   currency: string;
+
+  @ManyToOne(() => Account, (account) => account.transactions)
+  account: Account;
+
+  @ManyToOne(() => Statement, (statement) => statement.transactions)
+  statement: Statement;
+
+  @ManyToOne(() => Category, (category) => category.transactions)
+  category: Category;
 }

@@ -2,13 +2,12 @@
 # THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
 # ------------------------------------------------------
 
-type Transaction {
+type Statement {
   id: ID!
-  startedDate: DateTime!
-  completedDate: DateTime!
-  description: String!
-  amount: Float!
-  currency: String!
+  date: DateTime!
+  file: String!
+  account: Account!
+  transactions: [Transaction!]!
 }
 
 """
@@ -22,6 +21,42 @@ type User {
   email: String!
   isActive: Boolean!
   createdDate: DateTime!
+  accounts: [Account!]!
+}
+
+type Account {
+  id: ID!
+  alias: String!
+  balance: Float!
+  bank: Bank!
+  user: User!
+  transactions: [Transaction!]!
+  statements: [Statement!]!
+}
+
+"""Supported banks"""
+enum Bank {
+  ABN_AMRO
+  REVOLUT
+}
+
+type Category {
+  id: ID!
+  name: String!
+  description: String!
+  transactions: [Transaction!]!
+}
+
+type Transaction {
+  id: ID!
+  startedDate: DateTime!
+  completedDate: DateTime!
+  description: String!
+  amount: Float!
+  currency: String!
+  account: Account!
+  statement: Statement!
+  category: Category!
 }
 
 type AccessToken {
