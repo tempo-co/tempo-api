@@ -1,10 +1,10 @@
 import {Args, Query, Resolver} from '@nestjs/graphql';
 import {UserService} from '../services/user.service';
-import {User} from './user.model';
+import {User} from 'src/app/entities/user/user.entity';
 
 @Resolver(() => User)
 export class UserResolver {
-  constructor(private readonly userService: UserService) {}
+  constructor(private userService: UserService) {}
 
   @Query(() => [User])
   async users(): Promise<User[]> {
