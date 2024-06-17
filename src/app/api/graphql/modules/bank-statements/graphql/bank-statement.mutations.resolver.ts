@@ -1,6 +1,6 @@
 import {Resolver, Args, Mutation} from '@nestjs/graphql';
 import {TypeBankStatement} from './bank-statement.type';
-import {Transaction} from '../../transactions/graphql/transaction.type';
+import {Transaction} from 'src/app/entities/transaction/transaction.entity';
 import {StatementService} from '../services/statement.service';
 import {FileUpload} from 'graphql-upload';
 import {Account} from 'src/app/entities/account/account.entity';
