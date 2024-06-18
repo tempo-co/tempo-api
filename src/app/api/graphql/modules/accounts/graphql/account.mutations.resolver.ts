@@ -1,9 +1,9 @@
 import {Args, Mutation, Resolver} from '@nestjs/graphql';
 import {TypeAccount} from './account.type';
 import {AccountService} from '../services/account.service';
-import {InputAccountCreate} from './account-create.input';
 import {CurrentUser} from '../../../../../core/auth/decorators/current-user.decorator';
 import {User} from '../../../../../entities/user/user.entity';
+import {InputAccountCreate} from './account-create.input';
 
 @Resolver(() => TypeAccount)
 export class AccountResolver {
@@ -11,10 +11,9 @@ export class AccountResolver {
 
   @Mutation(() => TypeAccount)
   accountCreate(
-    @Args() {alias, bank}: InputAccountCreate,
+    @Args('inputAccountCreate') inputAccountCreate: InputAccountCreate,
     @CurrentUser() user: User,
   ): Promise<TypeAccount> {
-    const account = this.accountService.create({alias, bank}, user.id);
-    return account;
+    return this.accountService.create(inputAccountCreate, user.id);
   }
 }
