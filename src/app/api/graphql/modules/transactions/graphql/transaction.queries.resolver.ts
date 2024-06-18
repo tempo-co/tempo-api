@@ -1,18 +1,18 @@
 import {Resolver, Query, Args} from '@nestjs/graphql';
 import {TransactionService} from '../services/transaction.service';
-import {Transaction} from 'src/app/entities/transaction/transaction.entity';
+import {TypeTransaction} from './transaction.type';
 
-@Resolver(() => Transaction)
+@Resolver(() => TypeTransaction)
 export class TransactionResolver {
   constructor(private readonly transactionService: TransactionService) {}
 
-  @Query(() => [Transaction])
-  transactions(): Promise<Transaction[]> {
+  @Query(() => [TypeTransaction])
+  transactions(): Promise<TypeTransaction[]> {
     return this.transactionService.findAll();
   }
 
-  @Query(() => Transaction)
-  transaction(@Args('id') id: string): Promise<Transaction | null> {
+  @Query(() => TypeTransaction)
+  transaction(@Args('id') id: string): Promise<TypeTransaction> {
     return this.transactionService.findById(id);
   }
 }
