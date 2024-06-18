@@ -1,6 +1,5 @@
 import {ObjectType, Field, ID} from '@nestjs/graphql';
-//TODO: Add relative paths (@)
-import {Transaction} from '../../../../../entities/transaction/transaction.entity';
+import {TypeTransaction} from '../../transactions/graphql/transaction.type';
 
 @ObjectType('Category')
 export class TypeCategory {
@@ -13,6 +12,6 @@ export class TypeCategory {
   @Field()
   description: string;
 
-  @Field(() => [Transaction])
-  transactions: Transaction[];
+  @Field(() => [TypeTransaction])
+  transactions: TypeTransaction[];
 }

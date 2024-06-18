@@ -2,18 +2,12 @@
 # THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
 # ------------------------------------------------------
 
-type Statement {
+type Category {
   id: ID!
-  date: DateTime!
-  file: String!
-  account: Account!
+  name: String!
+  description: String!
   transactions: [Transaction!]!
 }
-
-"""
-A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format.
-"""
-scalar DateTime
 
 type User {
   id: ID!
@@ -24,6 +18,11 @@ type User {
   accounts: [Account!]!
 }
 
+"""
+A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format.
+"""
+scalar DateTime
+
 type Account {
   id: ID!
   alias: String!
@@ -31,7 +30,7 @@ type Account {
   bank: Bank!
   user: User!
   transactions: [Transaction!]!
-  statements: [Statement!]!
+  bankStatements: [BankStatement!]!
 }
 
 """Supported banks"""
@@ -40,10 +39,11 @@ enum Bank {
   REVOLUT
 }
 
-type Category {
+type BankStatement {
   id: ID!
-  name: String!
-  description: String!
+  date: DateTime!
+  file: String!
+  account: Account!
   transactions: [Transaction!]!
 }
 
@@ -55,7 +55,7 @@ type Transaction {
   amount: Float!
   currency: String!
   account: Account!
-  statement: Statement!
+  bankStatement: BankStatement!
   category: Category!
 }
 
@@ -73,9 +73,14 @@ type Query {
 type Mutation {
   logIn(email: String!, password: String!): AccessToken!
   signUp(name: String!, email: String!, password: String!): AccessToken!
-  uploadStatement(file: Upload!, accountId: String!): [Transaction!]!
-  create(alias: String!, bank: String!): Account!
+  uploadBankStatement(file: Upload!, accountId: String!): [Transaction!]!
+  accountCreate(inputAccountCreate: InputAccountCreate!): Account!
 }
 
 """The `Upload` scalar type represents a file upload."""
 scalar Upload
+
+input InputAccountCreate {
+  alias: String!
+  bank: String!
+}

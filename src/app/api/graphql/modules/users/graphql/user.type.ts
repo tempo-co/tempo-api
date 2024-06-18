@@ -1,8 +1,8 @@
 import {Field, ID, ObjectType} from '@nestjs/graphql';
-import {Account} from 'src/app/entities/account/account.entity';
+import {TypeAccount} from '../../accounts/graphql/account.type';
 
 @ObjectType('User')
-export class User {
+export class TypeUser {
   @Field(() => ID)
   id: string;
 
@@ -18,6 +18,6 @@ export class User {
   @Field()
   createdDate: Date;
 
-  @Field(() => [Account])
-  accounts: Account[];
+  @Field(() => [TypeAccount])
+  accounts: TypeAccount[];
 }

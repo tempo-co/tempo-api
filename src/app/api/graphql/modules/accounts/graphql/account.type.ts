@@ -1,10 +1,10 @@
 import {Field, Float, ID, ObjectType} from '@nestjs/graphql';
-import {Transaction} from '../../../../../entities/transaction/transaction.entity';
-import {BankStatement} from '../../../../../entities/bank-statement/statement.entity';
-import {User} from 'src/app/entities/user/user.entity';
 import {Bank} from 'src/app/core/transaction-mapper/models/bank.enum';
+import {TypeBankStatement} from '../../bank-statements/graphql/bank-statement.type';
+import {TypeTransaction} from '../../transactions/graphql/transaction.type';
+import {TypeUser} from '../../users/graphql/user.type';
 
-@ObjectType()
+@ObjectType('Account')
 export class TypeAccount {
   @Field(() => ID)
   id: string;
@@ -18,12 +18,12 @@ export class TypeAccount {
   @Field(() => Bank)
   bank: Bank;
 
-  @Field(() => User)
-  user: User;
+  @Field(() => TypeUser)
+  user: TypeUser;
 
-  @Field(() => [Transaction])
-  transactions: Transaction[];
+  @Field(() => [TypeTransaction])
+  transactions: TypeTransaction[];
 
-  @Field(() => [BankStatement])
-  bankStatements: BankStatement[];
+  @Field(() => [TypeBankStatement])
+  bankStatements: TypeBankStatement[];
 }

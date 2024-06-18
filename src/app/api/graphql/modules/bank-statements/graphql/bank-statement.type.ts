@@ -1,6 +1,6 @@
 import {ObjectType, Field, ID} from '@nestjs/graphql';
-import {Account} from 'src/app/entities/account/account.entity';
-import {Transaction} from '../../../../../entities/transaction/transaction.entity';
+import {TypeAccount} from '../../accounts/graphql/account.type';
+import {TypeTransaction} from '../../transactions/graphql/transaction.type';
 
 @ObjectType('BankStatement')
 export class TypeBankStatement {
@@ -13,9 +13,9 @@ export class TypeBankStatement {
   @Field()
   file: string;
 
-  @Field(() => Account)
-  account: Account;
+  @Field(() => TypeAccount)
+  account: TypeAccount;
 
-  @Field(() => [Transaction])
-  transactions: Transaction[];
+  @Field(() => [TypeTransaction])
+  transactions: TypeTransaction[];
 }
