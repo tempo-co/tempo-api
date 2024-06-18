@@ -23,13 +23,12 @@ export class Transaction {
   @Column({type: 'varchar', length: 3})
   currency: string;
 
-  //TODO: Remove '?' as this is a temporary fix for the test files
   @ManyToOne(() => Account, (account) => account.transactions)
-  account?: Account;
+  account: Account;
 
   @ManyToOne(() => BankStatement, (bankStatement) => bankStatement.transactions)
-  bankStatement?: BankStatement;
+  bankStatement: BankStatement;
 
   @ManyToOne(() => Category, (category) => category.transactions)
-  category?: Category;
+  category: Category;
 }

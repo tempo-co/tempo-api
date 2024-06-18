@@ -16,7 +16,7 @@ export class TransactionService {
     return this.transactionRepository.find();
   }
 
-  async findById(id: string): Promise<Transaction | null> {
+  async findById(id: string): Promise<Transaction> {
     const transaction = await this.transactionRepository.findOne({
       where: {id},
     });
@@ -27,7 +27,7 @@ export class TransactionService {
     return transaction;
   }
 
-  create(dtos: InputTransactionCreate[], account?: Account): Promise<Transaction[]> {
+  create(dtos: InputTransactionCreate[], account: Account): Promise<Transaction[]> {
     const transactions = dtos.map((dto) => {
       const transaction = this.transactionRepository.create(dto);
       transaction.account = account;
