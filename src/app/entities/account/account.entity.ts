@@ -1,5 +1,5 @@
 import {Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToMany} from 'typeorm';
-import {Statement} from '../statement/statement.entity';
+import {BankStatement} from '../bank-statement/statement.entity';
 import {Bank} from '../../core/transaction-mapper/models/bank.enum';
 import {Transaction} from '../transaction/transaction.entity';
 import {User} from '../user/user.entity';
@@ -27,6 +27,6 @@ export class Account {
   @OneToMany(() => Transaction, (transaction) => transaction.account)
   transactions: Transaction[];
 
-  @OneToMany(() => Statement, (statement) => statement.account)
-  statements: Statement[];
+  @OneToMany(() => BankStatement, (bankStatement) => bankStatement.account)
+  bankStatements: BankStatement[];
 }
