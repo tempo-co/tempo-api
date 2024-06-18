@@ -1,13 +1,13 @@
+import {randomUUID} from 'crypto';
 import {Test, TestingModule} from '@nestjs/testing';
+import {ConflictException} from '@nestjs/common';
+import {faker} from '@faker-js/faker';
+import {User} from '@entities/user/user.entity';
+import {CreateUserArgs} from '@modules/users/dto/create-user.args';
 import {AuthService} from './auth.service';
 import {AuthResolver} from './auth.resolver';
-import {User} from '../../entities/user/user.entity';
 import {AccessToken} from './dto/access-token.output';
-import {CreateUserArgs} from '../../api/graphql/modules/users/dto/create-user.args';
-import {faker} from '@faker-js/faker';
-import {randomUUID} from 'crypto';
 import {LoginArgs} from './dto/login.args';
-import {ConflictException} from '@nestjs/common';
 
 describe('AuthResolver', () => {
   let resolver: AuthResolver;

@@ -1,9 +1,9 @@
+import {FileUpload, GraphQLUpload} from 'graphql-upload';
 import {Resolver, Args, Mutation} from '@nestjs/graphql';
+import {Account} from '@entities/account/account.entity';
+import {TypeTransaction} from '@modules/transactions/graphql/transaction.type';
 import {TypeBankStatement} from './bank-statement.type';
 import {BankStatementService} from '../services/statement.service';
-import {FileUpload, GraphQLUpload} from 'graphql-upload';
-import {Account} from 'src/app/entities/account/account.entity';
-import {TypeTransaction} from '../../transactions/graphql/transaction.type';
 
 @Resolver(() => TypeBankStatement)
 export class BankStatementResolver {

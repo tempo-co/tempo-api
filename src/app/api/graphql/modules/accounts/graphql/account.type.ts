@@ -1,8 +1,8 @@
 import {Field, Float, ID, ObjectType} from '@nestjs/graphql';
-import {Bank} from 'src/app/core/transaction-mapper/models/bank.enum';
-import {TypeBankStatement} from '../../bank-statements/graphql/bank-statement.type';
-import {TypeTransaction} from '../../transactions/graphql/transaction.type';
-import {TypeUser} from '../../users/graphql/user.type';
+import {Bank} from '@core/transaction-mapper/models/bank.enum';
+import {TypeUser} from '@modules/users/graphql/user.type';
+import {TypeTransaction} from '@modules/transactions/graphql/transaction.type';
+import {TypeBankStatement} from '@modules/bank-statements/graphql/bank-statement.type';
 
 @ObjectType('Account')
 export class TypeAccount {

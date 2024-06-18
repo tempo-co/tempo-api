@@ -1,8 +1,8 @@
 import {ExecutionContext, Injectable} from '@nestjs/common';
 import {Reflector} from '@nestjs/core';
-import {IS_PUBLIC_KEY} from '../decorators/public.decorator';
 import {AuthGuard} from '@nestjs/passport';
 import {GqlExecutionContext} from '@nestjs/graphql';
+import {IS_PUBLIC_KEY} from '../decorators/public.decorator';
 
 /**
  * Checks for a JWT unless the route uses the @Public decorator.

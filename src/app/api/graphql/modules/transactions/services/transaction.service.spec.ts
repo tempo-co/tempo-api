@@ -1,11 +1,11 @@
-import {Test, TestingModule} from '@nestjs/testing';
-import {TransactionService} from './transaction.service';
-import {getRepositoryToken} from '@nestjs/typeorm';
-import {Transaction} from '../../../../../entities/transaction/transaction.entity';
 import {DeepPartial, Repository} from 'typeorm';
+import {Test, TestingModule} from '@nestjs/testing';
+import {getRepositoryToken} from '@nestjs/typeorm';
 import {NotFoundException} from '@nestjs/common';
 import {faker} from '@faker-js/faker';
+import {Transaction} from '@entities/transaction/transaction.entity';
 import {InputTransactionCreate} from '../graphql/transaction-create.input';
+import {TransactionService} from './transaction.service';
 
 const createTransactionDto = (): InputTransactionCreate => {
   return {
@@ -19,10 +19,7 @@ const createTransactionDto = (): InputTransactionCreate => {
 
 const createTransactionEntity = (): Transaction => {
   // FIXME: Was this throwing errors before?
-  return {
-    ...createTransactionDto(),
-    id: faker.string.uuid(),
-  };
+  return {...createTransactionDto(), id: faker.string.uuid()};
 };
 
 describe('TransactionService', () => {

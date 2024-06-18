@@ -1,7 +1,7 @@
 import {Injectable} from '@nestjs/common';
+import {InputTransactionCreate} from '@modules/transactions/graphql/transaction-create.input';
 import {TransactionMapperFactory} from './transaction-mapper.factory';
 import {Bank} from './models/bank.enum';
-import {InputTransactionCreate} from '../../api/graphql/modules/transactions/graphql/transaction-create.input';
 
 @Injectable()
 export class TransactionMapperService {

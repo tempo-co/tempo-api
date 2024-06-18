@@ -1,9 +1,9 @@
 import {Module} from '@nestjs/common';
-import {Account} from '../../../../entities/account/account.entity';
 import {TypeOrmModule} from '@nestjs/typeorm';
-import {AccountService} from './services/account.service';
-import {AccountResolver} from './graphql/account.mutations.resolver';
+import {Account} from '@entities/account/account.entity';
 import {UserModule} from '../users/users.module';
+import {AccountResolver} from './graphql/account.mutations.resolver';
+import {AccountService} from './services/account.service';
 
 @Module({
   imports: [TypeOrmModule.forFeature([Account]), UserModule],

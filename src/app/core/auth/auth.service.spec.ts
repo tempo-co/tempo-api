@@ -1,12 +1,12 @@
-import {Test, TestingModule} from '@nestjs/testing';
-import {AuthService} from './auth.service';
-import {JwtService} from '@nestjs/jwt';
 import * as argon2 from 'argon2';
-import {User} from '../../entities/user/user.entity';
-import {UserService} from '../../api/graphql/modules/users/services/user.service';
-import {faker} from '@faker-js/faker';
 import {randomUUID} from 'crypto';
-import {CreateUserArgs} from '../../api/graphql/modules/users/dto/create-user.args';
+import {Test, TestingModule} from '@nestjs/testing';
+import {JwtService} from '@nestjs/jwt';
+import {faker} from '@faker-js/faker';
+import {User} from '@entities/user/user.entity';
+import {CreateUserArgs} from '@modules/users/dto/create-user.args';
+import {UserService} from '@modules/users/services/user.service';
+import {AuthService} from './auth.service';
 
 describe('AuthService', () => {
   let authService: AuthService;
@@ -121,9 +121,7 @@ describe('AuthService', () => {
       };
 
       jwtService.signAsync = jest.fn().mockResolvedValue('access_token');
-      expect(await authService.signAccessToken(user)).toEqual({
-        access_token: 'access_token',
-      });
+      expect(await authService.signAccessToken(user)).toEqual({access_token: 'access_token'});
     });
   });
 });

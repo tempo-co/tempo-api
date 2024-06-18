@@ -1,5 +1,5 @@
+import {InputTransactionCreate} from '@modules/transactions/graphql/transaction-create.input';
 import {TransactionMapper} from '../transaction-mapper.abstract';
-import {InputTransactionCreate} from 'src/app/api/graphql/modules/transactions/graphql/transaction-create.input';
 
 type AbnAmroTransaction = {
   transactiondate: string;

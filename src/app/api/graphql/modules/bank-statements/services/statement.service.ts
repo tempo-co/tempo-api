@@ -1,14 +1,14 @@
+import {Repository} from 'typeorm';
+import {FileUpload} from 'graphql-upload';
 import {Injectable} from '@nestjs/common';
 import {InjectRepository} from '@nestjs/typeorm';
-import {Repository} from 'typeorm';
-import {BankStatement} from '../../../../../entities/bank-statement/statement.entity';
-import {AccountService} from '../../accounts/services/account.service';
-import {Transaction} from '../../../../../entities/transaction/transaction.entity';
-import {FileParserService} from '../../../../../core/file-parser/file-parser.service';
-import {TransactionMapperService} from '../../../../../core/transaction-mapper/transaction-mapper.service';
-import {TransactionService} from '../../transactions/services/transaction.service';
-import {FileUpload} from 'graphql-upload';
-import {Account} from 'src/app/entities/account/account.entity';
+import {Transaction} from '@entities/transaction/transaction.entity';
+import {Account} from '@entities/account/account.entity';
+import {BankStatement} from '@entities/bank-statement/statement.entity';
+import {AccountService} from '@modules/accounts/services/account.service';
+import {TransactionService} from '@modules/transactions/services/transaction.service';
+import {FileParserService} from '@core/file-parser/file-parser.service';
+import {TransactionMapperService} from '@core/transaction-mapper/transaction-mapper.service';
 
 type ProcessStatementOptions = {
   file: FileUpload;

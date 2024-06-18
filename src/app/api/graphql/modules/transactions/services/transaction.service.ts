@@ -1,9 +1,9 @@
-import {Injectable, NotFoundException} from '@nestjs/common';
-import {Transaction} from '../../../../../entities/transaction/transaction.entity';
-import {InjectRepository} from '@nestjs/typeorm';
 import {Repository} from 'typeorm';
+import {Injectable, NotFoundException} from '@nestjs/common';
+import {InjectRepository} from '@nestjs/typeorm';
+import {Transaction} from '@entities/transaction/transaction.entity';
+import {Account} from '@entities/account/account.entity';
 import {InputTransactionCreate} from '../graphql/transaction-create.input';
-import {Account} from '../../../../../entities/account/account.entity';
 
 @Injectable()
 export class TransactionService {
@@ -17,9 +17,7 @@ export class TransactionService {
   }
 
   async findById(id: string): Promise<Transaction> {
-    const transaction = await this.transactionRepository.findOne({
-      where: {id},
-    });
+    const transaction = await this.transactionRepository.findOne({where: {id}});
 
     if (!transaction) {
       throw new NotFoundException(`Transaction with id ${id} not found.`);

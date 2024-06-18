@@ -1,10 +1,10 @@
 import {NestFactory} from '@nestjs/core';
-import {AppModule} from './app/api/graphql/app.module';
 import {DocumentBuilder, SwaggerModule} from '@nestjs/swagger';
 import {ValidationPipe} from '@nestjs/common';
+import {ConfigService} from '@nestjs/config';
+import {AppModule} from './app/api/graphql/app.module';
 import {graphqlUploadExpress} from 'graphql-upload';
 import {altairExpress} from 'altair-express-middleware';
-import {ConfigService} from '@nestjs/config';
 import helmet from 'helmet';
 
 async function bootstrap() {
@@ -26,21 +26,11 @@ async function bootstrap() {
   );
 
   app.useGlobalPipes(new ValidationPipe());
-  app.use(
-    graphqlUploadExpress({
-      maxFileSize: 100000000,
-      maxFiles: 2,
-    }),
-  );
+  app.use(graphqlUploadExpress({maxFileSize: 100000000, maxFiles: 2}));
 
   // Uses Altair client to test file upload since Apollo Sandbox
   // sends all files as application/octet-stream MIME type
-  app.use(
-    '/altair',
-    altairExpress({
-      endpointURL: '/graphql',
-    }),
-  );
+  app.use('/altair', altairExpress({endpointURL: '/graphql'}));
 
   const config = new DocumentBuilder().setTitle('Flair API').build();
   const document = SwaggerModule.createDocument(app, config);

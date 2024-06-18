@@ -1,13 +1,13 @@
 import {Resolver, Mutation, Args} from '@nestjs/graphql';
-import {AuthService} from './auth.service';
 import {UseGuards} from '@nestjs/common';
+import {User} from '@entities/user/user.entity';
+import {CreateUserArgs} from '@modules/users/dto/create-user.args';
 import {Public} from './decorators/public.decorator';
 import {CurrentUser} from './decorators/current-user.decorator';
+import {LocalAuthGuard} from './guards/local-auth.guard';
 import {AccessToken} from './dto/access-token.output';
 import {LoginArgs} from './dto/login.args';
-import {LocalAuthGuard} from './guards/local-auth.guard';
-import {User} from '../../entities/user/user.entity';
-import {CreateUserArgs} from '../../api/graphql/modules/users/dto/create-user.args';
+import {AuthService} from './auth.service';
 
 @Resolver()
 export class AuthResolver {

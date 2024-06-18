@@ -1,7 +1,7 @@
 import {Field, Float, ID, ObjectType} from '@nestjs/graphql';
-import {TypeCategory} from '../../categories/graphql/category.type';
-import {TypeBankStatement} from '../../bank-statements/graphql/bank-statement.type';
-import {TypeAccount} from '../../accounts/graphql/account.type';
+import {TypeCategory} from '@modules/categories/graphql/category.type';
+import {TypeBankStatement} from '@modules/bank-statements/graphql/bank-statement.type';
+import {TypeAccount} from '@modules/accounts/graphql/account.type';
 
 @ObjectType('Transaction')
 export class TypeTransaction {

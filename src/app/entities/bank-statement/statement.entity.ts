@@ -1,6 +1,6 @@
 import {Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToMany} from 'typeorm';
-import {Account} from '../account/account.entity';
-import {Transaction} from '../transaction/transaction.entity';
+import {Account} from '@entities/account/account.entity';
+import {Transaction} from '@entities/transaction/transaction.entity';
 
 @Entity()
 export class BankStatement {
