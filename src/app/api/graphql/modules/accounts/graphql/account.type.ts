@@ -1,6 +1,6 @@
 import {Field, Float, ID, ObjectType} from '@nestjs/graphql';
 import {Transaction} from '../../../../../entities/transaction/transaction.entity';
-import {Statement} from '../../../../../entities/statement/statement.entity';
+import {BankStatement} from '../../../../../entities/bank-statement/statement.entity';
 import {User} from 'src/app/entities/user/user.entity';
 import {Bank} from 'src/app/core/transaction-mapper/models/bank.enum';
 
@@ -24,6 +24,6 @@ export class TypeAccount {
   @Field(() => [Transaction])
   transactions: Transaction[];
 
-  @Field(() => [Statement])
-  statements: Statement[];
+  @Field(() => [BankStatement])
+  bankStatements: BankStatement[];
 }

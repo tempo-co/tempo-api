@@ -1,7 +1,7 @@
 import {Injectable} from '@nestjs/common';
 import {InjectRepository} from '@nestjs/typeorm';
 import {Repository} from 'typeorm';
-import {Statement} from '../../../../../entities/statement/statement.entity';
+import {BankStatement} from '../../../../../entities/bank-statement/statement.entity';
 import {AccountService} from '../../accounts/services/account.service';
 import {Transaction} from '../../../../../entities/transaction/transaction.entity';
 import {FileParserService} from '../../../../../core/file-parser/file-parser.service';
@@ -16,17 +16,17 @@ type ProcessStatementOptions = {
 };
 
 @Injectable()
-export class StatementService {
+export class BankStatementService {
   constructor(
-    @InjectRepository(Statement)
-    private readonly statementRepository: Repository<Statement>,
+    @InjectRepository(BankStatement)
+    private readonly bankStatementRepository: Repository<BankStatement>,
     private readonly accountService: AccountService,
     private readonly fileParserService: FileParserService,
     private readonly transactionMapperService: TransactionMapperService,
     private readonly transactionService: TransactionService,
   ) {}
 
-  async processStatement({accountId, file}: ProcessStatementOptions): Promise<Transaction[]> {
+  async processBankStatement({accountId, file}: ProcessStatementOptions): Promise<Transaction[]> {
     const account = await this.accountService.findById(accountId);
 
     const {createReadStream, mimetype} = file;

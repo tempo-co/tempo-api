@@ -1,5 +1,5 @@
 import {Account} from '../account/account.entity';
-import {Statement} from '../statement/statement.entity';
+import {BankStatement} from '../bank-statement/statement.entity';
 import {Category} from '../category/category.entity';
 import {Entity, Column, PrimaryGeneratedColumn, ManyToOne} from 'typeorm';
 
@@ -27,8 +27,8 @@ export class Transaction {
   @ManyToOne(() => Account, (account) => account.transactions)
   account?: Account;
 
-  @ManyToOne(() => Statement, (statement) => statement.transactions)
-  statement?: Statement;
+  @ManyToOne(() => BankStatement, (bankStatement) => bankStatement.transactions)
+  bankStatement?: BankStatement;
 
   @ManyToOne(() => Category, (category) => category.transactions)
   category?: Category;

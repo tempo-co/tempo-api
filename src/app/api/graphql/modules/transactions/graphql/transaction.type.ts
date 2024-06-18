@@ -27,7 +27,7 @@ export class Transaction {
   account: Account;
 
   @Field(() => TypeBankStatement)
-  statement: TypeBankStatement;
+  bankStatement: TypeBankStatement;
 
   @Field(() => TypeCategory)
   category: TypeCategory;

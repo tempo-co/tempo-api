@@ -15,9 +15,9 @@ import {APP_GUARD} from '@nestjs/core';
 import {GqlThrottlerGuard} from '../../core/config/guards/throttler.guard';
 import {Account} from '../../entities/account/account.entity';
 import {Transaction} from '../../entities/transaction/transaction.entity';
-import {Statement} from '../../entities/statement/statement.entity';
+import {BankStatement} from '../../entities/bank-statement/statement.entity';
 import {Category} from '../../entities/category/category.entity';
-import {StatementModule} from './modules/bank-statements/statements.module';
+import {BankStatementModule} from './modules/bank-statements/statements.module';
 
 @Module({
   imports: [
@@ -52,7 +52,7 @@ import {StatementModule} from './modules/bank-statements/statements.module';
         password: config.get<string>('DB_PASSWORD'),
         database: config.get<string>('DB_NAME'),
         synchronize: config.get<boolean>('DB_SYNCHRONIZE'),
-        entities: [User, Account, Transaction, Statement, Category],
+        entities: [User, Account, Transaction, BankStatement, Category],
       }),
     }),
     ThrottlerModule.forRoot([
@@ -65,7 +65,7 @@ import {StatementModule} from './modules/bank-statements/statements.module';
     TransactionModule,
     AuthModule,
     UserModule,
-    StatementModule,
+    BankStatementModule,
   ],
   providers: [
     {
