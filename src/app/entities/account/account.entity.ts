@@ -15,10 +15,7 @@ export class Account {
   @Column({type: 'decimal', precision: 12, scale: 2})
   balance: number;
 
-  @Column({
-    type: 'enum',
-    enum: Bank,
-  })
+  @Column({type: 'enum', enum: Bank})
   bank: Bank;
 
   @ManyToOne(() => User, (user) => user.accounts)
