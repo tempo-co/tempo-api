@@ -1,5 +1,4 @@
 import {NestFactory} from '@nestjs/core';
-import {DocumentBuilder, SwaggerModule} from '@nestjs/swagger';
 import {ValidationPipe} from '@nestjs/common';
 import {ConfigService} from '@nestjs/config';
 import {AppModule} from './app/api/graphql/app.module';
@@ -31,10 +30,6 @@ async function bootstrap() {
   // Uses Altair client to test file upload since Apollo Sandbox
   // sends all files as application/octet-stream MIME type
   app.use('/altair', altairExpress({endpointURL: '/graphql'}));
-
-  const config = new DocumentBuilder().setTitle('Flair API').build();
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api', app, document);
 
   const port = app.get(ConfigService).get('PORT');
   await app.listen(port);
