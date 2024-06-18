@@ -13,13 +13,10 @@ export class AccountService {
     private readonly userService: UserService,
   ) {}
 
-  async create(createAccountArgs: InputAccountCreate, userId: string): Promise<Account> {
+  async create(inputAccountCreate: InputAccountCreate, userId: string): Promise<Account> {
     const user = await this.userService.findById(userId);
 
-    const account = this.accountRepository.create({
-      ...createAccountArgs,
-      user,
-    });
+    const account = this.accountRepository.create({...inputAccountCreate, user});
     return this.accountRepository.save(account);
   }
 
@@ -28,9 +25,7 @@ export class AccountService {
   }
 
   async findById(id: string): Promise<Account> {
-    const account = await this.accountRepository.findOne({
-      where: {id},
-    });
+    const account = await this.accountRepository.findOne({where: {id}});
 
     if (!account) {
       throw new NotFoundException(`Account with id ${id} not found.`);
