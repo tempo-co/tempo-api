@@ -1,5 +1,5 @@
 import {ObjectType, Field, ID} from '@nestjs/graphql';
-import {TypeTransaction} from '../../transactions/graphql/transaction.type';
+import {TypeTransaction} from '@modules/transactions/graphql/transaction.type';
 
 @ObjectType('Category')
 export class TypeCategory {

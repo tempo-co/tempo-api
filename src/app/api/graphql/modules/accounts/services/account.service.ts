@@ -1,9 +1,9 @@
+import {Repository} from 'typeorm';
 import {Injectable, NotFoundException} from '@nestjs/common';
 import {InjectRepository} from '@nestjs/typeorm';
-import {Repository} from 'typeorm';
-import {Account} from '../../../../../entities/account/account.entity';
+import {Account} from '@entities/account/account.entity';
+import {UserService} from '@modules/users/services/user.service';
 import {InputAccountCreate} from '../graphql/account-create.input';
-import {UserService} from '../../users/services/user.service';
 
 @Injectable()
 export class AccountService {

@@ -1,7 +1,7 @@
-import {Account} from '../account/account.entity';
-import {BankStatement} from '../bank-statement/statement.entity';
-import {Category} from '../category/category.entity';
 import {Entity, Column, PrimaryGeneratedColumn, ManyToOne} from 'typeorm';
+import {Account} from '@entities/account/account.entity';
+import {BankStatement} from '@entities/bank-statement/statement.entity';
+import {Category} from '@entities/category/category.entity';
 
 @Entity()
 export class Transaction {

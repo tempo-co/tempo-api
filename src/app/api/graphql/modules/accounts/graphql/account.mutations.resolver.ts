@@ -1,8 +1,8 @@
 import {Args, Mutation, Resolver} from '@nestjs/graphql';
-import {TypeAccount} from './account.type';
+import {User} from '@entities/user/user.entity';
+import {CurrentUser} from '@core/auth/decorators/current-user.decorator';
 import {AccountService} from '../services/account.service';
-import {CurrentUser} from '../../../../../core/auth/decorators/current-user.decorator';
-import {User} from '../../../../../entities/user/user.entity';
+import {TypeAccount} from './account.type';
 import {InputAccountCreate} from './account-create.input';
 
 @Resolver(() => TypeAccount)

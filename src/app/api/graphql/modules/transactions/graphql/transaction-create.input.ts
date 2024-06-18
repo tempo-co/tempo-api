@@ -1,5 +1,5 @@
-import {InputType} from '@nestjs/graphql';
 import {IsDate, IsNotEmpty, IsNumber, IsString, Length, Max, Min} from 'class-validator';
+import {InputType} from '@nestjs/graphql';
 
 @InputType()
 export class InputTransactionCreate {

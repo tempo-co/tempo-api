@@ -1,5 +1,5 @@
 import {validate} from 'class-validator';
-import {InputTransactionCreate} from '../../api/graphql/modules/transactions/graphql/transaction-create.input';
+import {InputTransactionCreate} from '@modules/transactions/graphql/transaction-create.input';
 
 export abstract class TransactionMapper {
   /**

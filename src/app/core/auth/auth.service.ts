@@ -1,10 +1,10 @@
+import * as argon2 from 'argon2';
 import {Injectable, UnauthorizedException} from '@nestjs/common';
 import {JwtService} from '@nestjs/jwt';
-import * as argon2 from 'argon2';
+import {CreateUserArgs} from '@modules/users/dto/create-user.args';
+import {UserService} from '@modules/users/services/user.service';
+import {User} from '@entities/user/user.entity';
 import {AccessToken} from './dto/access-token.output';
-import {User} from '../../entities/user/user.entity';
-import {UserService} from '../../api/graphql/modules/users/services/user.service';
-import {CreateUserArgs} from '../../api/graphql/modules/users/dto/create-user.args';
 
 @Injectable()
 export class AuthService {
@@ -27,7 +27,6 @@ export class AuthService {
     if (!passwordMatches) {
       throw new Error('Unauthorized');
     }
-
     return user;
   }
 
@@ -39,10 +38,7 @@ export class AuthService {
   }
 
   async signAccessToken(user: User): Promise<AccessToken> {
-    const payload = {
-      sub: user.id,
-      email: user.email,
-    };
+    const payload = {sub: user.id, email: user.email};
 
     const jwt = await this.jwtService.signAsync(payload);
     return {access_token: jwt};

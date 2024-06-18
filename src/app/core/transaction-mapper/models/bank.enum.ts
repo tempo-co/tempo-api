@@ -5,7 +5,4 @@ export enum Bank {
   REVOLUT = 'REVOLUT',
 }
 
-registerEnumType(Bank, {
-  name: 'Bank',
-  description: 'Supported banks',
-});
+registerEnumType(Bank, {name: 'Bank', description: 'Supported banks'});
