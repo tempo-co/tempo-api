@@ -7,8 +7,9 @@ export class TypeBankStatement {
   @Field(() => ID)
   id: string;
 
-  @Field()
-  file: Buffer;
+  // TODO: Figure out how to send file back to client
+  // @Field()
+  // file: Buffer;
 
   @Field(() => TypeAccount)
   account: TypeAccount;

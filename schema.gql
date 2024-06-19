@@ -41,8 +41,6 @@ enum Bank {
 
 type BankStatement {
   id: ID!
-  date: DateTime!
-  file: String!
   account: Account!
   transactions: [Transaction!]!
 }
@@ -74,13 +72,8 @@ type Mutation {
   logIn(email: String!, password: String!): AccessToken!
   signUp(name: String!, email: String!, password: String!): AccessToken!
   bankStatementUpload(file: Upload!, accountId: String!): [Transaction!]!
-  accountCreate(inputAccountCreate: InputAccountCreate!): Account!
+  accountCreate(alias: String!, bank: String!): Account!
 }
 
 """The `Upload` scalar type represents a file upload."""
 scalar Upload
-
-input InputAccountCreate {
-  alias: String!
-  bank: String!
-}
