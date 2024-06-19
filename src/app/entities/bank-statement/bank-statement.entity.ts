@@ -7,11 +7,8 @@ export class BankStatement {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({type: 'date'})
-  date: Date;
-
-  @Column({type: 'varchar', length: 255})
-  file: string;
+  @Column({type: 'bytea'})
+  file: Buffer;
 
   @ManyToOne(() => Account, (account) => account.bankStatements)
   account: Account;
