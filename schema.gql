@@ -57,7 +57,7 @@ type Transaction {
   category: Category!
 }
 
-type AccessToken {
+type TypeAccessToken {
   access_token: String!
 }
 
@@ -69,8 +69,8 @@ type Query {
 }
 
 type Mutation {
-  logIn(email: String!, password: String!): AccessToken!
-  signUp(name: String!, email: String!, password: String!): AccessToken!
+  logIn(email: String!, password: String!): TypeAccessToken!
+  signUp(name: String!, email: String!, password: String!): TypeAccessToken!
   bankStatementUpload(file: Upload!, accountId: String!): [Transaction!]!
   accountCreate(alias: String!, bank: String!): Account!
 }
