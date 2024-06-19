@@ -7,8 +7,8 @@ import {UserModule} from '@modules/users/user.module';
 import {LocalStrategy} from './strategies/local.strategy';
 import {JwtStrategy} from './strategies/jwt.strategy';
 import {JwtAuthGuard} from './guards/jwt-auth.guard';
-import {AuthResolver} from './auth.resolver';
-import {AuthService} from './auth.service';
+import {AuthService} from './services/auth.service';
+import {AuthResolver} from './graphql/auth.mutations.resolver';
 
 @Module({
   imports: [

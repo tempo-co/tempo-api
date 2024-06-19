@@ -3,7 +3,7 @@ import {Injectable, UnauthorizedException} from '@nestjs/common';
 import {JwtService} from '@nestjs/jwt';
 import {UserOptions, UserService} from '@modules/users/services/user.service';
 import {User} from '@entities/user/user.entity';
-import {AccessToken} from './dto/access-token.output';
+import {TypeAccessToken} from '../graphql/access-token.type';
 
 @Injectable()
 export class AuthService {
@@ -38,7 +38,7 @@ export class AuthService {
     return this.userService.create(user);
   }
 
-  async signAccessToken(user: User): Promise<AccessToken> {
+  async signAccessToken(user: User): Promise<TypeAccessToken> {
     const payload = {sub: user.id, email: user.email};
 
     const jwt = await this.jwtService.signAsync(payload);
