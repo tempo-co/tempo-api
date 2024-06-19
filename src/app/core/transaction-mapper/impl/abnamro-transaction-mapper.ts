@@ -1,5 +1,4 @@
-import {Transaction} from '@entities/transaction/transaction.entity';
-import {TransactionMapper} from '../transaction-mapper.interface';
+import {TransactionMapper, TransactionPartial} from '../transaction-mapper.interface';
 
 type AbnAmroTransaction = {
   transactiondate: string;
@@ -12,7 +11,7 @@ type AbnAmroTransaction = {
 };
 
 export class AbnAmroTransactionMapper implements TransactionMapper {
-  map(transaction: AbnAmroTransaction): Partial<Transaction> {
+  map(transaction: AbnAmroTransaction): TransactionPartial {
     return {
       startedDate: this.parseDate(transaction.transactiondate),
       completedDate: this.parseDate(transaction.valuedate),
