@@ -1,5 +1,5 @@
-import {InputTransactionCreate} from '@modules/transactions/graphql/transaction-create.input';
+import {Transaction} from '@entities/transaction/transaction.entity';
 
 export interface TransactionMapper {
-  map(data: unknown): InputTransactionCreate;
+  map(data: unknown): Partial<Transaction>;
 }
