@@ -1,6 +1,15 @@
-import {Args, ID, Query, Resolver} from '@nestjs/graphql';
+import {Args, ArgsType, Field, ID, Query, Resolver} from '@nestjs/graphql';
 import {UserService} from '../services/user.service';
 import {TypeUser} from './user.type';
+import {IsNotEmpty, IsUUID} from 'class-validator';
+
+@ArgsType()
+class UserArgs {
+  @Field(() => ID)
+  @IsNotEmpty()
+  @IsUUID('4')
+  id: TypeUser['id'];
+}
 
 @Resolver(() => TypeUser)
 export class UserQueriesResolver {
@@ -12,7 +21,7 @@ export class UserQueriesResolver {
   }
 
   @Query(() => TypeUser)
-  async user(@Args('id', {type: () => ID}) id: TypeUser['id']): Promise<TypeUser> {
+  async user(@Args() {id}: UserArgs): Promise<TypeUser> {
     return this.userService.findById(id);
   }
 }
