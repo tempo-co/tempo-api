@@ -1,4 +1,4 @@
-import {InputTransactionCreate} from '@modules/transactions/graphql/transaction-create.input';
+import {Transaction} from '@entities/transaction/transaction.entity';
 import {TransactionMapper} from '../transaction-mapper.interface';
 
 type RevolutTransaction = {
@@ -15,7 +15,7 @@ type RevolutTransaction = {
 };
 
 export class RevolutTransactionMapper implements TransactionMapper {
-  map(transaction: RevolutTransaction): InputTransactionCreate {
+  map(transaction: RevolutTransaction): Partial<Transaction> {
     return {
       startedDate: new Date(transaction.startedDate),
       completedDate: new Date(transaction.completedDate),

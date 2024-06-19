@@ -1,4 +1,4 @@
-import {InputTransactionCreate} from '@modules/transactions/graphql/transaction-create.input';
+import {Transaction} from '@entities/transaction/transaction.entity';
 import {TransactionMapper} from '../transaction-mapper.interface';
 
 type AbnAmroTransaction = {
@@ -12,7 +12,7 @@ type AbnAmroTransaction = {
 };
 
 export class AbnAmroTransactionMapper implements TransactionMapper {
-  map(transaction: AbnAmroTransaction): InputTransactionCreate {
+  map(transaction: AbnAmroTransaction): Partial<Transaction> {
     return {
       startedDate: this.parseDate(transaction.transactiondate),
       completedDate: this.parseDate(transaction.valuedate),

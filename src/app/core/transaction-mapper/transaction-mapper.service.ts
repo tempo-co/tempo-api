@@ -1,16 +1,16 @@
+import {validate} from 'class-validator';
 import {BadRequestException, Injectable} from '@nestjs/common';
-import {InputTransactionCreate} from '@modules/transactions/graphql/transaction-create.input';
+import {Transaction} from '@entities/transaction/transaction.entity';
 import {TransactionMapperFactory} from './transaction-mapper.factory';
 import {Bank} from './models/bank.enum';
-import {validate} from 'class-validator';
 
 @Injectable()
 export class TransactionMapperService {
   constructor(private readonly transactionMapperFactory: TransactionMapperFactory) {}
 
-  async map(data: unknown[], bank: Bank): Promise<InputTransactionCreate[]> {
+  async map(data: unknown[], bank: Bank): Promise<Partial<Transaction>[]> {
     const mapper = this.transactionMapperFactory.create(bank);
-    // TODO: Don't use InputTransactionCreate
+
     const transactions = await Promise.all(
       data.map(async (rawTransaction) => {
         const transaction = mapper.map(rawTransaction);

@@ -3,7 +3,6 @@ import {Injectable, NotFoundException} from '@nestjs/common';
 import {InjectRepository} from '@nestjs/typeorm';
 import {Transaction} from '@entities/transaction/transaction.entity';
 import {Account} from '@entities/account/account.entity';
-import {InputTransactionCreate} from '../graphql/transaction-create.input';
 
 @Injectable()
 export class TransactionService {
@@ -25,12 +24,10 @@ export class TransactionService {
     return transaction;
   }
 
-  create(dtos: InputTransactionCreate[], account: Account): Promise<Transaction[]> {
-    const transactions = dtos.map((dto) => {
-      const transaction = this.transactionRepository.create(dto);
-      transaction.account = account;
-      return transaction;
-    });
+  create(partialTransactions: Partial<Transaction>[], account: Account): Promise<Transaction[]> {
+    const transactions = partialTransactions.map((partialTransaction) =>
+      this.transactionRepository.create({...partialTransaction, account}),
+    );
 
     return this.transactionRepository.save(transactions);
   }
