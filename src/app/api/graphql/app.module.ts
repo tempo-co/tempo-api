@@ -37,6 +37,7 @@ import {Account} from '@entities/account/account.entity';
       introspection: true,
       plugins: [ApolloServerPluginLandingPageLocalDefault()],
       context: ({req, res}: {req: Request; res: Response}) => ({req, res}),
+      csrfPrevention: true,
     }),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
