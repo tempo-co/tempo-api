@@ -8,10 +8,7 @@ export class TypeBankStatement {
   id: string;
 
   @Field()
-  date: Date;
-
-  @Field()
-  file: string;
+  file: Buffer;
 
   @Field(() => TypeAccount)
   account: TypeAccount;
