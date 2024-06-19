@@ -15,7 +15,7 @@ export class TransactionService {
     return this.transactionRepository.find();
   }
 
-  async findById(id: string): Promise<Transaction> {
+  async findById(id: Transaction['id']): Promise<Transaction> {
     const transaction = await this.transactionRepository.findOne({where: {id}});
 
     if (!transaction) {

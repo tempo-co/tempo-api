@@ -63,9 +63,9 @@ type TypeAccessToken {
 
 type Query {
   transactions: [Transaction!]!
-  transaction(id: String!): Transaction!
+  transaction(id: ID!): Transaction!
   users: [User!]!
-  user(id: String!): User!
+  user(id: ID!): User!
 }
 
 type Mutation {

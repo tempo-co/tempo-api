@@ -16,7 +16,7 @@ export class UserService {
     return this.userRepository.find();
   }
 
-  async findById(id: string): Promise<User> {
+  async findById(id: User['id']): Promise<User> {
     const user = await this.userRepository.findOne({where: {id}});
 
     if (!user) {
@@ -25,7 +25,7 @@ export class UserService {
     return user;
   }
 
-  async findByEmail(email: string): Promise<User> {
+  async findByEmail(email: User['id']): Promise<User> {
     const user = await this.userRepository.findOne({where: {email}});
 
     if (!user) {
@@ -34,7 +34,7 @@ export class UserService {
     return user;
   }
 
-  async remove(id: string): Promise<void> {
+  async remove(id: User['id']): Promise<void> {
     await this.userRepository.delete(id);
   }
 
