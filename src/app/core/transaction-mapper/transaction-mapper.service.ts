@@ -8,7 +8,7 @@ import {Bank} from './models/bank.enum';
 export class TransactionMapperService {
   constructor(private readonly transactionMapperFactory: TransactionMapperFactory) {}
 
-  async map(data: unknown[], bank: Bank): Promise<Partial<Transaction>[]> {
+  async map(data: Record<string, string>[], bank: Bank): Promise<Partial<Transaction>[]> {
     const mapper = this.transactionMapperFactory.create(bank);
 
     const transactions = await Promise.all(
