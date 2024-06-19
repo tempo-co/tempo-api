@@ -1,5 +1,5 @@
 import {InputTransactionCreate} from '@modules/transactions/graphql/transaction-create.input';
-import {TransactionMapper} from '../transaction-mapper.abstract';
+import {TransactionMapper} from '../transaction-mapper.interface';
 
 type AbnAmroTransaction = {
   transactiondate: string;
@@ -11,23 +11,15 @@ type AbnAmroTransaction = {
   mutationcode: string;
 };
 
-export class AbnAmroTransactionMapper extends TransactionMapper {
-  async map(data: AbnAmroTransaction[]) {
-    const transactions: InputTransactionCreate[] = [];
-
-    for (const rawTxn of data) {
-      const transaction: InputTransactionCreate = {
-        startedDate: this.parseDate(rawTxn.transactiondate),
-        completedDate: this.parseDate(rawTxn.valuedate),
-        description: rawTxn.description.replace(/\s+/g, ' ').trim(),
-        amount: parseFloat(rawTxn.amount),
-        currency: rawTxn.mutationcode,
-      };
-
-      await super.validateTransaction(transaction);
-      transactions.push(transaction);
-    }
-    return transactions;
+export class AbnAmroTransactionMapper implements TransactionMapper {
+  map(transaction: AbnAmroTransaction): InputTransactionCreate {
+    return {
+      startedDate: this.parseDate(transaction.transactiondate),
+      completedDate: this.parseDate(transaction.valuedate),
+      description: transaction.description.replace(/\s+/g, ' ').trim(),
+      amount: parseFloat(transaction.amount),
+      currency: transaction.mutationcode,
+    };
   }
 
   private parseDate(dateString: string): Date {
