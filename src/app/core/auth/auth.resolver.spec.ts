@@ -3,11 +3,11 @@ import {Test, TestingModule} from '@nestjs/testing';
 import {ConflictException} from '@nestjs/common';
 import {faker} from '@faker-js/faker';
 import {User} from '@entities/user/user.entity';
-import {CreateUserArgs} from '@modules/users/dto/create-user.args';
 import {AuthService} from './auth.service';
 import {AuthResolver} from './auth.resolver';
 import {AccessToken} from './dto/access-token.output';
-import {LoginArgs} from './dto/login.args';
+import {ArgsLogIn} from './dto/login.args';
+import {ArgsSignUp} from './dto/signup.args';
 
 describe('AuthResolver', () => {
   let resolver: AuthResolver;
@@ -38,7 +38,7 @@ describe('AuthResolver', () => {
 
   describe('logIn', () => {
     it('should return an access token', async () => {
-      const loginArgs: LoginArgs = {
+      const loginArgs: ArgsLogIn = {
         email: faker.internet.email(),
         password: faker.internet.password(),
       };
@@ -62,7 +62,7 @@ describe('AuthResolver', () => {
 
   describe('signUp', () => {
     it('should create a user and return an access token', async () => {
-      const createUserArgs: CreateUserArgs = {
+      const createUserArgs: ArgsSignUp = {
         name: faker.person.fullName(),
         email: faker.internet.email(),
         password: faker.internet.password(),
@@ -87,7 +87,7 @@ describe('AuthResolver', () => {
     });
 
     it('should throw ConflictException if email already exists', async () => {
-      const createUserArgs: CreateUserArgs = {
+      const createUserArgs: ArgsSignUp = {
         name: faker.person.fullName(),
         email: faker.internet.email(),
         password: faker.internet.password(),
