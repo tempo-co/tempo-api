@@ -1,3 +1,3 @@
 export interface FileParser {
-  parse(fileBuffer: Buffer): unknown[];
+  parse(fileBuffer: Buffer): Record<string, string>[];
 }

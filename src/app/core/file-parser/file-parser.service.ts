@@ -5,7 +5,7 @@ import {FileParserFactory} from './file-parser.factory';
 export class FileParserService {
   constructor(private readonly fileParserFactory: FileParserFactory) {}
 
-  parse(buffer: Buffer, mimetype: string): unknown[] {
+  parse(buffer: Buffer, mimetype: string): Record<string, string>[] {
     const fileParser = this.fileParserFactory.create(mimetype);
     const data = fileParser.parse(buffer);
     return data;
