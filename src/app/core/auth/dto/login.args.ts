@@ -2,7 +2,7 @@ import {ArgsType, Field} from '@nestjs/graphql';
 import {IsEmail, IsString, MaxLength, MinLength} from 'class-validator';
 
 @ArgsType()
-export class LoginArgs {
+export class ArgsLogIn {
   @Field()
   @IsEmail()
   email: string;
