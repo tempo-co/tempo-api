@@ -9,10 +9,12 @@ import {AccountService} from '@modules/accounts/services/account.service';
 import {TransactionService} from '@modules/transactions/services/transaction.service';
 import {FileParserService} from '@core/file-parser/file-parser.service';
 import {TransactionMapperService} from '@core/transaction-mapper/transaction-mapper.service';
+import {ReadStream} from 'fs-capacitor';
 
-type ProcessStatementOptions = {
-  file: FileUpload;
-  accountId: Account['id'];
+type CreateOptions = {
+  file: Buffer;
+  account: Account;
+  transactions: Transaction[];
 };
 
 @Injectable()
@@ -26,25 +28,33 @@ export class BankStatementService {
     private readonly transactionService: TransactionService,
   ) {}
 
-  async processBankStatement({accountId, file}: ProcessStatementOptions): Promise<Transaction[]> {
+  async process(file: FileUpload, accountId: Account['id']): Promise<BankStatement> {
     const account = await this.accountService.findById(accountId);
 
     const {createReadStream, mimetype} = file;
     const stream = createReadStream();
-    const chunks: Buffer[] = [];
-
-    for await (const chunk of stream) {
-      chunks.push(chunk);
-    }
-    const buffer = Buffer.concat(chunks);
+    const buffer = await this.readStream(stream);
 
     const data = this.fileParserService.parse(buffer, mimetype);
 
     const createTransactionDtos = await this.transactionMapperService.map(data, account.bank);
     const transactions = await this.transactionService.create(createTransactionDtos, account);
 
-    // TODO: save statement in db
+    const options = {file: buffer, account, transactions};
+    const bankStatement: BankStatement = await this.bankStatementRepository.save(options);
 
-    return transactions;
+    return bankStatement;
+  }
+
+  async create(options: CreateOptions): Promise<BankStatement> {
+    return this.bankStatementRepository.save(options);
+  }
+
+  private async readStream(stream: ReadStream): Promise<Buffer> {
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) {
+      chunks.push(chunk);
+    }
+    return Buffer.concat(chunks);
   }
 }
