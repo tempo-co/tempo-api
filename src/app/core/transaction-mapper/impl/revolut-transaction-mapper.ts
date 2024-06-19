@@ -1,5 +1,4 @@
-import {Transaction} from '@entities/transaction/transaction.entity';
-import {TransactionMapper} from '../transaction-mapper.interface';
+import {TransactionMapper, TransactionPartial} from '../transaction-mapper.interface';
 
 type RevolutTransaction = {
   type: string;
@@ -15,7 +14,7 @@ type RevolutTransaction = {
 };
 
 export class RevolutTransactionMapper implements TransactionMapper {
-  map(transaction: RevolutTransaction): Partial<Transaction> {
+  map(transaction: RevolutTransaction): TransactionPartial {
     return {
       startedDate: new Date(transaction.startedDate),
       completedDate: new Date(transaction.completedDate),
