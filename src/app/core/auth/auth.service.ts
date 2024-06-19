@@ -1,8 +1,7 @@
 import * as argon2 from 'argon2';
 import {Injectable, UnauthorizedException} from '@nestjs/common';
 import {JwtService} from '@nestjs/jwt';
-import {CreateUserArgs} from '@modules/users/dto/create-user.args';
-import {UserService} from '@modules/users/services/user.service';
+import {UserOptions, UserService} from '@modules/users/services/user.service';
 import {User} from '@entities/user/user.entity';
 import {AccessToken} from './dto/access-token.output';
 
@@ -30,9 +29,11 @@ export class AuthService {
     return user;
   }
 
-  async createUser(createUserArgs: CreateUserArgs): Promise<User> {
-    const hash = await argon2.hash(createUserArgs.password);
-    const user = {...createUserArgs, password: hash};
+  async createUser(userOptions: UserOptions): Promise<User> {
+    const {name, email, password} = userOptions;
+
+    const hash = await argon2.hash(password);
+    const user = {name, email, password: hash};
 
     return this.userService.create(user);
   }
