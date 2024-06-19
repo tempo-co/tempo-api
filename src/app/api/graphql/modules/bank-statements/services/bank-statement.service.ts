@@ -4,7 +4,7 @@ import {Injectable} from '@nestjs/common';
 import {InjectRepository} from '@nestjs/typeorm';
 import {Transaction} from '@entities/transaction/transaction.entity';
 import {Account} from '@entities/account/account.entity';
-import {BankStatement} from '@entities/bank-statement/statement.entity';
+import {BankStatement} from '@entities/bank-statement/bank-statement.entity';
 import {AccountService} from '@modules/accounts/services/account.service';
 import {TransactionService} from '@modules/transactions/services/transaction.service';
 import {FileParserService} from '@core/file-parser/file-parser.service';

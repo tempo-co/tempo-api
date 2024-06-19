@@ -3,7 +3,7 @@ import {Resolver, Args, Mutation} from '@nestjs/graphql';
 import {Account} from '@entities/account/account.entity';
 import {TypeTransaction} from '@modules/transactions/graphql/transaction.type';
 import {TypeBankStatement} from './bank-statement.type';
-import {BankStatementService} from '../services/statement.service';
+import {BankStatementService} from '../services/bank-statement.service';
 
 @Resolver(() => TypeBankStatement)
 export class BankStatementResolver {

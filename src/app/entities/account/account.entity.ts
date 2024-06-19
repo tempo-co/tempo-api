@@ -1,5 +1,5 @@
 import {Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToMany} from 'typeorm';
-import {BankStatement} from '@entities/bank-statement/statement.entity';
+import {BankStatement} from '@entities/bank-statement/bank-statement.entity';
 import {Transaction} from '@entities/transaction/transaction.entity';
 import {User} from '@entities/user/user.entity';
 import {Bank} from '@core/transaction-mapper/models/bank.enum';
