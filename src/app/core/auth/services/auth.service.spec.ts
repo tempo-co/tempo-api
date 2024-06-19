@@ -6,7 +6,7 @@ import {faker} from '@faker-js/faker';
 import {User} from '@entities/user/user.entity';
 import {CreateUserArgs} from '@modules/users/dto/create-user.args';
 import {UserService} from '@modules/users/services/user.service';
-import {AuthService} from './auth.service';
+import {AuthService} from './services/auth.service';
 
 describe('AuthService', () => {
   let authService: AuthService;

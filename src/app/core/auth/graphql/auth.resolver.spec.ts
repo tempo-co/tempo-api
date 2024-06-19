@@ -3,11 +3,11 @@ import {Test, TestingModule} from '@nestjs/testing';
 import {ConflictException} from '@nestjs/common';
 import {faker} from '@faker-js/faker';
 import {User} from '@entities/user/user.entity';
-import {AuthService} from './auth.service';
-import {AuthResolver} from './auth.resolver';
-import {AccessToken} from './dto/access-token.output';
-import {ArgsLogIn} from './dto/login.args';
-import {ArgsSignUp} from './dto/signup.args';
+import {AuthService} from '../services/auth.service';
+import {AuthResolver} from './auth.mutations.resolver';
+import {TypeAccessToken} from './access-token.type';
+import {ArgsLogIn} from './login.args';
+import {ArgsSignUp} from './signup.args';
 
 describe('AuthResolver', () => {
   let resolver: AuthResolver;
@@ -51,7 +51,7 @@ describe('AuthResolver', () => {
         password: faker.internet.password(),
       };
 
-      const accessToken: AccessToken = {
+      const accessToken: TypeAccessToken = {
         access_token: 'access_token',
       };
       jest.spyOn(authService, 'signAccessToken').mockResolvedValue(accessToken);
@@ -77,7 +77,7 @@ describe('AuthResolver', () => {
         password: faker.internet.password(),
       };
 
-      const accessToken: AccessToken = {
+      const accessToken: TypeAccessToken = {
         access_token: 'access_token',
       };
       jest.spyOn(authService, 'createUser').mockResolvedValue(user);
