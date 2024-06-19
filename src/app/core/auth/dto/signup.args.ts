@@ -2,7 +2,7 @@ import {Field, ArgsType} from '@nestjs/graphql';
 import {IsEmail, IsString, Length} from 'class-validator';
 
 @ArgsType()
-export class CreateUserArgs {
+export class ArgsSignUp {
   @Field()
   @IsString()
   @Length(1, 255)
