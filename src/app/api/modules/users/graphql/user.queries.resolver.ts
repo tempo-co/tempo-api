@@ -1,4 +1,4 @@
-import {Args, Query, Resolver} from '@nestjs/graphql';
+import {Args, ID, Query, Resolver} from '@nestjs/graphql';
 import {UserService} from '../services/user.service';
 import {TypeUser} from './user.type';
 
@@ -12,7 +12,7 @@ export class UserQueriesResolver {
   }
 
   @Query(() => TypeUser)
-  async user(@Args('id') id: string): Promise<TypeUser> {
+  async user(@Args('id', {type: () => ID}) id: TypeUser['id']): Promise<TypeUser> {
     return this.userService.findById(id);
   }
 }
