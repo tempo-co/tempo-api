@@ -25,7 +25,7 @@ export class AuthService {
     const passwordMatches = await argon2.verify(user.password, password);
 
     if (!passwordMatches) {
-      throw new Error('Unauthorized');
+      throw new UnauthorizedException();
     }
     return user;
   }
