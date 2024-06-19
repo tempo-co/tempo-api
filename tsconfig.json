@@ -11,7 +11,7 @@
     "outDir": "./dist",
     "baseUrl": "./",
     "paths": {
-      "@modules/*": ["src/app/api/graphql/modules/*"],
+      "@modules/*": ["src/app/api/modules/*"],
       "@core/*": ["src/app/core/*"],
       "@entities/*": ["src/app/entities/*"],
     },
