@@ -8,7 +8,7 @@ import {ApolloDriver, ApolloDriverConfig} from '@nestjs/apollo';
 import {ApolloServerPluginLandingPageLocalDefault} from '@apollo/server/plugin/landingPage/default';
 import {TransactionModule} from '@modules/transactions/transactions.module';
 import {UserModule} from '@modules/users/users.module';
-import {BankStatementModule} from '@modules/bank-statements/statements.module';
+import {BankStatementModule} from '@modules/bank-statements/bank-statement.module';
 import {FileParserModule} from '@core/file-parser/file-parser.module';
 import {AuthModule} from '@core/auth/auth.module';
 import {GqlThrottlerGuard} from '@core/config/guards/throttler.guard';
@@ -16,7 +16,7 @@ import {validate} from '@core/config/env.validation';
 import {Category} from '@entities/category/category.entity';
 import {User} from '@entities/user/user.entity';
 import {Transaction} from '@entities/transaction/transaction.entity';
-import {BankStatement} from '@entities/bank-statement/statement.entity';
+import {BankStatement} from '@entities/bank-statement/bank-statement.entity';
 import {Account} from '@entities/account/account.entity';
 
 @Module({

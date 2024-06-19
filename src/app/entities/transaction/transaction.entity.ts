@@ -1,6 +1,6 @@
 import {Entity, Column, PrimaryGeneratedColumn, ManyToOne} from 'typeorm';
 import {Account} from '@entities/account/account.entity';
-import {BankStatement} from '@entities/bank-statement/statement.entity';
+import {BankStatement} from '@entities/bank-statement/bank-statement.entity';
 import {Category} from '@entities/category/category.entity';
 
 @Entity()
