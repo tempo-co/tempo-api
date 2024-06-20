@@ -7,7 +7,7 @@ import {FileUpload, GraphQLUpload} from 'graphql-upload';
 export class ArgsBankStatementUpload {
   @Field(() => GraphQLUpload)
   @IsNotEmpty()
-  file: FileUpload;
+  file: Promise<FileUpload>;
 
   @Field(() => String)
   @IsNotEmpty()
