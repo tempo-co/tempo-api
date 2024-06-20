@@ -7,19 +7,19 @@ import {User} from '@entities/user/user.entity';
 
 import {AuthService} from '../services/auth.service';
 import {TypeAccessToken} from './access-token.type';
-import {AuthResolver} from './auth.mutations.resolver';
+import {AuthMutationsResolver} from './auth.mutations.resolver';
 import {ArgsLogIn} from './login.args';
 import {ArgsSignUp} from './signup.args';
 
 describe('AuthResolver', () => {
-  let resolver: AuthResolver;
+  let resolver: AuthMutationsResolver;
   let authService: AuthService;
 
   beforeEach(async () => {
     faker.seed(545);
     const module: TestingModule = await Test.createTestingModule({
       providers: [
-        AuthResolver,
+        AuthMutationsResolver,
         {
           provide: AuthService,
           useValue: {
@@ -30,7 +30,7 @@ describe('AuthResolver', () => {
       ],
     }).compile();
 
-    resolver = module.get<AuthResolver>(AuthResolver);
+    resolver = module.get<AuthMutationsResolver>(AuthMutationsResolver);
     authService = module.get<AuthService>(AuthService);
   });
 
