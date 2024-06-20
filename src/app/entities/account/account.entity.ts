@@ -12,7 +12,7 @@ export class Account {
   @Column({type: 'varchar', length: 255})
   alias: string;
 
-  @Column({type: 'decimal', precision: 12, scale: 2})
+  @Column({type: 'decimal', precision: 12, scale: 2, default: 0})
   balance: number;
 
   @Column({type: 'enum', enum: Bank})
