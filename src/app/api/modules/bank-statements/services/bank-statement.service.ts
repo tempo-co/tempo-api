@@ -30,15 +30,21 @@ export class BankStatementService {
     const stream = createReadStream();
     const buffer = await this.readStream(stream);
 
-    const data = this.fileParserService.parse(buffer, mimetype);
+    const jsonData = this.fileParserService.parse(buffer, mimetype);
 
-    const createTransactionDtos = await this.transactionMapperService.map(data, account.bank);
-    const transactions = await this.transactionService.create(createTransactionDtos, account);
+    const mappedTransactions = await this.transactionMapperService.map(jsonData, account.bank);
 
-    const options = {file: buffer, account, transactions};
-    const bankStatement: BankStatement = await this.bankStatementRepository.save(options);
+    const bankStatement = this.bankStatementRepository.create({file: buffer, account});
+    const savedBankStatement = await this.bankStatementRepository.save(bankStatement);
 
-    return bankStatement;
+    const transactions = mappedTransactions.map((transaction) => ({
+      ...transaction,
+      account: account,
+      bankStatement: savedBankStatement,
+    }));
+    await this.transactionService.create(transactions);
+
+    return savedBankStatement;
   }
 
   async create(bankStatementPartial: BankStatementPartial): Promise<BankStatement> {
