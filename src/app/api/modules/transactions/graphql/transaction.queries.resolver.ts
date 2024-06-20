@@ -4,7 +4,7 @@ import {TransactionService} from '../services/transaction.service';
 import {TypeTransaction} from './transaction.type';
 
 @Resolver(() => TypeTransaction)
-export class TransactionResolver {
+export class TransactionQueriesResolver {
   constructor(private readonly transactionService: TransactionService) {}
 
   @Query(() => [TypeTransaction])

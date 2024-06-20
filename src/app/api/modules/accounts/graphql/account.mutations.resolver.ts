@@ -6,7 +6,7 @@ import {TypeAccount} from './account.type';
 import {ArgsAccountCreate} from './account-create.args';
 
 @Resolver(() => TypeAccount)
-export class AccountResolver {
+export class AccountMutationsResolver {
   constructor(private readonly accountService: AccountService) {}
 
   @Mutation(() => TypeAccount)

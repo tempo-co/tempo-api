@@ -5,7 +5,7 @@ import {TypeBankStatement} from './bank-statement.type';
 import {ArgsBankStatementUpload} from './bank-statement-upload.args';
 
 @Resolver(() => TypeBankStatement)
-export class BankStatementResolver {
+export class BankStatementMutationsResolver {
   constructor(private readonly bankStatementService: BankStatementService) {}
 
   @Mutation(() => [TypeTransaction])
