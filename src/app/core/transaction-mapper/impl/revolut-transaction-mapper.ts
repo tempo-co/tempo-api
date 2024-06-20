@@ -1,5 +1,5 @@
-import {TransactionPartial} from '@modules/transactions/services/transaction.service';
 import {TransactionMapper} from '../transaction-mapper.interface';
+import {Transaction} from '@entities/transaction/transaction.entity';
 
 type RevolutTransaction = {
   type: string;
@@ -15,13 +15,13 @@ type RevolutTransaction = {
 };
 
 export class RevolutTransactionMapper implements TransactionMapper {
-  map(transaction: RevolutTransaction): TransactionPartial {
-    return {
+  map(transaction: RevolutTransaction): Transaction {
+    return new Transaction({
       startedDate: new Date(transaction.startedDate),
       completedDate: new Date(transaction.completedDate),
       description: transaction.description.replace(/\s+/g, ' ').trim(),
       amount: parseFloat(transaction.amount),
       currency: transaction.currency,
-    };
+    });
   }
 }
