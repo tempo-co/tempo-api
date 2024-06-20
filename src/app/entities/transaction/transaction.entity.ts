@@ -22,10 +22,10 @@ export class Transaction {
   @IsDate()
   completedDate: Date;
 
-  @Column({type: 'varchar', length: 255})
+  @Column({type: 'varchar', length: 500})
   @IsNotEmpty()
   @IsString()
-  @Length(1, 255)
+  @Length(1, 500)
   description: string;
 
   @Column({type: 'decimal', precision: 12, scale: 2})
