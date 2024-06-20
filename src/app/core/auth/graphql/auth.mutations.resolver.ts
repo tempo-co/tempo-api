@@ -12,7 +12,7 @@ import {ArgsLogIn} from './login.args';
 import {ArgsSignUp} from './signup.args';
 
 @Resolver()
-export class AuthResolver {
+export class AuthMutationsResolver {
   constructor(private readonly authService: AuthService) {}
 
   @Public()

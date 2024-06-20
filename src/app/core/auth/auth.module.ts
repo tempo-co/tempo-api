@@ -6,7 +6,7 @@ import {PassportModule} from '@nestjs/passport';
 
 import {UserModule} from '@modules/users/user.module';
 
-import {AuthResolver} from './graphql/auth.mutations.resolver';
+import {AuthMutationsResolver} from './graphql/auth.mutations.resolver';
 import {JwtAuthGuard} from './guards/jwt-auth.guard';
 import {AuthService} from './services/auth.service';
 import {JwtStrategy} from './strategies/jwt.strategy';
@@ -35,7 +35,7 @@ import {LocalStrategy} from './strategies/local.strategy';
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
     },
-    AuthResolver,
+    AuthMutationsResolver,
   ],
   exports: [AuthService],
 })
