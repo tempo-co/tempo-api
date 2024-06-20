@@ -3,13 +3,11 @@ import {Injectable, NotFoundException} from '@nestjs/common';
 import {InjectRepository} from '@nestjs/typeorm';
 import {Account} from '@entities/account/account.entity';
 import {UserService} from '@modules/users/services/user.service';
-import {Bank} from '@core/transaction-mapper/models/bank.enum';
 import {User} from '@entities/user/user.entity';
 
 type CreateOptions = {
-  alias: Account['alias'];
-  bank: Bank;
-  userId: User['id'];
+  accountPartial: Pick<Account, 'alias' | 'bank'>;
+  userId: Account['user']['id'];
 };
 
 @Injectable()
@@ -20,10 +18,11 @@ export class AccountService {
     private readonly userService: UserService,
   ) {}
 
-  async create({alias, bank, userId}: CreateOptions): Promise<Account> {
+  async create(options: CreateOptions): Promise<Account> {
+    const {accountPartial, userId} = options;
     const user = await this.userService.findById(userId);
 
-    const account = this.accountRepository.create({alias, bank, user});
+    const account = this.accountRepository.create({...accountPartial, user});
     return this.accountRepository.save(account);
   }
 

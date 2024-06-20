@@ -2,7 +2,6 @@ import {Repository} from 'typeorm';
 import {FileUpload} from 'graphql-upload';
 import {Injectable} from '@nestjs/common';
 import {InjectRepository} from '@nestjs/typeorm';
-import {Transaction} from '@entities/transaction/transaction.entity';
 import {Account} from '@entities/account/account.entity';
 import {BankStatement} from '@entities/bank-statement/bank-statement.entity';
 import {AccountService} from '@modules/accounts/services/account.service';
@@ -11,11 +10,7 @@ import {FileParserService} from '@core/file-parser/file-parser.service';
 import {TransactionMapperService} from '@core/transaction-mapper/transaction-mapper.service';
 import {ReadStream} from 'fs-capacitor';
 
-type CreateOptions = {
-  file: Buffer;
-  account: Account;
-  transactions: Transaction[];
-};
+type BankStatementPartial = Pick<BankStatement, 'file' | 'account' | 'transactions'>;
 
 @Injectable()
 export class BankStatementService {
@@ -46,8 +41,8 @@ export class BankStatementService {
     return bankStatement;
   }
 
-  async create(options: CreateOptions): Promise<BankStatement> {
-    return this.bankStatementRepository.save(options);
+  async create(bankStatementPartial: BankStatementPartial): Promise<BankStatement> {
+    return this.bankStatementRepository.save(bankStatementPartial);
   }
 
   private async readStream(stream: ReadStream): Promise<Buffer> {

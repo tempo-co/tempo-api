@@ -4,6 +4,11 @@ import {InjectRepository} from '@nestjs/typeorm';
 import {Transaction} from '@entities/transaction/transaction.entity';
 import {Account} from '@entities/account/account.entity';
 
+export type TransactionPartial = Pick<
+  Transaction,
+  'startedDate' | 'completedDate' | 'description' | 'amount' | 'currency'
+>;
+
 @Injectable()
 export class TransactionService {
   constructor(
@@ -24,9 +29,9 @@ export class TransactionService {
     return transaction;
   }
 
-  create(partialTransactions: Partial<Transaction>[], account: Account): Promise<Transaction[]> {
-    const transactions = partialTransactions.map((partialTransaction) =>
-      this.transactionRepository.create({...partialTransaction, account}),
+  create(transactionPartials: TransactionPartial[], account: Account): Promise<Transaction[]> {
+    const transactions = transactionPartials.map((transactionPartial) =>
+      this.transactionRepository.create({...transactionPartial, account}),
     );
 
     return this.transactionRepository.save(transactions);
