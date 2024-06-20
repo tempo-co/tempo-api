@@ -1,0 +1,69 @@
+# ------------------------------------------------------
+# THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
+# ------------------------------------------------------
+
+type Account {
+  alias: String!
+  balance: Float!
+  bank: Bank!
+  bankStatements: [BankStatement!]!
+  id: ID!
+  transactions: [Transaction!]!
+  user: User!
+}
+
+"""Supported banks"""
+enum Bank {
+  ABN_AMRO
+  REVOLUT
+}
+
+type BankStatement {
+  account: Account!
+  id: ID!
+  transactions: [Transaction!]!
+}
+
+"""
+A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format.
+"""
+scalar DateTime
+
+type Mutation {
+  accountCreate(alias: String!, bank: String!): Account!
+  bankStatementUpload(accountId: String!, file: Upload!): BankStatement!
+  logIn(email: String!, password: String!): TypeAccessToken!
+  signUp(email: String!, name: String!, password: String!): TypeAccessToken!
+}
+
+type Query {
+  transaction(id: ID!): Transaction!
+  transactions: [Transaction!]!
+  user(id: ID!): User!
+  users: [User!]!
+}
+
+type Transaction {
+  account: Account!
+  amount: Float!
+  bankStatement: BankStatement!
+  completedDate: DateTime!
+  currency: String!
+  description: String!
+  id: ID!
+  startedDate: DateTime!
+}
+
+type TypeAccessToken {
+  access_token: String!
+}
+
+"""The `Upload` scalar type represents a file upload."""
+scalar Upload
+
+type User {
+  accounts: [Account!]!
+  email: String!
+  id: ID!
+  name: String!
+}

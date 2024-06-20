@@ -13,11 +13,7 @@ import {FileParserModule} from '@core/file-parser/file-parser.module';
 import {AuthModule} from '@core/auth/auth.module';
 import {GqlThrottlerGuard} from '@core/config/guards/throttler.guard';
 import {validate} from '@core/config/env.validation';
-import {Category} from '@entities/category/category.entity';
-import {User} from '@entities/user/user.entity';
-import {Transaction} from '@entities/transaction/transaction.entity';
-import {BankStatement} from '@entities/bank-statement/bank-statement.entity';
-import {Account} from '@entities/account/account.entity';
+import {join} from 'path';
 
 @Module({
   imports: [
@@ -32,7 +28,8 @@ import {Account} from '@entities/account/account.entity';
     }),
     GraphQLModule.forRoot<ApolloDriverConfig>({
       driver: ApolloDriver,
-      autoSchemaFile: 'schema.gql',
+      autoSchemaFile: join(process.cwd(), 'src/app/api/schema.gql'),
+      sortSchema: true,
       playground: false,
       introspection: true,
       plugins: [ApolloServerPluginLandingPageLocalDefault()],
@@ -50,7 +47,7 @@ import {Account} from '@entities/account/account.entity';
         password: config.get<string>('DB_PASSWORD'),
         database: config.get<string>('DB_NAME'),
         synchronize: config.get<boolean>('DB_SYNCHRONIZE'),
-        entities: [User, Account, Transaction, BankStatement, Category],
+        entities: ['entities/*/*.entity.{ts,js}'],
       }),
     }),
     ThrottlerModule.forRoot([
