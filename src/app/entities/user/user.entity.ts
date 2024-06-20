@@ -19,7 +19,7 @@ export class User {
   @Column({type: 'boolean', default: true})
   isActive: boolean;
 
-  @Column({type: 'date', default: () => 'CURRENT_DATE'})
+  @Column({type: 'timestamp', default: () => 'CURRENT_DATE'})
   createdDate: Date;
 
   @OneToMany(() => Account, (account) => account.user)
