@@ -1,8 +1,10 @@
-import {validate} from 'class-validator';
 import {BadRequestException, Injectable} from '@nestjs/common';
+import {validate} from 'class-validator';
+
 import {Transaction} from '@entities/transaction/transaction.entity';
-import {TransactionMapperFactory} from './transaction-mapper.factory';
+
 import {Bank} from './constants/bank.enum';
+import {TransactionMapperFactory} from './transaction-mapper.factory';
 
 @Injectable()
 export class TransactionMapperService {

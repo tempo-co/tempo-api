@@ -1,4 +1,5 @@
 import {read, utils} from 'xlsx';
+
 import {FileParser} from '../file-parser.interface';
 
 export class XlsFileParser implements FileParser {

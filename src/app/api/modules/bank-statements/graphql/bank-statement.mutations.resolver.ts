@@ -1,7 +1,8 @@
-import {Resolver, Args, Mutation} from '@nestjs/graphql';
+import {Args, Mutation, Resolver} from '@nestjs/graphql';
+
 import {BankStatementService} from '../services/bank-statement.service';
-import {TypeBankStatement} from './bank-statement.type';
 import {ArgsBankStatementUpload} from './bank-statement-upload.args';
+import {TypeBankStatement} from './bank-statement.type';
 
 @Resolver(() => TypeBankStatement)
 export class BankStatementMutationsResolver {

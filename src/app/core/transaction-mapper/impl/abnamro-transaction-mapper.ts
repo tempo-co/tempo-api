@@ -1,4 +1,5 @@
 import {Transaction} from '@entities/transaction/transaction.entity';
+
 import {TransactionMapper} from '../transaction-mapper.interface';
 
 type AbnAmroTransaction = {

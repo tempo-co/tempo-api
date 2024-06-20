@@ -1,8 +1,10 @@
 import {Module} from '@nestjs/common';
 import {TypeOrmModule} from '@nestjs/typeorm';
+
 import {Transaction} from '@entities/transaction/transaction.entity';
-import {TransactionService} from './services/transaction.service';
+
 import {TransactionQueriesResolver} from './graphql/transaction.queries.resolver';
+import {TransactionService} from './services/transaction.service';
 
 @Module({
   imports: [TypeOrmModule.forFeature([Transaction])],

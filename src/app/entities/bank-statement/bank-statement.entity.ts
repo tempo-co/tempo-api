@@ -1,7 +1,8 @@
-import {Entity, Column, ManyToOne, OneToMany} from 'typeorm';
+import {Column, Entity, ManyToOne, OneToMany} from 'typeorm';
+
 import {Account} from '@entities/account/account.entity';
-import {Transaction} from '@entities/transaction/transaction.entity';
 import {BaseEntity} from '@entities/base.entity';
+import {Transaction} from '@entities/transaction/transaction.entity';
 
 @Entity()
 export class BankStatement extends BaseEntity {

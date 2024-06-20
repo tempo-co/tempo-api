@@ -1,8 +1,10 @@
-import * as argon2 from 'argon2';
 import {Injectable, UnauthorizedException} from '@nestjs/common';
 import {JwtService} from '@nestjs/jwt';
-import {UserPartial, UserService} from '@modules/users/services/user.service';
+import * as argon2 from 'argon2';
+
 import {User} from '@entities/user/user.entity';
+import {UserPartial, UserService} from '@modules/users/services/user.service';
+
 import {TypeAccessToken} from '../graphql/access-token.type';
 
 @Injectable()

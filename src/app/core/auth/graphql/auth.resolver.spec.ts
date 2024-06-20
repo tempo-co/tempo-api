@@ -1,11 +1,13 @@
-import {randomUUID} from 'crypto';
-import {Test, TestingModule} from '@nestjs/testing';
-import {ConflictException} from '@nestjs/common';
 import {faker} from '@faker-js/faker';
+import {ConflictException} from '@nestjs/common';
+import {Test, TestingModule} from '@nestjs/testing';
+import {randomUUID} from 'crypto';
+
 import {User} from '@entities/user/user.entity';
+
 import {AuthService} from '../services/auth.service';
-import {AuthResolver} from './auth.mutations.resolver';
 import {TypeAccessToken} from './access-token.type';
+import {AuthResolver} from './auth.mutations.resolver';
 import {ArgsLogIn} from './login.args';
 import {ArgsSignUp} from './signup.args';
 

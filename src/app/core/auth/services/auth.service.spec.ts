@@ -1,11 +1,13 @@
+import {faker} from '@faker-js/faker';
+import {JwtService} from '@nestjs/jwt';
+import {Test, TestingModule} from '@nestjs/testing';
 import * as argon2 from 'argon2';
 import {randomUUID} from 'crypto';
-import {Test, TestingModule} from '@nestjs/testing';
-import {JwtService} from '@nestjs/jwt';
-import {faker} from '@faker-js/faker';
+
 import {User} from '@entities/user/user.entity';
 import {CreateUserArgs} from '@modules/users/dto/create-user.args';
 import {UserService} from '@modules/users/services/user.service';
+
 import {AuthService} from './services/auth.service';
 
 describe('AuthService', () => {

@@ -1,9 +1,10 @@
-import {Repository} from 'typeorm';
 import {Injectable, NotFoundException} from '@nestjs/common';
 import {InjectRepository} from '@nestjs/typeorm';
+import {Repository} from 'typeorm';
+
 import {Account} from '@entities/account/account.entity';
-import {UserService} from '@modules/users/services/user.service';
 import {User} from '@entities/user/user.entity';
+import {UserService} from '@modules/users/services/user.service';
 
 type CreateOptions = {
   accountPartial: Pick<Account, 'alias' | 'bank'>;

@@ -1,5 +1,6 @@
-import {TransactionMapper} from '../transaction-mapper.interface';
 import {Transaction} from '@entities/transaction/transaction.entity';
+
+import {TransactionMapper} from '../transaction-mapper.interface';
 
 type RevolutTransaction = {
   type: string;

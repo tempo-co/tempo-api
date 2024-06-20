@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+
 import {validate} from './env.validation';
 
 describe('EnvironmentVariables validation', () => {

@@ -1,5 +1,6 @@
 import {IsDate, IsNotEmpty, IsNumber, IsString, Length, Max, Min} from 'class-validator';
-import {Entity, Column, ManyToOne} from 'typeorm';
+import {Column, Entity, ManyToOne} from 'typeorm';
+
 import {Account} from '@entities/account/account.entity';
 import {BankStatement} from '@entities/bank-statement/bank-statement.entity';
 import {BaseEntity} from '@entities/base.entity';

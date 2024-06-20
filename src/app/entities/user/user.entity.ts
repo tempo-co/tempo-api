@@ -1,4 +1,5 @@
-import {Entity, Column, OneToMany} from 'typeorm';
+import {Column, Entity, OneToMany} from 'typeorm';
+
 import {Account} from '@entities/account/account.entity';
 import {BaseEntity} from '@entities/base.entity';
 
