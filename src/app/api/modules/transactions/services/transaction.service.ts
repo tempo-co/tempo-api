@@ -2,7 +2,6 @@ import {Repository} from 'typeorm';
 import {Injectable, NotFoundException} from '@nestjs/common';
 import {InjectRepository} from '@nestjs/typeorm';
 import {Transaction} from '@entities/transaction/transaction.entity';
-import {Account} from '@entities/account/account.entity';
 
 export type TransactionPartial = Pick<
   Transaction,
@@ -29,11 +28,7 @@ export class TransactionService {
     return transaction;
   }
 
-  create(transactionPartials: TransactionPartial[], account: Account): Promise<Transaction[]> {
-    const transactions = transactionPartials.map((transactionPartial) =>
-      this.transactionRepository.create({...transactionPartial, account}),
-    );
-
+  create(transactions: Transaction[]): Promise<Transaction[]> {
     return this.transactionRepository.save(transactions);
   }
 }
