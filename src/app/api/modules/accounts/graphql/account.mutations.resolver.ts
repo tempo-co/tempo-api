@@ -11,6 +11,6 @@ export class AccountResolver {
 
   @Mutation(() => TypeAccount)
   accountCreate(@Args() args: ArgsAccountCreate, @CurrentUser() user: User): Promise<TypeAccount> {
-    return this.accountService.create({...args, userId: user.id});
+    return this.accountService.create({accountPartial: args, userId: user.id});
   }
 }
