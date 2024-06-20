@@ -1,9 +1,10 @@
+import * as argon2 from 'argon2';
 import {Repository} from 'typeorm';
 import {ConflictException, Injectable, NotFoundException} from '@nestjs/common';
 import {InjectRepository} from '@nestjs/typeorm';
 import {User} from '@entities/user/user.entity';
 
-export type UserOptions = Pick<User, 'name' | 'email' | 'password'>;
+export type UserPartial = Pick<User, 'name' | 'email' | 'password'>;
 
 @Injectable()
 export class UserService {
@@ -38,13 +39,17 @@ export class UserService {
     await this.userRepository.delete(id);
   }
 
-  async create(userOptions: UserOptions): Promise<User> {
-    const {email} = userOptions;
+  async create(userPartial: UserPartial): Promise<User> {
+    const {name, email, password} = userPartial;
+
     const existingUser = await this.userRepository.findOne({where: {email}});
 
     if (existingUser) {
       throw new ConflictException(`An account with this email already exists.`);
     }
-    return this.userRepository.save(userOptions);
+    const hash = await argon2.hash(password);
+
+    const user = {name, email, password: hash};
+    return this.userRepository.save(user);
   }
 }

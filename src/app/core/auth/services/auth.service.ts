@@ -1,7 +1,7 @@
 import * as argon2 from 'argon2';
 import {Injectable, UnauthorizedException} from '@nestjs/common';
 import {JwtService} from '@nestjs/jwt';
-import {UserOptions, UserService} from '@modules/users/services/user.service';
+import {UserPartial, UserService} from '@modules/users/services/user.service';
 import {User} from '@entities/user/user.entity';
 import {TypeAccessToken} from '../graphql/access-token.type';
 
@@ -29,13 +29,9 @@ export class AuthService {
     return user;
   }
 
-  async createUser(userOptions: UserOptions): Promise<User> {
-    const {name, email, password} = userOptions;
-
-    const hash = await argon2.hash(password);
-    const user = {name, email, password: hash};
-
-    return this.userService.create(user);
+  async createUser(userPartial: UserPartial): Promise<TypeAccessToken> {
+    const user = await this.userService.create(userPartial);
+    return await this.signAccessToken(user);
   }
 
   async signAccessToken(user: User): Promise<TypeAccessToken> {
