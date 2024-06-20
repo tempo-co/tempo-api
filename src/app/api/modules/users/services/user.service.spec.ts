@@ -1,10 +1,12 @@
-import {randomUUID} from 'crypto';
-import {DeleteResult, Repository} from 'typeorm';
+import {faker} from '@faker-js/faker';
 import {ConflictException, NotFoundException} from '@nestjs/common';
 import {Test, TestingModule} from '@nestjs/testing';
 import {getRepositoryToken} from '@nestjs/typeorm';
-import {faker} from '@faker-js/faker';
+import {randomUUID} from 'crypto';
+import {DeleteResult, Repository} from 'typeorm';
+
 import {User} from '@entities/user/user.entity';
+
 import {CreateUserArgs} from '../dto/create-user.args';
 import {UserService} from './user.service';
 

@@ -1,7 +1,8 @@
-import * as argon2 from 'argon2';
-import {Repository} from 'typeorm';
 import {ConflictException, Injectable, NotFoundException} from '@nestjs/common';
 import {InjectRepository} from '@nestjs/typeorm';
+import * as argon2 from 'argon2';
+import {Repository} from 'typeorm';
+
 import {User} from '@entities/user/user.entity';
 
 export type UserPartial = Pick<User, 'name' | 'email' | 'password'>;

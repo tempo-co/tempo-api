@@ -1,14 +1,15 @@
-import {Repository} from 'typeorm';
-import {FileUpload} from 'graphql-upload';
 import {Injectable} from '@nestjs/common';
 import {InjectRepository} from '@nestjs/typeorm';
+import {ReadStream} from 'fs-capacitor';
+import {FileUpload} from 'graphql-upload';
+import {Repository} from 'typeorm';
+
+import {FileParserService} from '@core/file-parser/file-parser.service';
+import {TransactionMapperService} from '@core/transaction-mapper/transaction-mapper.service';
 import {Account} from '@entities/account/account.entity';
 import {BankStatement} from '@entities/bank-statement/bank-statement.entity';
 import {AccountService} from '@modules/accounts/services/account.service';
 import {TransactionService} from '@modules/transactions/services/transaction.service';
-import {FileParserService} from '@core/file-parser/file-parser.service';
-import {TransactionMapperService} from '@core/transaction-mapper/transaction-mapper.service';
-import {ReadStream} from 'fs-capacitor';
 
 @Injectable()
 export class BankStatementService {

@@ -1,6 +1,8 @@
 import {Module} from '@nestjs/common';
 import {TypeOrmModule} from '@nestjs/typeorm';
+
 import {Account} from '@entities/account/account.entity';
+
 import {UserModule} from '../users/user.module';
 import {AccountMutationsResolver} from './graphql/account.mutations.resolver';
 import {AccountService} from './services/account.service';

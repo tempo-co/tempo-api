@@ -1,19 +1,20 @@
+import {ApolloServerPluginLandingPageLocalDefault} from '@apollo/server/plugin/landingPage/default';
+import {ApolloDriver, ApolloDriverConfig} from '@nestjs/apollo';
 import {Module} from '@nestjs/common';
+import {ConfigModule, ConfigService} from '@nestjs/config';
 import {APP_GUARD} from '@nestjs/core';
-import {TypeOrmModule} from '@nestjs/typeorm';
 import {GraphQLModule} from '@nestjs/graphql';
 import {ThrottlerModule, minutes} from '@nestjs/throttler';
-import {ConfigModule, ConfigService} from '@nestjs/config';
-import {ApolloDriver, ApolloDriverConfig} from '@nestjs/apollo';
-import {ApolloServerPluginLandingPageLocalDefault} from '@apollo/server/plugin/landingPage/default';
+import {TypeOrmModule} from '@nestjs/typeorm';
+import {join} from 'path';
+
+import {AuthModule} from '@core/auth/auth.module';
+import {validate} from '@core/config/env.validation';
+import {GqlThrottlerGuard} from '@core/config/guards/throttler.guard';
+import {FileParserModule} from '@core/file-parser/file-parser.module';
+import {BankStatementModule} from '@modules/bank-statements/bank-statement.module';
 import {TransactionModule} from '@modules/transactions/transaction.module';
 import {UserModule} from '@modules/users/user.module';
-import {BankStatementModule} from '@modules/bank-statements/bank-statement.module';
-import {FileParserModule} from '@core/file-parser/file-parser.module';
-import {AuthModule} from '@core/auth/auth.module';
-import {GqlThrottlerGuard} from '@core/config/guards/throttler.guard';
-import {validate} from '@core/config/env.validation';
-import {join} from 'path';
 
 @Module({
   imports: [

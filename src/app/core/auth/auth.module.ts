@@ -1,14 +1,16 @@
 import {Module} from '@nestjs/common';
+import {ConfigModule, ConfigService} from '@nestjs/config';
 import {APP_GUARD} from '@nestjs/core';
 import {JwtModule} from '@nestjs/jwt';
 import {PassportModule} from '@nestjs/passport';
-import {ConfigModule, ConfigService} from '@nestjs/config';
+
 import {UserModule} from '@modules/users/user.module';
-import {LocalStrategy} from './strategies/local.strategy';
-import {JwtStrategy} from './strategies/jwt.strategy';
+
+import {AuthResolver} from './graphql/auth.mutations.resolver';
 import {JwtAuthGuard} from './guards/jwt-auth.guard';
 import {AuthService} from './services/auth.service';
-import {AuthResolver} from './graphql/auth.mutations.resolver';
+import {JwtStrategy} from './strategies/jwt.strategy';
+import {LocalStrategy} from './strategies/local.strategy';
 
 @Module({
   imports: [

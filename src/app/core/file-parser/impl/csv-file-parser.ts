@@ -1,4 +1,5 @@
 import {parse} from 'csv-parse/sync';
+
 import {FileParser} from '../file-parser.interface';
 
 export class CsvFileParser implements FileParser {

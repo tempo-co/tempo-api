@@ -1,8 +1,10 @@
-import {randomUUID} from 'crypto';
-import {Test, TestingModule} from '@nestjs/testing';
-import {NotFoundException} from '@nestjs/common';
 import {faker} from '@faker-js/faker';
+import {NotFoundException} from '@nestjs/common';
+import {Test, TestingModule} from '@nestjs/testing';
+import {randomUUID} from 'crypto';
+
 import {User} from '@entities/user/user.entity';
+
 import {UserService} from '../services/user.service';
 import {UserQueriesResolver} from './user.queries.resolver';
 

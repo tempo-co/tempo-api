@@ -1,7 +1,8 @@
-import {TypeAccount} from '@modules/accounts/graphql/account.type';
 import {ArgsType, Field} from '@nestjs/graphql';
 import {IsNotEmpty, IsUUID} from 'class-validator';
 import {FileUpload, GraphQLUpload} from 'graphql-upload';
+
+import {TypeAccount} from '@modules/accounts/graphql/account.type';
 
 @ArgsType()
 export class ArgsBankStatementUpload {

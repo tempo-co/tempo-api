@@ -1,7 +1,8 @@
 import {Injectable} from '@nestjs/common';
+
 import {FileParser} from './file-parser.interface';
-import {XlsFileParser} from './impl/xls-file-parser';
 import {CsvFileParser} from './impl/csv-file-parser';
+import {XlsFileParser} from './impl/xls-file-parser';
 
 @Injectable()
 export class FileParserFactory {

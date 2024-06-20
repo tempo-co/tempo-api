@@ -1,12 +1,14 @@
 import {Module} from '@nestjs/common';
 import {TypeOrmModule} from '@nestjs/typeorm';
-import {BankStatement} from '@entities/bank-statement/bank-statement.entity';
+
 import {FileParserModule} from '@core/file-parser/file-parser.module';
 import {TransactionMapperModule} from '@core/transaction-mapper/transaction-mapper.module';
-import {TransactionModule} from '../transactions/transaction.module';
+import {BankStatement} from '@entities/bank-statement/bank-statement.entity';
+
 import {AccountModule} from '../accounts/account.module';
-import {BankStatementService} from './services/bank-statement.service';
+import {TransactionModule} from '../transactions/transaction.module';
 import {BankStatementMutationsResolver} from './graphql/bank-statement.mutations.resolver';
+import {BankStatementService} from './services/bank-statement.service';
 
 @Module({
   imports: [

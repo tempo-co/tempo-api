@@ -1,9 +1,11 @@
-import {DeepPartial, Repository} from 'typeorm';
+import {faker} from '@faker-js/faker';
+import {NotFoundException} from '@nestjs/common';
 import {Test, TestingModule} from '@nestjs/testing';
 import {getRepositoryToken} from '@nestjs/typeorm';
-import {NotFoundException} from '@nestjs/common';
-import {faker} from '@faker-js/faker';
+import {DeepPartial, Repository} from 'typeorm';
+
 import {Transaction} from '@entities/transaction/transaction.entity';
+
 import {InputTransactionCreate} from '../graphql/transaction-create.input';
 import {TransactionService} from './transaction.service';
 

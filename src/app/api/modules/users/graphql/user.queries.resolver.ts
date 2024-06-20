@@ -1,7 +1,8 @@
+import {ParseUUIDPipe, UsePipes} from '@nestjs/common';
 import {Args, ID, Query, Resolver} from '@nestjs/graphql';
+
 import {UserService} from '../services/user.service';
 import {TypeUser} from './user.type';
-import {ParseUUIDPipe, UsePipes} from '@nestjs/common';
 
 @Resolver(() => TypeUser)
 export class UserQueriesResolver {
