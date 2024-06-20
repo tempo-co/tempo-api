@@ -71,7 +71,7 @@ type Query {
 type Mutation {
   logIn(email: String!, password: String!): TypeAccessToken!
   signUp(name: String!, email: String!, password: String!): TypeAccessToken!
-  bankStatementUpload(file: Upload!, accountId: String!): [Transaction!]!
+  bankStatementUpload(file: Upload!, accountId: String!): BankStatement!
   accountCreate(alias: String!, bank: String!): Account!
 }
 

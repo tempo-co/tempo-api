@@ -1,5 +1,4 @@
 import {Resolver, Args, Mutation} from '@nestjs/graphql';
-import {TypeTransaction} from '@modules/transactions/graphql/transaction.type';
 import {BankStatementService} from '../services/bank-statement.service';
 import {TypeBankStatement} from './bank-statement.type';
 import {ArgsBankStatementUpload} from './bank-statement-upload.args';
@@ -8,9 +7,9 @@ import {ArgsBankStatementUpload} from './bank-statement-upload.args';
 export class BankStatementMutationsResolver {
   constructor(private readonly bankStatementService: BankStatementService) {}
 
-  @Mutation(() => [TypeTransaction])
+  @Mutation(() => TypeBankStatement)
   async bankStatementUpload(@Args() args: ArgsBankStatementUpload): Promise<TypeBankStatement> {
     const {file, accountId} = args;
-    return await this.bankStatementService.process(file, accountId);
+    return this.bankStatementService.process(await file, accountId);
   }
 }
