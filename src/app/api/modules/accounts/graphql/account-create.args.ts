@@ -1,6 +1,6 @@
 import {IsEnum, Length} from 'class-validator';
 import {ArgsType, Field} from '@nestjs/graphql';
-import {Bank} from '@core/transaction-mapper/models/bank.enum';
+import {Bank} from '@core/transaction-mapper/constants/bank.enum';
 
 @ArgsType()
 export class ArgsAccountCreate {
