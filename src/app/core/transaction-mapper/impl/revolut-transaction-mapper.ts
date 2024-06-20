@@ -1,4 +1,5 @@
-import {TransactionMapper, TransactionPartial} from '../transaction-mapper.interface';
+import {TransactionPartial} from '@modules/transactions/services/transaction.service';
+import {TransactionMapper} from '../transaction-mapper.interface';
 
 type RevolutTransaction = {
   type: string;

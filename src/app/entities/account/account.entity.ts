@@ -2,7 +2,7 @@ import {Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToMany} from 'type
 import {BankStatement} from '@entities/bank-statement/bank-statement.entity';
 import {Transaction} from '@entities/transaction/transaction.entity';
 import {User} from '@entities/user/user.entity';
-import {Bank} from '@core/transaction-mapper/models/bank.enum';
+import {Bank} from '@core/transaction-mapper/constants/bank.enum';
 
 @Entity()
 export class Account {
