@@ -1,4 +1,4 @@
-import {Field, ID, ObjectType} from '@nestjs/graphql';
+import {Field, ID, ObjectType, GraphQLISODateTime} from '@nestjs/graphql';
 import {TypeAccount} from '@modules/accounts/graphql/account.type';
 
 @ObjectType('User')
@@ -15,7 +15,7 @@ export class TypeUser {
   @Field()
   isActive: boolean;
 
-  @Field()
+  @Field(() => GraphQLISODateTime)
   createdDate: Date;
 
   @Field(() => [TypeAccount])

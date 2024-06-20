@@ -12,12 +12,12 @@ export class Transaction {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({type: 'date'})
+  @Column({type: 'timestamp'})
   @IsNotEmpty()
   @IsDate()
   startedDate: Date;
 
-  @Column({type: 'date'})
+  @Column({type: 'timestamp'})
   @IsNotEmpty()
   @IsDate()
   completedDate: Date;

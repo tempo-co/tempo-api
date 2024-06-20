@@ -1,4 +1,4 @@
-import {Field, Float, ID, ObjectType} from '@nestjs/graphql';
+import {Field, Float, GraphQLISODateTime, ID, ObjectType} from '@nestjs/graphql';
 import {TypeCategory} from '@modules/categories/graphql/category.type';
 import {TypeBankStatement} from '@modules/bank-statements/graphql/bank-statement.type';
 import {TypeAccount} from '@modules/accounts/graphql/account.type';
@@ -8,10 +8,10 @@ export class TypeTransaction {
   @Field(() => ID)
   id: string;
 
-  @Field()
+  @Field(() => GraphQLISODateTime)
   startedDate: Date;
 
-  @Field()
+  @Field(() => GraphQLISODateTime)
   completedDate: Date;
 
   @Field()
