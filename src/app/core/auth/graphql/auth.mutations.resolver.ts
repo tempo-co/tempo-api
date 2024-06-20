@@ -24,9 +24,7 @@ export class AuthResolver {
   @Public()
   @Mutation(() => TypeAccessToken)
   async signUp(@Args() args: ArgsSignUp) {
-    const user = await this.authService.createUser(args);
-
-    const accessToken = await this.authService.signAccessToken(user);
+    const accessToken = await this.authService.createUser(args);
     return accessToken;
   }
 }
