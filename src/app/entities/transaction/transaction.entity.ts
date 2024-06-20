@@ -31,7 +31,7 @@ export class Transaction {
   @Column({type: 'decimal', precision: 12, scale: 2})
   @IsNotEmpty()
   @IsNumber({maxDecimalPlaces: 2})
-  @Min(0)
+  @Min(-999999999999.99)
   @Max(999999999999.99)
   amount: number;
 
