@@ -17,7 +17,7 @@ import {AuthResolver} from './graphql/auth.mutations.resolver';
       imports: [ConfigModule],
       useFactory: async (config: ConfigService) => ({
         global: true,
-        signOptions: {expiresIn: '60s'},
+        signOptions: {expiresIn: '10000s'},
         secret: config.get<string>('JWT_SECRET'),
       }),
       inject: [ConfigService],
