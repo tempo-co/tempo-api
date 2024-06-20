@@ -47,7 +47,7 @@ import {join} from 'path';
         password: config.get<string>('DB_PASSWORD'),
         database: config.get<string>('DB_NAME'),
         synchronize: config.get<boolean>('DB_SYNCHRONIZE'),
-        entities: ['entities/*/*.entity.{ts,js}'],
+        entities: ['entities/**/*.entity.{ts,js}'],
       }),
     }),
     ThrottlerModule.forRoot([
