@@ -1,14 +1,12 @@
-import {Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToMany} from 'typeorm';
+import {Entity, Column, ManyToOne, OneToMany} from 'typeorm';
 import {BankStatement} from '@entities/bank-statement/bank-statement.entity';
 import {Transaction} from '@entities/transaction/transaction.entity';
 import {User} from '@entities/user/user.entity';
 import {Bank} from '@core/transaction-mapper/constants/bank.enum';
+import {BaseEntity} from '@entities/base.entity';
 
 @Entity()
-export class Account {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
-
+export class Account extends BaseEntity {
   @Column({type: 'varchar', length: 255})
   alias: string;
 

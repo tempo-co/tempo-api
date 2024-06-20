@@ -1,12 +1,9 @@
-import {Entity, Column, PrimaryGeneratedColumn, OneToMany} from 'typeorm';
+import {Entity, Column, OneToMany} from 'typeorm';
 import {Account} from '@entities/account/account.entity';
+import {BaseEntity} from '@entities/base.entity';
 
-//TODO: Use class validator
 @Entity()
-export class User {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
-
+export class User extends BaseEntity {
   @Column({type: 'varchar', length: 255})
   name: string;
 
@@ -15,12 +12,6 @@ export class User {
 
   @Column({type: 'varchar', length: 255})
   password: string;
-
-  @Column({type: 'boolean', default: true})
-  isActive: boolean;
-
-  @Column({type: 'timestamp', default: () => 'CURRENT_DATE'})
-  createdDate: Date;
 
   @OneToMany(() => Account, (account) => account.user)
   accounts: Account[];
