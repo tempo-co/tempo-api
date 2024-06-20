@@ -10,8 +10,6 @@ import {FileParserService} from '@core/file-parser/file-parser.service';
 import {TransactionMapperService} from '@core/transaction-mapper/transaction-mapper.service';
 import {ReadStream} from 'fs-capacitor';
 
-type BankStatementPartial = Pick<BankStatement, 'file' | 'account' | 'transactions'>;
-
 @Injectable()
 export class BankStatementService {
   constructor(
@@ -35,7 +33,7 @@ export class BankStatementService {
     const mappedTransactions = await this.transactionMapperService.map(jsonData, account.bank);
 
     const bankStatement = this.bankStatementRepository.create({file: buffer, account});
-    const savedBankStatement = await this.bankStatementRepository.save(bankStatement);
+    const savedBankStatement = await this.save(bankStatement);
 
     const transactions = mappedTransactions.map((transaction) => ({
       ...transaction,
@@ -47,8 +45,8 @@ export class BankStatementService {
     return savedBankStatement;
   }
 
-  async create(bankStatementPartial: BankStatementPartial): Promise<BankStatement> {
-    return this.bankStatementRepository.save(bankStatementPartial);
+  async save(bankStatement: BankStatement): Promise<BankStatement> {
+    return this.bankStatementRepository.save(bankStatement);
   }
 
   private async readStream(stream: ReadStream): Promise<Buffer> {
