@@ -94,9 +94,9 @@
   },
   "jest": {
     "moduleNameMapper": {
-      "^@modules/(.*)$": "<rootDir>/src/app/api/modules/$1",
-      "^@core/(.*)$": "<rootDir>/src/app/core/$1",
-      "^@entities/(.*)$": "<rootDir>/src/app/entities/$1"
+      "^@modules/(.*)$": "<rootDir>/app/api/modules/$1",
+      "^@core/(.*)$": "<rootDir>/app/core/$1",
+      "^@entities/(.*)$": "<rootDir>/app/entities/$1"
     },
     "moduleFileExtensions": [
       "js",
