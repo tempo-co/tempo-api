@@ -1,16 +1,24 @@
 import {IsDate, IsNotEmpty, IsNumber, IsString, Length, Max, Min} from 'class-validator';
-import {Column, Entity, ManyToOne} from 'typeorm';
+import {
+  Column,
+  CreateDateColumn,
+  Entity,
+  ManyToOne,
+  PrimaryGeneratedColumn,
+  UpdateDateColumn,
+} from 'typeorm';
 
 import {Account} from '@entities/account/account.entity';
 import {BankStatement} from '@entities/bank-statement/bank-statement.entity';
-import {BaseEntity} from '@entities/base.entity';
 
 @Entity()
-export class Transaction extends BaseEntity {
+export class Transaction {
   constructor(init?: Partial<Transaction>) {
-    super();
     Object.assign(this, init);
   }
+
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
 
   @Column({type: 'timestamp'})
   @IsNotEmpty()
@@ -46,4 +54,10 @@ export class Transaction extends BaseEntity {
 
   @ManyToOne(() => BankStatement, (bankStatement) => bankStatement.transactions)
   bankStatement: BankStatement;
+
+  @CreateDateColumn({type: 'timestamp'})
+  createdAt: Date;
+
+  @UpdateDateColumn({type: 'timestamp'})
+  updatedAt: Date;
 }

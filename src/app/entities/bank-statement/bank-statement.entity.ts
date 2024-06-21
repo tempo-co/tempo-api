@@ -1,11 +1,13 @@
-import {Column, Entity, ManyToOne, OneToMany} from 'typeorm';
+import {Column, Entity, ManyToOne, OneToMany, PrimaryGeneratedColumn} from 'typeorm';
 
 import {Account} from '@entities/account/account.entity';
-import {BaseEntity} from '@entities/base.entity';
 import {Transaction} from '@entities/transaction/transaction.entity';
 
 @Entity()
-export class BankStatement extends BaseEntity {
+export class BankStatement {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
   @Column({type: 'bytea'})
   file: Buffer;
 
