@@ -48,7 +48,7 @@ import {UserModule} from '@modules/users/user.module';
         password: config.get<string>('DB_PASSWORD'),
         database: config.get<string>('DB_NAME'),
         synchronize: config.get<boolean>('DB_SYNCHRONIZE'),
-        entities: ['entities/**/*.entity.{ts,js}'],
+        autoLoadEntities: true,
       }),
     }),
     ThrottlerModule.forRoot([
