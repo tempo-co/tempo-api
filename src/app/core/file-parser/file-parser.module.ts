@@ -1,12 +1,12 @@
 import {Module} from '@nestjs/common';
 
-import {FileParserFactory} from './file-parser.factory';
-import {FileParserService} from './file-parser.service';
-import {CsvFileParser} from './impl/csv-file-parser';
-import {XlsFileParser} from './impl/xls-file-parser';
+import {FileParserFactory} from './services/file-parser.factory';
+import {FileParserService} from './services/file-parser.service';
+import {CsvFileParser} from './services/impl/csv-file-parser';
+import {XlsFileParser} from './services/impl/xls-file-parser';
 
 @Module({
-  providers: [XlsFileParser, CsvFileParser, FileParserFactory, FileParserService],
+  providers: [FileParserService, FileParserFactory, XlsFileParser, CsvFileParser],
   exports: [FileParserService],
 })
 export class FileParserModule {}
