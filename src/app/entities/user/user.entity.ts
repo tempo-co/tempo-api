@@ -1,10 +1,12 @@
-import {Column, Entity, OneToMany} from 'typeorm';
+import {Column, Entity, OneToMany, PrimaryGeneratedColumn} from 'typeorm';
 
 import {Account} from '@entities/account/account.entity';
-import {BaseEntity} from '@entities/base.entity';
 
 @Entity()
-export class User extends BaseEntity {
+export class User {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
   @Column({type: 'varchar', length: 255})
   name: string;
 
