@@ -1,6 +1,6 @@
 import {Injectable} from '@nestjs/common';
 
-import {Bank} from './constants/bank.enum';
+import {Bank} from '../constants/bank.enum';
 import {AbnAmroTransactionMapper} from './impl/abnamro-transaction-mapper';
 import {RevolutTransactionMapper} from './impl/revolut-transaction-mapper';
 import {TransactionMapper} from './transaction-mapper.interface';

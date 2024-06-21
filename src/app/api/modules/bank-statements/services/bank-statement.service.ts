@@ -2,8 +2,8 @@ import {Injectable} from '@nestjs/common';
 import {ReadStream} from 'fs-capacitor';
 import {FileUpload} from 'graphql-upload';
 
-import {FileParserService} from '@core/file-parser/file-parser.service';
-import {TransactionMapperService} from '@core/transaction-mapper/transaction-mapper.service';
+import {FileParserService} from '@core/file-parser/services/file-parser.service';
+import {TransactionMapperService} from '@core/transaction-mapper/services/transaction-mapper.service';
 import {Account} from '@entities/account/account.entity';
 import {BankStatement} from '@entities/bank-statement/bank-statement.entity';
 import {BankStatementRepository} from '@entities/bank-statement/bank-statement.repository';
