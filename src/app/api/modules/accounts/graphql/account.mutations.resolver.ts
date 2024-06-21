@@ -13,6 +13,6 @@ export class AccountMutationsResolver {
 
   @Mutation(() => TypeAccount)
   accountCreate(@Args() args: ArgsAccountCreate, @CurrentUser() user: User): Promise<TypeAccount> {
-    return this.accountService.create({accountPartial: args, userId: user.id});
+    return this.accountService.save({accountPartial: args, userId: user.id});
   }
 }

@@ -1,21 +1,20 @@
 import {Injectable} from '@nestjs/common';
-import {InjectRepository} from '@nestjs/typeorm';
 import {ReadStream} from 'fs-capacitor';
 import {FileUpload} from 'graphql-upload';
-import {Repository} from 'typeorm';
 
 import {FileParserService} from '@core/file-parser/file-parser.service';
 import {TransactionMapperService} from '@core/transaction-mapper/transaction-mapper.service';
 import {Account} from '@entities/account/account.entity';
 import {BankStatement} from '@entities/bank-statement/bank-statement.entity';
+import {BankStatementRepository} from '@entities/bank-statement/bank-statement.repository';
 import {AccountService} from '@modules/accounts/services/account.service';
 import {TransactionService} from '@modules/transactions/services/transaction.service';
 
 @Injectable()
 export class BankStatementService {
   constructor(
-    @InjectRepository(BankStatement)
-    private readonly bankStatementRepository: Repository<BankStatement>,
+    private readonly bankStatementRepository: BankStatementRepository,
+
     private readonly accountService: AccountService,
     private readonly fileParserService: FileParserService,
     private readonly transactionMapperService: TransactionMapperService,
@@ -34,20 +33,16 @@ export class BankStatementService {
     const mappedTransactions = await this.transactionMapperService.map(jsonData, account.bank);
 
     const bankStatement = this.bankStatementRepository.create({file: buffer, account});
-    const savedBankStatement = await this.save(bankStatement);
+    const savedBankStatement = await this.bankStatementRepository.save(bankStatement);
 
     const transactions = mappedTransactions.map((transaction) => ({
       ...transaction,
       account: account,
       bankStatement: savedBankStatement,
     }));
-    await this.transactionService.create(transactions);
+    await this.transactionService.saveAll(transactions);
 
     return savedBankStatement;
-  }
-
-  async save(bankStatement: BankStatement): Promise<BankStatement> {
-    return this.bankStatementRepository.save(bankStatement);
   }
 
   private async readStream(stream: ReadStream): Promise<Buffer> {

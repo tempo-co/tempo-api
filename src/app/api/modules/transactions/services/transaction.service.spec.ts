@@ -89,7 +89,7 @@ describe('TransactionService', () => {
       jest.spyOn(transactionRepository, 'save').mockResolvedValueOnce(expectedTransaction);
 
       // Account missing
-      const transaction = await transactionService.create([expectedTransaction]);
+      const transaction = await transactionService.saveAll([expectedTransaction]);
       expect(transaction).toEqual(expectedTransaction);
     });
 
@@ -105,7 +105,7 @@ describe('TransactionService', () => {
           Promise.resolve(transaction as Transaction),
         );
 
-      const transactions = await transactionService.create(expectedTransactions);
+      const transactions = await transactionService.saveAll(expectedTransactions);
 
       expect(transactions).toEqual(expectedTransactions);
     });

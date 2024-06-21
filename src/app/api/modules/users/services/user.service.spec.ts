@@ -131,7 +131,7 @@ describe('UserService', () => {
 
       jest.spyOn(userRepository, 'findOne').mockResolvedValue(null);
       jest.spyOn(userRepository, 'save').mockResolvedValue(createdUser);
-      expect(await userService.create(createUserArgs)).toEqual(createdUser);
+      expect(await userService.save(createUserArgs)).toEqual(createdUser);
     });
 
     it('should throw ConflictException when attempting to create a user with an email that already exists', async () => {
@@ -145,7 +145,7 @@ describe('UserService', () => {
       };
 
       jest.spyOn(userRepository, 'findOne').mockResolvedValue(user);
-      await expect(userService.create(user)).rejects.toThrow(ConflictException);
+      await expect(userService.save(user)).rejects.toThrow(ConflictException);
     });
   });
 });

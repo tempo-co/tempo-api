@@ -1,25 +1,21 @@
 import {ConflictException, Injectable, NotFoundException} from '@nestjs/common';
-import {InjectRepository} from '@nestjs/typeorm';
 import * as argon2 from 'argon2';
-import {Repository} from 'typeorm';
 
 import {User} from '@entities/user/user.entity';
+import {UserRepository} from '@entities/user/user.repository';
 
-export type UserPartial = Pick<User, 'name' | 'email' | 'password'>;
+export type SaveUserOptions = Pick<User, 'name' | 'email' | 'password'>;
 
 @Injectable()
 export class UserService {
-  constructor(
-    @InjectRepository(User)
-    private readonly userRepository: Repository<User>,
-  ) {}
+  constructor(private readonly userRepository: UserRepository) {}
 
-  findAll(): Promise<User[]> {
-    return this.userRepository.find();
+  async findAll(): Promise<User[]> {
+    return this.userRepository.findAll();
   }
 
   async findById(id: User['id']): Promise<User> {
-    const user = await this.userRepository.findOne({where: {id}});
+    const user = await this.userRepository.findById(id);
 
     if (!user) {
       throw new NotFoundException(`User with id ${id} not found.`);
@@ -28,7 +24,7 @@ export class UserService {
   }
 
   async findByEmail(email: User['id']): Promise<User> {
-    const user = await this.userRepository.findOne({where: {email}});
+    const user = await this.userRepository.findByEmail(email);
 
     if (!user) {
       throw new NotFoundException(`User with email ${email} not found.`);
@@ -36,21 +32,17 @@ export class UserService {
     return user;
   }
 
-  async remove(id: User['id']): Promise<void> {
-    await this.userRepository.delete(id);
-  }
+  async save(options: SaveUserOptions): Promise<User> {
+    const {name, email, password} = options;
 
-  async create(userPartial: UserPartial): Promise<User> {
-    const {name, email, password} = userPartial;
-
-    const existingUser = await this.userRepository.findOne({where: {email}});
+    const existingUser = await this.userRepository.findByEmail(email);
 
     if (existingUser) {
       throw new ConflictException(`An account with this email already exists.`);
     }
     const hash = await argon2.hash(password);
 
-    const user = {name, email, password: hash};
+    const user = this.userRepository.create({name, email, password: hash});
     return this.userRepository.save(user);
   }
 }

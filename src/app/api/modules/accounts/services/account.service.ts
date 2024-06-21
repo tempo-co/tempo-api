@@ -1,12 +1,11 @@
 import {Injectable, NotFoundException} from '@nestjs/common';
-import {InjectRepository} from '@nestjs/typeorm';
-import {Repository} from 'typeorm';
 
 import {Account} from '@entities/account/account.entity';
+import {AccountRepository} from '@entities/account/account.repository';
 import {User} from '@entities/user/user.entity';
 import {UserService} from '@modules/users/services/user.service';
 
-type CreateOptions = {
+type SaveAccountOptions = {
   accountPartial: Pick<Account, 'alias' | 'bank'>;
   userId: Account['user']['id'];
 };
@@ -14,12 +13,11 @@ type CreateOptions = {
 @Injectable()
 export class AccountService {
   constructor(
-    @InjectRepository(Account)
-    private readonly accountRepository: Repository<Account>,
+    private readonly accountRepository: AccountRepository,
     private readonly userService: UserService,
   ) {}
 
-  async create(options: CreateOptions): Promise<Account> {
+  async save(options: SaveAccountOptions): Promise<Account> {
     const {accountPartial, userId} = options;
     const user = await this.userService.findById(userId);
 
@@ -28,11 +26,11 @@ export class AccountService {
   }
 
   async findAllByUserId(userId: User['id']): Promise<Account[]> {
-    return this.accountRepository.find({where: {user: {id: userId}}});
+    return this.accountRepository.findAllByUserId(userId);
   }
 
   async findById(id: Account['id']): Promise<Account> {
-    const account = await this.accountRepository.findOne({where: {id}});
+    const account = await this.accountRepository.findById(id);
 
     if (!account) {
       throw new NotFoundException(`Account with id ${id} not found.`);

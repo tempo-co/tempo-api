@@ -105,7 +105,7 @@ describe('AuthService', () => {
         email: email,
         password: password,
       };
-      userService.create = jest.fn().mockResolvedValue(user);
+      userService.save = jest.fn().mockResolvedValue(user);
 
       expect(await authService.createUser(createUserArgs)).toBe(user);
     });

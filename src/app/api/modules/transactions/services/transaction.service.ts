@@ -1,8 +1,7 @@
 import {Injectable, NotFoundException} from '@nestjs/common';
-import {InjectRepository} from '@nestjs/typeorm';
-import {Repository} from 'typeorm';
 
 import {Transaction} from '@entities/transaction/transaction.entity';
+import {TransactionRepository} from '@entities/transaction/transaction.repository';
 
 export type TransactionPartial = Pick<
   Transaction,
@@ -11,17 +10,14 @@ export type TransactionPartial = Pick<
 
 @Injectable()
 export class TransactionService {
-  constructor(
-    @InjectRepository(Transaction)
-    private readonly transactionRepository: Repository<Transaction>,
-  ) {}
+  constructor(private readonly transactionRepository: TransactionRepository) {}
 
-  findAll(): Promise<Transaction[]> {
-    return this.transactionRepository.find();
+  async findAll(): Promise<Transaction[]> {
+    return this.transactionRepository.findAll();
   }
 
   async findById(id: Transaction['id']): Promise<Transaction> {
-    const transaction = await this.transactionRepository.findOne({where: {id}});
+    const transaction = await this.transactionRepository.findById(id);
 
     if (!transaction) {
       throw new NotFoundException(`Transaction with id ${id} not found.`);
@@ -29,7 +25,7 @@ export class TransactionService {
     return transaction;
   }
 
-  create(transactions: Transaction[]): Promise<Transaction[]> {
-    return this.transactionRepository.save(transactions);
+  saveAll(transactions: Transaction[]): Promise<Transaction[]> {
+    return this.transactionRepository.saveAll(transactions);
   }
 }
