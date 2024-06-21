@@ -3,7 +3,7 @@ import {JwtService} from '@nestjs/jwt';
 import * as argon2 from 'argon2';
 
 import {User} from '@entities/user/user.entity';
-import {UserPartial, UserService} from '@modules/users/services/user.service';
+import {SaveUserOptions, UserService} from '@modules/users/services/user.service';
 
 import {TypeAccessToken} from '../graphql/access-token.type';
 
@@ -31,8 +31,8 @@ export class AuthService {
     return user;
   }
 
-  async createUser(userPartial: UserPartial): Promise<TypeAccessToken> {
-    const user = await this.userService.create(userPartial);
+  async createUser(options: SaveUserOptions): Promise<TypeAccessToken> {
+    const user = await this.userService.save(options);
     return await this.signAccessToken(user);
   }
 

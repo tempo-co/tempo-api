@@ -1,13 +1,12 @@
 import {Module} from '@nestjs/common';
-import {TypeOrmModule} from '@nestjs/typeorm';
 
-import {Transaction} from '@entities/transaction/transaction.entity';
+import {TransactionRepositoryModule} from '@entities/transaction/transaction.repository.module';
 
 import {TransactionQueriesResolver} from './graphql/transaction.queries.resolver';
 import {TransactionService} from './services/transaction.service';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Transaction])],
+  imports: [TransactionRepositoryModule],
   providers: [TransactionService, TransactionQueriesResolver],
   exports: [TransactionService],
 })

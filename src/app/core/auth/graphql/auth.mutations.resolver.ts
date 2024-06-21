@@ -19,14 +19,12 @@ export class AuthMutationsResolver {
   @UseGuards(LocalAuthGuard)
   @Mutation(() => TypeAccessToken)
   async logIn(@Args() _args: ArgsLogIn, @CurrentUser() user: User) {
-    const accessToken = await this.authService.signAccessToken(user);
-    return accessToken;
+    return await this.authService.signAccessToken(user);
   }
 
   @Public()
   @Mutation(() => TypeAccessToken)
   async signUp(@Args() args: ArgsSignUp) {
-    const accessToken = await this.authService.createUser(args);
-    return accessToken;
+    return await this.authService.createUser(args);
   }
 }

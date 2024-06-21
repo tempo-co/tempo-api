@@ -1,9 +1,8 @@
 import {Module} from '@nestjs/common';
-import {TypeOrmModule} from '@nestjs/typeorm';
 
 import {FileParserModule} from '@core/file-parser/file-parser.module';
 import {TransactionMapperModule} from '@core/transaction-mapper/transaction-mapper.module';
-import {BankStatement} from '@entities/bank-statement/bank-statement.entity';
+import {BankStatementRepositoryModule} from '@entities/bank-statement/bank-statement.repository.module';
 
 import {AccountModule} from '../accounts/account.module';
 import {TransactionModule} from '../transactions/transaction.module';
@@ -12,7 +11,7 @@ import {BankStatementService} from './services/bank-statement.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([BankStatement]),
+    BankStatementRepositoryModule,
     AccountModule,
     FileParserModule,
     TransactionMapperModule,
