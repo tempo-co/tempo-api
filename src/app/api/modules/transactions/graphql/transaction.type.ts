@@ -28,4 +28,10 @@ export class TypeTransaction {
 
   @Field(() => TypeBankStatement)
   bankStatement: TypeBankStatement;
+
+  @Field(() => GraphQLISODateTime)
+  createdAt: Date;
+
+  @Field(() => GraphQLISODateTime)
+  updatedAt: Date;
 }

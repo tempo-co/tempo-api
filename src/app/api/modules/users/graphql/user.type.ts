@@ -1,4 +1,4 @@
-import {Field, ID, ObjectType} from '@nestjs/graphql';
+import {Field, GraphQLISODateTime, ID, ObjectType} from '@nestjs/graphql';
 
 import {TypeAccount} from '@modules/accounts/graphql/account.type';
 
@@ -15,4 +15,7 @@ export class TypeUser {
 
   @Field(() => [TypeAccount])
   accounts: TypeAccount[];
+
+  @Field(() => GraphQLISODateTime)
+  createdAt: Date;
 }
