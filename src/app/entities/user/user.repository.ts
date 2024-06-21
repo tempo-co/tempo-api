@@ -4,6 +4,8 @@ import {DeepPartial, Repository} from 'typeorm';
 
 import {User} from '@entities/user/user.entity';
 
+export type UserSaveOptions = Pick<User, 'name' | 'email' | 'password'>;
+
 @Injectable()
 export class UserRepository {
   constructor(
@@ -33,7 +35,7 @@ export class UserRepository {
     });
   }
 
-  save(user: User): Promise<User> {
+  save(user: UserSaveOptions): Promise<User> {
     return this.repository.save(user);
   }
 }

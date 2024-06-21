@@ -2,9 +2,7 @@ import {ConflictException, Injectable, NotFoundException} from '@nestjs/common';
 import * as argon2 from 'argon2';
 
 import {User} from '@entities/user/user.entity';
-import {UserRepository} from '@entities/user/user.repository';
-
-export type SaveUserOptions = Pick<User, 'name' | 'email' | 'password'>;
+import {UserRepository, UserSaveOptions} from '@entities/user/user.repository';
 
 @Injectable()
 export class UserService {
@@ -32,7 +30,7 @@ export class UserService {
     return user;
   }
 
-  async save(options: SaveUserOptions): Promise<User> {
+  async save(options: UserSaveOptions): Promise<User> {
     const {name, email, password} = options;
 
     const existingUser = await this.userRepository.findByEmail(email);
