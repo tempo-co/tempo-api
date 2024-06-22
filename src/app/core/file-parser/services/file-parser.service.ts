@@ -8,7 +8,7 @@ export class FileParserService {
 
   parse(buffer: Buffer, mimetype: string): Record<string, string>[] {
     const fileParser = this.fileParserFactory.create(mimetype);
-    const data = fileParser.parse(buffer);
-    return data;
+    const records = fileParser.parse(buffer);
+    return records;
   }
 }
