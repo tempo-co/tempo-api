@@ -5,8 +5,9 @@ import {AccountRepository} from '@entities/account/account.repository';
 import {User} from '@entities/user/user.entity';
 import {UserService} from '@modules/users/services/user.service';
 
-type SaveAccountOptions = {
-  accountPartial: Pick<Account, 'alias' | 'bank'>;
+type SaveOptions = {
+  alias: Account['alias'];
+  bank: Account['bank'];
   userId: Account['user']['id'];
 };
 
@@ -17,12 +18,11 @@ export class AccountService {
     private readonly userService: UserService,
   ) {}
 
-  async save(options: SaveAccountOptions): Promise<Account> {
-    const {accountPartial, userId} = options;
+  async save(options: SaveOptions): Promise<Account> {
+    const {alias, bank, userId} = options;
     const user = await this.userService.findById(userId);
 
-    const account = this.accountRepository.create({...accountPartial, user});
-    return this.accountRepository.save(account);
+    return this.accountRepository.save({alias, bank, user});
   }
 
   async findAllByUserId(userId: User['id']): Promise<Account[]> {
