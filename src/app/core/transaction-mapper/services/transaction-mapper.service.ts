@@ -9,11 +9,11 @@ import {TransactionPartial} from './transaction-mapper.interface';
 export class TransactionMapperService {
   constructor(private readonly transactionMapperFactory: TransactionMapperFactory) {}
 
-  async map(data: Record<string, string>[], bank: Bank): Promise<TransactionPartial[]> {
+  async map(records: Record<string, string>[], bank: Bank): Promise<TransactionPartial[]> {
     const mapper = this.transactionMapperFactory.create(bank);
 
     const transactions = await Promise.all(
-      data.map(async (rawTransaction) => {
+      records.map(async (rawTransaction) => {
         const transaction = mapper.map(rawTransaction);
 
         const validationErrors = await validate(transaction);
