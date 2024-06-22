@@ -8,31 +8,40 @@ import {AccountRepository} from './account.repository';
 
 describe('AccountRepository', () => {
   let accountRepository: AccountRepository;
-  let repository: Repository<Account>;
+  let mockRepository: Partial<Repository<Account>>;
 
   beforeEach(async () => {
     faker.seed(4);
+    mockRepository = {
+      find: jest.fn().mockResolvedValue([]),
+      findOne: jest.fn(),
+      save: jest.fn().mockResolvedValue({}),
+    };
+
     const module = await Test.createTestingModule({
       providers: [
         AccountRepository,
         {
           provide: getRepositoryToken(Account),
-          useClass: Repository,
+          useValue: mockRepository,
         },
       ],
     }).compile();
 
     accountRepository = module.get<AccountRepository>(AccountRepository);
-    repository = module.get<Repository<Account>>(getRepositoryToken(Account));
+  });
+
+  it('should be defined', () => {
+    expect(accountRepository).toBeDefined();
   });
 
   describe('save', () => {
     it('should save an account', async () => {
       const account: Account = {id: faker.string.uuid()} as Account;
-      jest.spyOn(repository, 'save').mockResolvedValue(account);
+      (mockRepository.save as jest.Mock).mockResolvedValue(account);
 
       expect(await accountRepository.save(account)).toEqual(account);
-      expect(repository.save).toHaveBeenCalledWith(account);
+      expect(mockRepository.save).toHaveBeenCalledWith(account);
     });
   });
 
@@ -43,10 +52,10 @@ describe('AccountRepository', () => {
         {id: faker.string.uuid()} as Account,
         {id: faker.string.uuid()} as Account,
       ];
-      jest.spyOn(repository, 'find').mockResolvedValue(accounts);
+      (mockRepository.find as jest.Mock).mockResolvedValue(accounts);
 
       expect(await accountRepository.findAllByUserId(userId)).toEqual(accounts);
-      expect(repository.find).toHaveBeenCalledWith({
+      expect(mockRepository.find).toHaveBeenCalledWith({
         where: {user: {id: userId}},
       });
     });
@@ -56,10 +65,10 @@ describe('AccountRepository', () => {
     it('should find an account by id', async () => {
       const id = faker.string.uuid();
       const account = {id} as Account;
-      jest.spyOn(repository, 'findOne').mockResolvedValue(account);
+      (mockRepository.findOne as jest.Mock).mockResolvedValue(account);
 
       expect(await accountRepository.findById(id)).toEqual(account);
-      expect(repository.findOne).toHaveBeenCalledWith({
+      expect(mockRepository.findOne).toHaveBeenCalledWith({
         where: {id},
       });
     });
