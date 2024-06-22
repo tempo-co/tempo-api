@@ -1,10 +1,15 @@
 import {Injectable} from '@nestjs/common';
 import {InjectRepository} from '@nestjs/typeorm';
-import {DeepPartial, Repository} from 'typeorm';
+import {Repository} from 'typeorm';
 
 import {User} from '@entities/user/user.entity';
 
 import {Account} from './account.entity';
+
+export type AccountSaveOptions = Omit<
+  Account,
+  'id' | 'balance' | 'transactions' | 'bankStatements'
+>;
 
 @Injectable()
 export class AccountRepository {
@@ -13,11 +18,7 @@ export class AccountRepository {
     private readonly repository: Repository<Account>,
   ) {}
 
-  create(accountPartial: DeepPartial<Account>): Account {
-    return this.repository.create(accountPartial);
-  }
-
-  save(account: Account): Promise<Account> {
+  save(account: AccountSaveOptions): Promise<Account> {
     return this.repository.save(account);
   }
 
