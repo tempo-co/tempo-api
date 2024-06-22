@@ -13,10 +13,6 @@ import {BankStatement} from '@entities/bank-statement/bank-statement.entity';
 
 @Entity()
 export class Transaction {
-  constructor(init?: Partial<Transaction>) {
-    Object.assign(this, init);
-  }
-
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
