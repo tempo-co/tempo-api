@@ -12,7 +12,7 @@ function createTransaction(): TransactionSaveOptions {
   return {
     startedDate: faker.date.past(),
     completedDate: faker.date.past(),
-    description: faker.lorem.sentence(),
+    description: faker.finance.transactionDescription(),
     amount: parseFloat(faker.finance.amount()),
     currency: faker.finance.currencyCode(),
     account: {id: faker.string.uuid()} as Account,
