@@ -32,17 +32,16 @@ export class BankStatementService {
 
     const mappedTransactions = await this.transactionMapperService.map(jsonData, account.bank);
 
-    const bankStatement = this.bankStatementRepository.create({file: buffer, account});
-    const savedBankStatement = await this.bankStatementRepository.save(bankStatement);
+    const savedBankStatement = await this.bankStatementRepository.save({file: buffer, account});
 
     const transactions = mappedTransactions.map((transaction) => ({
       ...transaction,
       account: account,
       bankStatement: savedBankStatement,
     }));
-    await this.transactionService.saveAll(transactions);
+    const savedTransactions = await this.transactionService.saveAll(transactions);
 
-    return savedBankStatement;
+    return {...savedBankStatement, transactions: savedTransactions};
   }
 
   private async readStream(stream: ReadStream): Promise<Buffer> {
