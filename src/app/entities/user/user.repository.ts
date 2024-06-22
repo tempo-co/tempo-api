@@ -1,6 +1,6 @@
 import {Injectable} from '@nestjs/common';
 import {InjectRepository} from '@nestjs/typeorm';
-import {DeepPartial, Repository} from 'typeorm';
+import {Repository} from 'typeorm';
 
 import {User} from '@entities/user/user.entity';
 
@@ -12,10 +12,6 @@ export class UserRepository {
     @InjectRepository(User)
     private readonly repository: Repository<User>,
   ) {}
-
-  create(userPartial: DeepPartial<User>): User {
-    return this.repository.create(userPartial);
-  }
 
   findAll(): Promise<User[]> {
     return this.repository.find();
