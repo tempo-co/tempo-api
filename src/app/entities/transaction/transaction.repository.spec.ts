@@ -44,6 +44,10 @@ describe('TransactionRepository', () => {
     transactionRepository = module.get<TransactionRepository>(TransactionRepository);
   });
 
+  it('should be defined', () => {
+    expect(transactionRepository).toBeDefined();
+  });
+
   describe('findAll', () => {
     it('should find all transactions', async () => {
       const transactions = await transactionRepository.findAll();

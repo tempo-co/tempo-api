@@ -9,7 +9,7 @@ import {BankStatement} from './bank-statement.entity';
 import {BankStatementRepository, BankStatementSaveOptions} from './bank-statement.repository';
 
 describe('BankStatementRepository', () => {
-  let repository: BankStatementRepository;
+  let bankStatementRepository: BankStatementRepository;
   let mockRepository: Partial<Repository<BankStatement>>;
 
   beforeEach(async () => {
@@ -28,7 +28,11 @@ describe('BankStatementRepository', () => {
       ],
     }).compile();
 
-    repository = module.get<BankStatementRepository>(BankStatementRepository);
+    bankStatementRepository = module.get<BankStatementRepository>(BankStatementRepository);
+  });
+
+  it('should be defined', () => {
+    expect(bankStatementRepository).toBeDefined();
   });
 
   describe('save', () => {
@@ -44,7 +48,7 @@ describe('BankStatementRepository', () => {
       };
       (mockRepository.save as jest.Mock).mockResolvedValue(expectedBankStatement);
 
-      const result = await repository.save(bankStatement);
+      const result = await bankStatementRepository.save(bankStatement);
       expect(mockRepository.save).toHaveBeenCalledWith(bankStatement);
       expect(result).toEqual(expectedBankStatement);
     });
