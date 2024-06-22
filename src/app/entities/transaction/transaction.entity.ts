@@ -49,15 +49,15 @@ export class Transaction {
   @Length(3, 3)
   currency: string;
 
-  @ManyToOne(() => Account, (account) => account.transactions)
-  account: Account;
-
-  @ManyToOne(() => BankStatement, (bankStatement) => bankStatement.transactions)
-  bankStatement: BankStatement;
-
   @CreateDateColumn({type: 'timestamp'})
   createdAt: Date;
 
   @UpdateDateColumn({type: 'timestamp'})
   updatedAt: Date;
+
+  @ManyToOne(() => Account, (account) => account.transactions)
+  account: Account;
+
+  @ManyToOne(() => BankStatement, (bankStatement) => bankStatement.transactions, {nullable: true})
+  bankStatement?: BankStatement | null;
 }
