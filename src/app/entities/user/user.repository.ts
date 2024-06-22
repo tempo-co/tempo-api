@@ -4,7 +4,7 @@ import {DeepPartial, Repository} from 'typeorm';
 
 import {User} from '@entities/user/user.entity';
 
-export type UserSaveOptions = Pick<User, 'name' | 'email' | 'password'>;
+export type UserSaveOptions = Omit<User, 'id' | 'createdAt' | 'accounts'>;
 
 @Injectable()
 export class UserRepository {
