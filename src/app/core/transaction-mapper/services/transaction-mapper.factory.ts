@@ -1,4 +1,4 @@
-import {Injectable} from '@nestjs/common';
+import {BadRequestException, Injectable} from '@nestjs/common';
 
 import {Bank} from '../constants/bank.enum';
 import {AbnAmroTransactionMapper} from './impl/abnamro-transaction-mapper';
@@ -19,7 +19,7 @@ export class TransactionMapperFactory {
       case Bank.REVOLUT:
         return this.revolutMapper;
       default:
-        throw new Error(`Unsupported bank: ${bank}`);
+        throw new BadRequestException(`Unsupported bank: ${bank}`);
     }
   }
 }
