@@ -26,8 +26,8 @@ export class TypeTransaction {
   @Field(() => TypeAccount)
   account: TypeAccount;
 
-  @Field(() => TypeBankStatement)
-  bankStatement: TypeBankStatement;
+  @Field(() => TypeBankStatement, {nullable: true})
+  bankStatement?: TypeBankStatement;
 
   @Field(() => GraphQLISODateTime)
   createdAt: Date;
