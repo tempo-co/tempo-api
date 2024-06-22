@@ -1,4 +1,4 @@
-import {Injectable} from '@nestjs/common';
+import {BadRequestException, Injectable} from '@nestjs/common';
 
 import {FileParser} from './file-parser.interface';
 import {CsvFileParser} from './impl/csv-file-parser';
@@ -18,7 +18,7 @@ export class FileParserFactory {
       case 'text/csv':
         return this.csvParser;
       default:
-        throw new Error(`Unsupported file type: ${mimetype}`);
+        throw new BadRequestException(`Unsupported file type: ${mimetype}`);
     }
   }
 }
