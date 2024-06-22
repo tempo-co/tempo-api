@@ -1,12 +1,10 @@
 import {Injectable, NotFoundException} from '@nestjs/common';
 
 import {Transaction} from '@entities/transaction/transaction.entity';
-import {TransactionRepository} from '@entities/transaction/transaction.repository';
-
-export type TransactionPartial = Pick<
-  Transaction,
-  'startedDate' | 'completedDate' | 'description' | 'amount' | 'currency'
->;
+import {
+  TransactionRepository,
+  TransactionSaveOptions,
+} from '@entities/transaction/transaction.repository';
 
 @Injectable()
 export class TransactionService {
@@ -25,7 +23,10 @@ export class TransactionService {
     return transaction;
   }
 
-  saveAll(transactions: Transaction[]): Promise<Transaction[]> {
+  saveAll(transactions: TransactionSaveOptions[]): Promise<Transaction[]> {
+    if (transactions.length === 0) {
+      return Promise.resolve([]);
+    }
     return this.transactionRepository.saveAll(transactions);
   }
 }

@@ -1,6 +1,4 @@
-import {Transaction} from '@entities/transaction/transaction.entity';
-
-import {TransactionMapper} from '../transaction-mapper.interface';
+import {TransactionMapper, TransactionPartial} from '../transaction-mapper.interface';
 
 type AbnAmroTransaction = {
   transactiondate: string;
@@ -13,14 +11,14 @@ type AbnAmroTransaction = {
 };
 
 export class AbnAmroTransactionMapper implements TransactionMapper {
-  map(transaction: AbnAmroTransaction): Transaction {
-    return new Transaction({
+  map(transaction: AbnAmroTransaction): TransactionPartial {
+    return {
       startedDate: this.parseDate(transaction.transactiondate),
       completedDate: this.parseDate(transaction.valuedate),
       description: transaction.description.replace(/\s+/g, ' ').trim(),
       amount: parseFloat(transaction.amount),
       currency: transaction.mutationcode,
-    });
+    };
   }
 
   private parseDate(dateString: string): Date {

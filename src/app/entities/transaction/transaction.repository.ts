@@ -1,8 +1,10 @@
 import {Injectable} from '@nestjs/common';
 import {InjectRepository} from '@nestjs/typeorm';
-import {DeepPartial, Repository} from 'typeorm';
+import {Repository} from 'typeorm';
 
 import {Transaction} from './transaction.entity';
+
+export type TransactionSaveOptions = Omit<Transaction, 'id' | 'createdAt' | 'updatedAt'>;
 
 @Injectable()
 export class TransactionRepository {
@@ -10,10 +12,6 @@ export class TransactionRepository {
     @InjectRepository(Transaction)
     private readonly repository: Repository<Transaction>,
   ) {}
-
-  create(transactionPartial: DeepPartial<Transaction>): Transaction {
-    return this.repository.create(transactionPartial);
-  }
 
   findAll(): Promise<Transaction[]> {
     return this.repository.find();
@@ -23,11 +21,7 @@ export class TransactionRepository {
     return this.repository.findOne({where: {id}});
   }
 
-  save(transaction: Transaction): Promise<Transaction> {
-    return this.repository.save(transaction);
-  }
-
-  saveAll(transactions: Transaction[]): Promise<Transaction[]> {
+  saveAll(transactions: TransactionSaveOptions[]): Promise<Transaction[]> {
     return this.repository.save(transactions);
   }
 }
