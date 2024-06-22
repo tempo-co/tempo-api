@@ -1,6 +1,6 @@
 import {TransactionMapper, TransactionPartial} from '../transaction-mapper.interface';
 
-type AbnAmroTransaction = {
+export type AbnAmroTransaction = {
   transactiondate: string;
   valuedate: string;
   startsaldo: string;

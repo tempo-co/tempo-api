@@ -1,6 +1,6 @@
 import {TransactionMapper, TransactionPartial} from '../transaction-mapper.interface';
 
-type RevolutTransaction = {
+export type RevolutTransaction = {
   type: string;
   product: string;
   startedDate: string;
