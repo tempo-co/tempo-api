@@ -46,12 +46,14 @@ type Query {
 type Transaction {
   account: Account!
   amount: Float!
-  bankStatement: BankStatement!
+  bankStatement: BankStatement
   completedDate: DateTime!
+  createdAt: DateTime!
   currency: String!
   description: String!
   id: ID!
   startedDate: DateTime!
+  updatedAt: DateTime!
 }
 
 type TypeAccessToken {
@@ -63,6 +65,7 @@ scalar Upload
 
 type User {
   accounts: [Account!]!
+  createdAt: DateTime!
   email: String!
   id: ID!
   name: String!
