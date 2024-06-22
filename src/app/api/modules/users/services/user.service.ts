@@ -40,7 +40,6 @@ export class UserService {
     }
     const hash = await argon2.hash(password);
 
-    const user = this.userRepository.create({name, email, password: hash});
-    return this.userRepository.save(user);
+    return this.userRepository.save({name, email, password: hash});
   }
 }
