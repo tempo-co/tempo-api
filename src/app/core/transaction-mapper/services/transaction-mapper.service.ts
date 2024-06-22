@@ -1,16 +1,15 @@
 import {BadRequestException, Injectable} from '@nestjs/common';
 import {validate} from 'class-validator';
 
-import {Transaction} from '@entities/transaction/transaction.entity';
-
 import {Bank} from '../constants/bank.enum';
 import {TransactionMapperFactory} from './transaction-mapper.factory';
+import {TransactionPartial} from './transaction-mapper.interface';
 
 @Injectable()
 export class TransactionMapperService {
   constructor(private readonly transactionMapperFactory: TransactionMapperFactory) {}
 
-  async map(data: Record<string, string>[], bank: Bank): Promise<Transaction[]> {
+  async map(data: Record<string, string>[], bank: Bank): Promise<TransactionPartial[]> {
     const mapper = this.transactionMapperFactory.create(bank);
 
     const transactions = await Promise.all(
