@@ -34,6 +34,10 @@ describe('UserRepository', () => {
     userRepository = module.get<UserRepository>(UserRepository);
   });
 
+  it('should be defined', () => {
+    expect(userRepository).toBeDefined();
+  });
+
   describe('findAll', () => {
     it('should find all users', async () => {
       const users = await userRepository.findAll();
