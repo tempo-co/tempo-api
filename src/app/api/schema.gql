@@ -37,6 +37,7 @@ type Mutation {
 }
 
 type Query {
+  generateText(prompt: String!): String!
   transaction(id: ID!): Transaction!
   transactions: [Transaction!]!
   user(id: ID!): User!

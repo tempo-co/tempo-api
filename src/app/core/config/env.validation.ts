@@ -62,6 +62,11 @@ class EnvironmentVariables {
   @IsNotEmpty()
   @Matches(/\S/, {message: 'JWT_SECRET cannot be whitespace'})
   JWT_SECRET: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @Matches(/\S/, {message: 'GEMINI_API_KEY cannot be whitespace'})
+  GEMINI_API_KEY: string;
 }
 
 export function validate(config: Record<string, unknown>) {

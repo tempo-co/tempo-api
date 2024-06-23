@@ -14,6 +14,7 @@ describe('EnvironmentVariables validation', () => {
     DB_NAME: 'test_db',
     DB_SYNCHRONIZE: true,
     JWT_SECRET: 'secret',
+    GEMINI_API_KEY: 'key',
   };
 
   it('should validate a valid configuration', () => {
@@ -74,6 +75,11 @@ describe('EnvironmentVariables validation', () => {
 
   it('should throw an error for an invalid DB_NAME', () => {
     const invalidConfig = {...validConfig, DB_NAME: ''};
+    expect(() => validate(invalidConfig)).toThrow(Error);
+  });
+
+  it('should throw an error for an invalid GEMINI_API_KEY', () => {
+    const invalidConfig = {...validConfig, GEMINI_API_KEY: ''};
     expect(() => validate(invalidConfig)).toThrow(Error);
   });
 });

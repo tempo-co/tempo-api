@@ -32,6 +32,7 @@
   "dependencies": {
     "@apollo/server": "^4.10.4",
     "@faker-js/faker": "^8.4.1",
+    "@google/generative-ai": "^0.13.0",
     "@nestjs/apollo": "^12.1.0",
     "@nestjs/common": "^10.0.0",
     "@nestjs/config": "^3.2.2",
