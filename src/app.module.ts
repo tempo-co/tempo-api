@@ -12,6 +12,7 @@ import {AuthModule} from '@core/auth/auth.module';
 import {validate} from '@core/config/env.validation';
 import {GqlThrottlerGuard} from '@core/config/guards/throttler.guard';
 import {FileParserModule} from '@core/file-parser/file-parser.module';
+import {GeminiModule} from '@core/gemini/gemini.module';
 import {BankStatementModule} from '@modules/bank-statements/bank-statement.module';
 import {TransactionModule} from '@modules/transactions/transaction.module';
 import {UserModule} from '@modules/users/user.module';
@@ -62,6 +63,7 @@ import {UserModule} from '@modules/users/user.module';
     AuthModule,
     UserModule,
     BankStatementModule,
+    GeminiModule,
   ],
   providers: [
     {
