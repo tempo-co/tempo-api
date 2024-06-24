@@ -24,6 +24,19 @@ type BankStatement {
   transactions: [Transaction!]!
 }
 
+enum Category {
+  ENTERTAINMENT
+  FOOD_AND_DRINK
+  GENERAL_MERCHANDISE
+  INCOME
+  MEDICAL
+  OTHER
+  RENT_AND_UTILITIES
+  TRANSFER_IN
+  TRANSFER_OUT
+  TRANSPORTATION
+}
+
 """
 A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format.
 """
@@ -37,7 +50,6 @@ type Mutation {
 }
 
 type Query {
-  generateText(prompt: String!): String!
   transaction(id: ID!): Transaction!
   transactions: [Transaction!]!
   user(id: ID!): User!
@@ -48,6 +60,7 @@ type Transaction {
   account: Account!
   amount: Float!
   bankStatement: BankStatement
+  category: Category!
   completedDate: DateTime!
   createdAt: DateTime!
   currency: String!
