@@ -3,6 +3,7 @@ import {ReadStream} from 'fs-capacitor';
 import {FileUpload} from 'graphql-upload';
 
 import {FileParserService} from '@core/file-parser/services/file-parser.service';
+import {TransactionCategorizerService} from '@core/transaction-categorizer/services/transaction-categorizer.service';
 import {TransactionMapperService} from '@core/transaction-mapper/services/transaction-mapper.service';
 import {Account} from '@entities/account/account.entity';
 import {BankStatement} from '@entities/bank-statement/bank-statement.entity';
@@ -18,6 +19,7 @@ export class BankStatementService {
     private readonly accountService: AccountService,
     private readonly fileParserService: FileParserService,
     private readonly transactionMapperService: TransactionMapperService,
+    private readonly transactionCategorizerService: TransactionCategorizerService,
     private readonly transactionService: TransactionService,
   ) {}
 
@@ -32,9 +34,12 @@ export class BankStatementService {
 
     const mappedTransactions = await this.transactionMapperService.map(jsonData, account.bank);
 
+    const categorizedTransactions =
+      await this.transactionCategorizerService.categorize(mappedTransactions);
+
     const savedBankStatement = await this.bankStatementRepository.save({file: buffer, account});
 
-    const transactions = mappedTransactions.map((transaction) => ({
+    const transactions = categorizedTransactions.map((transaction) => ({
       ...transaction,
       account: account,
       bankStatement: savedBankStatement,
