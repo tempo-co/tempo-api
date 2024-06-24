@@ -3,6 +3,7 @@ import {Test, TestingModule} from '@nestjs/testing';
 import {getRepositoryToken} from '@nestjs/typeorm';
 import {Repository} from 'typeorm';
 
+import {Category} from '@core/transaction-categorizer/constants/category.enum';
 import {Account} from '@entities/account/account.entity';
 
 import {Transaction} from './transaction.entity';
@@ -16,6 +17,7 @@ function createTransaction(): TransactionSaveOptions {
     amount: parseFloat(faker.finance.amount()),
     currency: faker.finance.currencyCode(),
     account: {id: faker.string.uuid()} as Account,
+    category: faker.helpers.arrayElement(Object.values(Category)),
   };
 }
 
