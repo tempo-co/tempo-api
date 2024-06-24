@@ -1,6 +1,7 @@
 import {Module} from '@nestjs/common';
 
 import {FileParserModule} from '@core/file-parser/file-parser.module';
+import {TransactionCategorizerModule} from '@core/transaction-categorizer/transaction-categorizer.module';
 import {TransactionMapperModule} from '@core/transaction-mapper/transaction-mapper.module';
 import {BankStatementRepositoryModule} from '@entities/bank-statement/bank-statement.repository.module';
 
@@ -15,6 +16,7 @@ import {BankStatementService} from './services/bank-statement.service';
     AccountModule,
     FileParserModule,
     TransactionMapperModule,
+    TransactionCategorizerModule,
     TransactionModule,
   ],
   providers: [BankStatementService, BankStatementMutationsResolver],
