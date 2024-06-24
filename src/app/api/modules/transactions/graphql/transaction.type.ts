@@ -1,5 +1,6 @@
 import {Field, Float, GraphQLISODateTime, ID, ObjectType} from '@nestjs/graphql';
 
+import {Category} from '@core/transaction-categorizer/constants/category.enum';
 import {TypeAccount} from '@modules/accounts/graphql/account.type';
 import {TypeBankStatement} from '@modules/bank-statements/graphql/bank-statement.type';
 
@@ -23,15 +24,18 @@ export class TypeTransaction {
   @Field()
   currency: string;
 
-  @Field(() => TypeAccount)
-  account: TypeAccount;
-
-  @Field(() => TypeBankStatement, {nullable: true})
-  bankStatement?: TypeBankStatement | null;
-
   @Field(() => GraphQLISODateTime)
   createdAt: Date;
 
   @Field(() => GraphQLISODateTime)
   updatedAt: Date;
+
+  @Field(() => Category)
+  category: Category;
+
+  @Field(() => TypeAccount)
+  account: TypeAccount;
+
+  @Field(() => TypeBankStatement, {nullable: true})
+  bankStatement?: TypeBankStatement | null;
 }
