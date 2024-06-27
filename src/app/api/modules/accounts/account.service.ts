@@ -3,7 +3,7 @@ import {Injectable, NotFoundException} from '@nestjs/common';
 import {Account} from '@entities/account/account.entity';
 import {AccountRepository} from '@entities/account/account.repository';
 import {User} from '@entities/user/user.entity';
-import {UserService} from '@modules/users/services/user.service';
+import {UserService} from '@modules/users/user.service';
 
 type SaveOptions = {
   alias: Account['alias'];

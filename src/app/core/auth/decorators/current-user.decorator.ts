@@ -1,10 +1,12 @@
-import {ExecutionContext, createParamDecorator} from '@nestjs/common';
-import {GqlExecutionContext} from '@nestjs/graphql';
+import {UnauthorizedException, createParamDecorator} from '@nestjs/common';
+import {Request} from 'express';
 
 /**
  * Extracts the current user from the request context.
  */
-export const CurrentUser = createParamDecorator((_data: unknown, context: ExecutionContext) => {
-  const ctx = GqlExecutionContext.create(context);
-  return ctx.getContext().req.user;
+export const CurrentUser = createParamDecorator((_data, req: Request) => {
+  if (!req.user) {
+    throw new UnauthorizedException();
+  }
+  return req.user;
 });

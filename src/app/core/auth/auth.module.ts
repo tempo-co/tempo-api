@@ -6,7 +6,7 @@ import {PassportModule} from '@nestjs/passport';
 
 import {UserModule} from '@modules/users/user.module';
 
-import {AuthMutationsResolver} from './graphql/auth.mutations.resolver';
+import {AuthController} from './api/auth.controller';
 import {JwtAuthGuard} from './guards/jwt-auth.guard';
 import {AuthService} from './services/auth.service';
 import {JwtStrategy} from './strategies/jwt.strategy';
@@ -17,12 +17,12 @@ import {LocalStrategy} from './strategies/local.strategy';
     PassportModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
+      inject: [ConfigService],
       useFactory: async (config: ConfigService) => ({
         global: true,
         signOptions: {expiresIn: '10000s'},
         secret: config.get<string>('JWT_SECRET'),
       }),
-      inject: [ConfigService],
     }),
     UserModule,
     ConfigModule,
@@ -35,8 +35,8 @@ import {LocalStrategy} from './strategies/local.strategy';
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
     },
-    AuthMutationsResolver,
   ],
+  controllers: [AuthController],
   exports: [AuthService],
 })
 export class AuthModule {}
