@@ -1,16 +1,11 @@
-import {ApolloServerPluginLandingPageLocalDefault} from '@apollo/server/plugin/landingPage/default';
-import {ApolloDriver, ApolloDriverConfig} from '@nestjs/apollo';
 import {Module} from '@nestjs/common';
 import {ConfigModule, ConfigService} from '@nestjs/config';
 import {APP_GUARD} from '@nestjs/core';
-import {GraphQLModule} from '@nestjs/graphql';
-import {ThrottlerModule, minutes} from '@nestjs/throttler';
+import {ThrottlerGuard, ThrottlerModule, minutes} from '@nestjs/throttler';
 import {TypeOrmModule} from '@nestjs/typeorm';
-import {join} from 'path';
 
 import {AuthModule} from '@core/auth/auth.module';
 import {validate} from '@core/config/env.validation';
-import {GqlThrottlerGuard} from '@core/config/guards/throttler.guard';
 import {FileParserModule} from '@core/file-parser/file-parser.module';
 import {TransactionCategorizerModule} from '@core/transaction-categorizer/transaction-categorizer.module';
 import {BankStatementModule} from '@modules/bank-statements/bank-statement.module';
@@ -27,16 +22,6 @@ import {UserModule} from '@modules/users/user.module';
         allowUnknown: false,
         abortEarly: true,
       },
-    }),
-    GraphQLModule.forRoot<ApolloDriverConfig>({
-      driver: ApolloDriver,
-      autoSchemaFile: join(process.cwd(), 'src/app/api/schema.gql'),
-      sortSchema: true,
-      playground: false,
-      introspection: true,
-      plugins: [ApolloServerPluginLandingPageLocalDefault()],
-      context: ({req, res}: {req: Request; res: Response}) => ({req, res}),
-      csrfPrevention: true,
     }),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
@@ -68,7 +53,7 @@ import {UserModule} from '@modules/users/user.module';
   providers: [
     {
       provide: APP_GUARD,
-      useClass: GqlThrottlerGuard,
+      useClass: ThrottlerGuard,
     },
   ],
 })
