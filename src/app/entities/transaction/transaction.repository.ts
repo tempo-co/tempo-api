@@ -13,10 +13,6 @@ export class TransactionRepository {
     private readonly repository: Repository<Transaction>,
   ) {}
 
-  findAll(): Promise<Transaction[]> {
-    return this.repository.find();
-  }
-
   findById(id: Transaction['id']): Promise<Transaction | null> {
     return this.repository.findOne({where: {id}});
   }

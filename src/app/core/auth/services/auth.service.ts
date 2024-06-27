@@ -4,9 +4,9 @@ import * as argon2 from 'argon2';
 
 import {User} from '@entities/user/user.entity';
 import {UserSaveOptions} from '@entities/user/user.repository';
-import {UserService} from '@modules/users/services/user.service';
+import {UserService} from '@modules/users/user.service';
 
-import {TypeAccessToken} from '../graphql/access-token.type';
+import {AccessTokenDto} from '../api/access-token.dto';
 
 @Injectable()
 export class AuthService {
@@ -32,12 +32,12 @@ export class AuthService {
     return user;
   }
 
-  async createUser(options: UserSaveOptions): Promise<TypeAccessToken> {
+  async createUser(options: UserSaveOptions): Promise<AccessTokenDto> {
     const user = await this.userService.save(options);
     return await this.signAccessToken(user);
   }
 
-  async signAccessToken(user: User): Promise<TypeAccessToken> {
+  async signAccessToken(user: User): Promise<AccessTokenDto> {
     const payload = {sub: user.id, email: user.email};
 
     const jwt = await this.jwtService.signAsync(payload);
