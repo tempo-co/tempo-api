@@ -1,14 +1,20 @@
-import {IsEmail, IsString, Length} from 'class-validator';
+import {IsEmail, IsNotEmpty, IsString, Length} from 'class-validator';
+
+import {User} from '@entities/user/user.entity';
 
 export class SignUpDto {
+  @IsNotEmpty()
   @IsString()
   @Length(1, 255)
-  name: string;
+  name: User['name'];
 
+  @IsNotEmpty()
   @IsEmail()
   @Length(1, 255)
-  email: string;
+  email: User['email'];
 
+  @IsNotEmpty()
+  @IsString()
   @Length(8, 255)
-  password: string;
+  password: User['password'];
 }
