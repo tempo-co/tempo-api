@@ -1,11 +1,15 @@
-import {IsEmail, IsString, MaxLength, MinLength} from 'class-validator';
+import {IsEmail, IsNotEmpty, IsString, Length, MaxLength, MinLength} from 'class-validator';
+
+import {User} from '@entities/user/user.entity';
 
 export class LogInDto {
+  @IsNotEmpty()
   @IsEmail()
-  email: string;
+  @Length(1, 255)
+  email: User['email'];
 
   @IsString()
   @MinLength(8)
   @MaxLength(255)
-  password: string;
+  password: User['password'];
 }
