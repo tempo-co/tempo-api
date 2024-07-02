@@ -23,7 +23,7 @@ import {LocalStrategy} from './strategies/local.strategy';
       useFactory: async (config: ConfigService) => ({
         global: true,
         signOptions: {expiresIn: '10000s'},
-        secret: config.get<string>('JWT_SECRET'),
+        secret: config.get<string>('ACCESS_TOKEN_SECRET'),
       }),
     }),
     RefreshTokenModule,
