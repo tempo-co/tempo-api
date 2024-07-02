@@ -1,5 +1,7 @@
 import * as Joi from 'joi';
 
+const durationPattern = /^[0-9]+(s|m|h|d|w)$/;
+
 export const validationSchema = Joi.object({
   NODE_ENV: Joi.string().valid('development', 'production').required(),
   PORT: Joi.number().min(0).max(65535).required(),
@@ -10,7 +12,7 @@ export const validationSchema = Joi.object({
   DB_NAME: Joi.string().regex(/\S/).required(),
   DB_SYNCHRONIZE: Joi.boolean().required(),
   ACCESS_TOKEN_SECRET: Joi.string().regex(/\S/).required(),
-  ACCESS_TOKEN_EXPIRATION: Joi.string().regex(/\S/).required(),
-  REFRESH_TOKEN_EXPIRATION: Joi.string().regex(/\S/).required(),
+  ACCESS_TOKEN_EXPIRATION: Joi.string().regex(durationPattern).required(),
+  REFRESH_TOKEN_EXPIRATION: Joi.string().regex(durationPattern).required(),
   GEMINI_API_KEY: Joi.string().regex(/\S/).required(),
 });
