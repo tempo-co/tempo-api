@@ -4,6 +4,7 @@ import {APP_GUARD} from '@nestjs/core';
 import {JwtModule} from '@nestjs/jwt';
 import {PassportModule} from '@nestjs/passport';
 
+import {RefreshTokenModule} from '@core/refresh-token/refresh-token.module';
 import {UserModule} from '@modules/users/user.module';
 
 import {AuthController} from './api/auth.controller';
@@ -14,6 +15,7 @@ import {LocalStrategy} from './strategies/local.strategy';
 
 @Module({
   imports: [
+    ConfigModule,
     PassportModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
@@ -24,8 +26,8 @@ import {LocalStrategy} from './strategies/local.strategy';
         secret: config.get<string>('JWT_SECRET'),
       }),
     }),
+    RefreshTokenModule,
     UserModule,
-    ConfigModule,
   ],
   providers: [
     AuthService,
