@@ -4,7 +4,7 @@ import {Repository} from 'typeorm';
 
 import {User} from '@entities/user/user.entity';
 
-export type UserSaveOptions = Omit<User, 'id' | 'createdAt' | 'accounts'>;
+export type UserSaveOptions = Omit<User, 'id' | 'createdAt' | 'accounts' | 'refreshToken'>;
 
 @Injectable()
 export class UserRepository {
