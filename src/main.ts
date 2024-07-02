@@ -2,6 +2,7 @@ import {ValidationPipe} from '@nestjs/common';
 import {ConfigService} from '@nestjs/config';
 import {NestFactory} from '@nestjs/core';
 import {DocumentBuilder, SwaggerDocumentOptions, SwaggerModule} from '@nestjs/swagger';
+import * as cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 
 import {AppModule} from './app.module';
@@ -12,6 +13,7 @@ async function bootstrap() {
 
   app.use(helmet());
   app.useGlobalPipes(new ValidationPipe());
+  app.use(cookieParser());
 
   const config = new DocumentBuilder().setTitle('Flair API').build();
   const options: SwaggerDocumentOptions = {
