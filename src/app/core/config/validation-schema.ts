@@ -3,7 +3,6 @@ import * as Joi from 'joi';
 export const validationSchema = Joi.object({
   NODE_ENV: Joi.string().valid('development', 'production').required(),
   PORT: Joi.number().min(0).max(65535).required(),
-  DB_TYPE: Joi.string().regex(/\S/).required(),
   DB_HOST: Joi.string().regex(/\S/).required(),
   DB_PORT: Joi.number().min(0).max(65535).required(),
   DB_USERNAME: Joi.string().regex(/\S/).required(),
