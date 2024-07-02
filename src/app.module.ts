@@ -19,7 +19,7 @@ import {UserModule} from '@modules/users/user.module';
       envFilePath: ['.env.development.local', '.env.development'],
       cache: true,
       validationOptions: {
-        allowUnknown: false,
+        allowUnknown: true,
         abortEarly: true,
       },
     }),
