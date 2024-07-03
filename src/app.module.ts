@@ -40,7 +40,7 @@ import {UserModule} from '@modules/users/user.module';
     ThrottlerModule.forRoot([
       {
         ttl: minutes(1),
-        limit: 500,
+        limit: 400,
       },
     ]),
     FileParserModule,

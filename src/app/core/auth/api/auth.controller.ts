@@ -1,5 +1,6 @@
 import {Body, Controller, HttpCode, Post, Req, UseGuards} from '@nestjs/common';
 import {ApiResponse} from '@nestjs/swagger';
+import {Throttle, hours} from '@nestjs/throttler';
 import {Request} from 'express';
 
 import {Public} from '../decorators/public.decorator';
@@ -12,6 +13,7 @@ import {SignUpDto} from './signup.dto';
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  @Throttle({default: {limit: 12, ttl: hours(1)}})
   @Public()
   @UseGuards(LocalLogInGuard)
   @Post('login')
@@ -19,13 +21,16 @@ export class AuthController {
   @ApiResponse({status: 200, description: 'User has been successfully logged in.'})
   @ApiResponse({status: 400, description: 'Validation of the request body failed.'})
   @ApiResponse({status: 401, description: 'Invalid credentials.'})
+  @ApiResponse({status: 429, description: 'Too many requests. Try again later.'})
   async logIn(@Body() _dto: LogInDto) {}
 
+  @Throttle({default: {limit: 3, ttl: hours(1)}})
   @Public()
   @Post('signup')
   @ApiResponse({status: 201, description: 'The user has been successfully created.'})
   @ApiResponse({status: 400, description: 'Validation of the request body failed.'})
   @ApiResponse({status: 409, description: 'An account with this email already exists.'})
+  @ApiResponse({status: 429, description: 'Too many requests. Try again later.'})
   async signUp(@Body() dto: SignUpDto, @Req() request: Request) {
     const user = await this.authService.createUser(dto);
 
