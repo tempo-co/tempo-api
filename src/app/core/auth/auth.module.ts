@@ -1,41 +1,31 @@
 import {Module} from '@nestjs/common';
-import {ConfigModule, ConfigService} from '@nestjs/config';
+import {ConfigModule} from '@nestjs/config';
 import {APP_GUARD} from '@nestjs/core';
-import {JwtModule} from '@nestjs/jwt';
 import {PassportModule} from '@nestjs/passport';
 
-import {RefreshTokenModule} from '@core/refresh-token/refresh-token.module';
 import {UserModule} from '@modules/users/user.module';
 
 import {AuthController} from './api/auth.controller';
-import {JwtAuthGuard} from './guards/jwt-auth.guard';
+import {AuthGuard} from './guards/auth.guard';
 import {AuthService} from './services/auth.service';
-import {JwtStrategy} from './strategies/jwt.strategy';
+import {SessionSerializer} from './session.serializer';
 import {LocalStrategy} from './strategies/local.strategy';
 
 @Module({
   imports: [
     ConfigModule,
-    PassportModule,
-    JwtModule.registerAsync({
-      imports: [ConfigModule],
-      inject: [ConfigService],
-      useFactory: async (config: ConfigService) => ({
-        global: true,
-        signOptions: {expiresIn: '10000s'},
-        secret: config.get<string>('ACCESS_TOKEN_SECRET'),
-      }),
-    }),
-    RefreshTokenModule,
     UserModule,
+    PassportModule.register({
+      session: true,
+    }),
   ],
   providers: [
+    SessionSerializer,
     AuthService,
-    JwtStrategy,
     LocalStrategy,
     {
       provide: APP_GUARD,
-      useClass: JwtAuthGuard,
+      useClass: AuthGuard,
     },
   ],
   controllers: [AuthController],
