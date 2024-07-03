@@ -13,5 +13,8 @@ export const validationSchema = Joi.object({
   DB_SYNCHRONIZE: Joi.boolean().required(),
   SESSION_SECRET: Joi.string().regex(/\S/).required(),
   SESSION_EXPIRATION: Joi.string().regex(durationPattern).required(),
+  REDIS_URL: Joi.string()
+    .uri({scheme: ['redis']})
+    .required(),
   GEMINI_API_KEY: Joi.string().regex(/\S/).required(),
 });
