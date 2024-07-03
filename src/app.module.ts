@@ -1,10 +1,17 @@
-import {Module} from '@nestjs/common';
+import {Inject, MiddlewareConsumer, Module, NestModule} from '@nestjs/common';
 import {ConfigModule, ConfigService} from '@nestjs/config';
 import {APP_GUARD} from '@nestjs/core';
 import {ThrottlerGuard, ThrottlerModule, minutes} from '@nestjs/throttler';
 import {TypeOrmModule} from '@nestjs/typeorm';
+import RedisStore from 'connect-redis';
+import session from 'express-session';
+import ms from 'ms';
+import passport from 'passport';
+import {RedisClientType} from 'redis';
 
 import {AuthModule} from '@core/auth/auth.module';
+import {REDIS} from '@core/config/redis/redis.constants';
+import {RedisModule} from '@core/config/redis/redis.module';
 import {validationSchema} from '@core/config/validation-schema';
 import {FileParserModule} from '@core/file-parser/file-parser.module';
 import {TransactionCategorizerModule} from '@core/transaction-categorizer/transaction-categorizer.module';
@@ -43,6 +50,7 @@ import {UserModule} from '@modules/users/user.module';
         limit: 400,
       },
     ]),
+    RedisModule,
     FileParserModule,
     TransactionModule,
     AuthModule,
@@ -57,4 +65,36 @@ import {UserModule} from '@modules/users/user.module';
     },
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  constructor(
+    @Inject(REDIS) private readonly redisClient: RedisClientType,
+    private readonly config: ConfigService,
+  ) {}
+  async configure(consumer: MiddlewareConsumer) {
+    const redisStore = new RedisStore({client: this.redisClient});
+    const isProduction = this.config.get('NODE_ENV') === 'production';
+    const secret = this.config.get('SESSION_SECRET');
+    const expiration = this.config.get('SESSION_EXPIRATION');
+    const expirationMs = ms(expiration as string);
+    consumer
+      .apply(
+        session({
+          store: redisStore,
+          name: 'session',
+          secret: secret,
+          resave: false,
+          saveUninitialized: false,
+          cookie: {
+            secure: isProduction,
+            httpOnly: true,
+            sameSite: 'strict',
+            domain: 'localhost',
+            maxAge: expirationMs,
+          },
+        }),
+        passport.initialize(),
+        passport.session(),
+      )
+      .forRoutes('*');
+  }
+}
