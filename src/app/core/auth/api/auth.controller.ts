@@ -50,6 +50,9 @@ export class AuthController {
       request.logOut({keepSessionInfo: false}, () => {
         resolve();
       });
+      request.session.destroy(() => {
+        resolve();
+      });
     });
   }
 }
