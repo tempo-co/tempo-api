@@ -1,5 +1,3 @@
-import {registerEnumType} from '@nestjs/graphql';
-
 export enum Category {
   RENT_AND_UTILITIES = 'RENT_AND_UTILITIES',
   FOOD_AND_DRINK = 'FOOD_AND_DRINK',
@@ -12,5 +10,3 @@ export enum Category {
   TRANSFER_OUT = 'TRANSFER_OUT',
   OTHER = 'OTHER',
 }
-
-registerEnumType(Category, {name: 'Category'});

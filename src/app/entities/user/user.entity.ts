@@ -1,14 +1,6 @@
-import {
-  Column,
-  CreateDateColumn,
-  Entity,
-  OneToMany,
-  OneToOne,
-  PrimaryGeneratedColumn,
-} from 'typeorm';
+import {Column, CreateDateColumn, Entity, OneToMany, PrimaryGeneratedColumn} from 'typeorm';
 
 import {Account} from '@entities/account/account.entity';
-import {RefreshToken} from '@entities/refresh-token/refresh-token.entity';
 
 @Entity()
 export class User {
@@ -29,7 +21,4 @@ export class User {
 
   @OneToMany(() => Account, (account) => account.user)
   accounts: Account[];
-
-  @OneToOne(() => RefreshToken, (refreshToken) => refreshToken.user)
-  refreshToken: RefreshToken;
 }
