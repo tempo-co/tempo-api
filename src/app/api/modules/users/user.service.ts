@@ -1,5 +1,5 @@
 import {ConflictException, Injectable, NotFoundException} from '@nestjs/common';
-import * as argon2 from 'argon2';
+import argon2 from 'argon2';
 
 import {User} from '@entities/user/user.entity';
 import {UserRepository, UserSaveOptions} from '@entities/user/user.repository';
