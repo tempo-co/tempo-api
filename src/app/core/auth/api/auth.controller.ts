@@ -3,6 +3,9 @@ import {ApiResponse} from '@nestjs/swagger';
 import {Throttle, hours} from '@nestjs/throttler';
 import {Request} from 'express';
 
+import {User} from '@entities/user/user.entity';
+
+import {CurrentUser} from '../decorators/current-user.decorator';
 import {Public} from '../decorators/public.decorator';
 import {LocalLogInGuard} from '../guards/local-login.guard';
 import {AuthService} from '../services/auth.service';
@@ -22,7 +25,9 @@ export class AuthController {
   @ApiResponse({status: 400, description: 'Validation of the request body failed.'})
   @ApiResponse({status: 401, description: 'Invalid credentials.'})
   @ApiResponse({status: 429, description: 'Too many requests. Try again later.'})
-  async logIn(@Body() _dto: LogInDto) {}
+  async logIn(@Body() _dto: LogInDto, @CurrentUser() user: User) {
+    return user;
+  }
 
   @Throttle({default: {limit: 3, ttl: hours(1)}})
   @Public()
@@ -39,6 +44,7 @@ export class AuthController {
         resolve();
       });
     });
+    return user;
   }
 
   @Post('logout')
