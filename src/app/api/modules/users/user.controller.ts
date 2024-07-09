@@ -1,5 +1,6 @@
-import {Controller, Get, Param, ParseUUIDPipe} from '@nestjs/common';
+import {Controller, Get} from '@nestjs/common';
 
+import {CurrentUser} from '@core/auth/decorators/current-user.decorator';
 import {User} from '@entities/user/user.entity';
 
 import {UserService} from './user.service';
@@ -13,8 +14,8 @@ export class UserController {
     return this.userService.findAll();
   }
 
-  @Get(':id')
-  findOne(@Param('id', new ParseUUIDPipe({version: '4'})) id: User['id']): Promise<User> {
-    return this.userService.findById(id);
+  @Get('me')
+  findOne(@CurrentUser() user: User): Promise<User> {
+    return this.userService.findById(user.id);
   }
 }
