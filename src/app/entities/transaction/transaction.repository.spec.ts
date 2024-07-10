@@ -3,6 +3,7 @@ import {Test, TestingModule} from '@nestjs/testing';
 import {getRepositoryToken} from '@nestjs/typeorm';
 import {Repository} from 'typeorm';
 
+import {Category} from '@core/transaction-categorizer/constants/category.enum';
 import {Account} from '@entities/account/account.entity';
 
 import {Transaction} from './transaction.entity';
@@ -16,6 +17,7 @@ function createTransaction(): TransactionSaveOptions {
     amount: parseFloat(faker.finance.amount()),
     currency: faker.finance.currencyCode(),
     account: {id: faker.string.uuid()} as Account,
+    category: faker.helpers.arrayElement(Object.values(Category)),
   };
 }
 
@@ -26,8 +28,7 @@ describe('TransactionRepository', () => {
   beforeEach(async () => {
     faker.seed(2);
     mockRepository = {
-      find: jest.fn().mockResolvedValue([]),
-      findOne: jest.fn(),
+      findOneBy: jest.fn(),
       save: jest.fn().mockResolvedValue({}),
     };
 
@@ -48,34 +49,27 @@ describe('TransactionRepository', () => {
     expect(transactionRepository).toBeDefined();
   });
 
-  describe('findAll', () => {
-    it('should find all transactions', async () => {
-      const transactions = await transactionRepository.findAll();
-      expect(mockRepository.find).toHaveBeenCalled();
-      expect(transactions).toEqual([]);
-    });
-  });
-
   describe('findById', () => {
     it('should find a transaction by id', async () => {
       const id = faker.string.uuid();
       const transaction = {id};
-      (mockRepository.findOne as jest.Mock).mockResolvedValue(transaction);
+      (mockRepository.findOneBy as jest.Mock).mockResolvedValue(transaction);
 
       const foundTransaction = await transactionRepository.findById(id);
-      expect(mockRepository.findOne).toHaveBeenCalledWith({where: {id}});
+      expect(mockRepository.findOneBy).toHaveBeenCalledWith({id});
       expect(foundTransaction).toEqual(transaction);
     });
 
     it('should return null if transaction is not found by id', async () => {
       const id = faker.string.uuid();
-      (mockRepository.findOne as jest.Mock).mockResolvedValue(null);
+      (mockRepository.findOneBy as jest.Mock).mockResolvedValue(null);
 
       const foundTransaction = await transactionRepository.findById(id);
-      expect(mockRepository.findOne).toHaveBeenCalledWith({where: {id}});
+      expect(mockRepository.findOneBy).toHaveBeenCalledWith({id});
       expect(foundTransaction).toBeNull();
     });
   });
+
   describe('saveAll', () => {
     it('should save an array of transactions', async () => {
       const transactionsToSave = [createTransaction(), createTransaction()];

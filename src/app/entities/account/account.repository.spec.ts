@@ -13,9 +13,9 @@ describe('AccountRepository', () => {
   beforeEach(async () => {
     faker.seed(4);
     mockRepository = {
-      find: jest.fn().mockResolvedValue([]),
-      findOne: jest.fn(),
       save: jest.fn().mockResolvedValue({}),
+      findBy: jest.fn(),
+      findOneBy: jest.fn(),
     };
 
     const module = await Test.createTestingModule({
@@ -52,12 +52,10 @@ describe('AccountRepository', () => {
         {id: faker.string.uuid()} as Account,
         {id: faker.string.uuid()} as Account,
       ];
-      (mockRepository.find as jest.Mock).mockResolvedValue(accounts);
+      (mockRepository.findBy as jest.Mock).mockResolvedValue(accounts);
 
       expect(await accountRepository.findAllByUserId(userId)).toEqual(accounts);
-      expect(mockRepository.find).toHaveBeenCalledWith({
-        where: {user: {id: userId}},
-      });
+      expect(mockRepository.findBy).toHaveBeenCalledWith({user: {id: userId}});
     });
   });
 
@@ -65,12 +63,10 @@ describe('AccountRepository', () => {
     it('should find an account by id', async () => {
       const id = faker.string.uuid();
       const account = {id} as Account;
-      (mockRepository.findOne as jest.Mock).mockResolvedValue(account);
+      (mockRepository.findOneBy as jest.Mock).mockResolvedValue(account);
 
       expect(await accountRepository.findById(id)).toEqual(account);
-      expect(mockRepository.findOne).toHaveBeenCalledWith({
-        where: {id},
-      });
+      expect(mockRepository.findOneBy).toHaveBeenCalledWith({id});
     });
   });
 });
