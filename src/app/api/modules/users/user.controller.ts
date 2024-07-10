@@ -9,11 +9,6 @@ import {UserService} from './user.service';
 export class UserController {
   constructor(private userService: UserService) {}
 
-  @Get()
-  findAll(): Promise<User[]> {
-    return this.userService.findAll();
-  }
-
   @Get('me')
   findOne(@CurrentUser() user: User): Promise<User> {
     return this.userService.findById(user.id);
