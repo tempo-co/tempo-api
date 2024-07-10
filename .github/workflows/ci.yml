@@ -1,7 +1,4 @@
-# This workflow will do a clean installation of node dependencies, cache/restore them,
-# build the source code and run tests across different versions of node
-
-name: Node.js CI
+name: Node.js API CI
 
 on:
   push:
@@ -16,7 +13,6 @@ jobs:
     strategy:
       matrix:
         node-version: [18.x, 20.x]
-        # See supported Node.js release schedule at https://nodejs.org/en/about/releases/
 
     steps:
       - uses: actions/checkout@v4
@@ -30,14 +26,16 @@ jobs:
           echo "
           NODE_ENV=${{ secrets.NODE_ENV }}
           PORT=${{ secrets.PORT }}
-          DB_TYPE=${{ secrets.DB_TYPE }}
           DB_HOST=${{ secrets.DB_HOST }}
           DB_PORT=${{ secrets.DB_PORT }}
           DB_USERNAME=${{ secrets.DB_USERNAME }}
           DB_PASSWORD=${{ secrets.DB_PASSWORD }}
           DB_NAME=${{ secrets.DB_NAME }}
           DB_SYNCHRONIZE=${{ secrets.DB_SYNCHRONIZE }}
-          JWT_SECRET=${{ secrets.JWT_SECRET }}
+          SESSION_SECRET=${{ secrets.SESSION_SECRET }}
+          SESSION_EXPIRATION=${{ secrets.SESSION_EXPIRATION }}
+          REDIS_URL=${{ secrets.REDIS_URL }}
+          GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
           " >> $GITHUB_ENV
       - run: npm ci
       - run: npm run build
