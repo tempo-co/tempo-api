@@ -8,6 +8,7 @@ export class LogInDto {
   @Length(1, 255)
   email: User['email'];
 
+  @IsNotEmpty()
   @IsString()
   @MinLength(8)
   @MaxLength(255)
