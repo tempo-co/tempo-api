@@ -24,5 +24,6 @@ module.exports = {
         argsIgnorePattern: '^_',
       },
     ],
+    'no-console': 'off',
   },
 };
