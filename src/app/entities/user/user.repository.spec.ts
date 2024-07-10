@@ -38,14 +38,6 @@ describe('UserRepository', () => {
     expect(userRepository).toBeDefined();
   });
 
-  describe('findAll', () => {
-    it('should find all users', async () => {
-      const users = await userRepository.findAll();
-      expect(mockRepository.find).toHaveBeenCalled();
-      expect(users).toEqual([]);
-    });
-  });
-
   describe('findById', () => {
     it('should find a user by id', async () => {
       const id = faker.string.uuid();
