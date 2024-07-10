@@ -13,8 +13,7 @@ export class AccountController {
 
   @Post()
   createAccount(@Body() dto: AccountCreateDto, @CurrentUser() user: User): Promise<Account> {
-    const {alias, bank} = dto;
-    return this.accountService.save({alias, bank, userId: user.id});
+    return this.accountService.save(dto, user.id);
   }
 
   @Get('me')

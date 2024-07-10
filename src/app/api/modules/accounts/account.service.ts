@@ -1,15 +1,11 @@
-import {Injectable, NotFoundException} from '@nestjs/common';
+import {ConflictException, Injectable, NotFoundException} from '@nestjs/common';
 
 import {Account} from '@entities/account/account.entity';
 import {AccountRepository} from '@entities/account/account.repository';
 import {User} from '@entities/user/user.entity';
 import {UserService} from '@modules/users/user.service';
 
-type SaveOptions = {
-  alias: Account['alias'];
-  bank: Account['bank'];
-  userId: Account['user']['id'];
-};
+import {AccountCreateDto} from './account-create.dto';
 
 @Injectable()
 export class AccountService {
@@ -18,11 +14,19 @@ export class AccountService {
     private readonly userService: UserService,
   ) {}
 
-  async save(options: SaveOptions): Promise<Account> {
-    const {alias, bank, userId} = options;
+  async save(dto: AccountCreateDto, userId: User['id']): Promise<Account> {
     const user = await this.userService.findById(userId);
 
-    return this.accountRepository.save({alias, bank, user});
+    if (dto.alias) {
+      const aliasExists = await this.accountRepository.existsByUserIdAndAlias(userId, dto.alias);
+
+      if (aliasExists) {
+        throw new ConflictException(`Account with alias ${dto.alias} already exists.`);
+      }
+    }
+
+    const saveOptions = {...dto, user};
+    return this.accountRepository.save(saveOptions);
   }
 
   async findAllByUserId(userId: User['id']): Promise<Account[]> {
