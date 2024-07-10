@@ -1,4 +1,4 @@
-import {IsDate, IsNotEmpty, IsNumber, IsString, Length, Max, Min} from 'class-validator';
+import {IsDate, IsEnum, IsNotEmpty, IsNumber, IsString, Length, Max, Min} from 'class-validator';
 import {
   Column,
   CreateDateColumn,
@@ -8,6 +8,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
+import {Category} from '@core/transaction-categorizer/constants/category.enum';
 import {Account} from '@entities/account/account.entity';
 import {BankStatement} from '@entities/bank-statement/bank-statement.entity';
 
@@ -50,6 +51,10 @@ export class Transaction {
 
   @UpdateDateColumn({type: 'timestamp'})
   updatedAt: Date;
+
+  @Column({type: 'enum', enum: Category})
+  @IsEnum(Category)
+  category: Category;
 
   @ManyToOne(() => Account, (account) => account.transactions)
   account: Account;

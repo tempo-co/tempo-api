@@ -13,10 +13,6 @@ export class UserRepository {
     private readonly repository: Repository<User>,
   ) {}
 
-  findAll(): Promise<User[]> {
-    return this.repository.find();
-  }
-
   findById(id: User['id']): Promise<User | null> {
     return this.repository.findOne({
       where: {id},
@@ -33,5 +29,9 @@ export class UserRepository {
 
   save(user: UserSaveOptions): Promise<User> {
     return this.repository.save(user);
+  }
+
+  async existsByEmail(email: User['email']): Promise<boolean> {
+    return this.repository.existsBy({email});
   }
 }
