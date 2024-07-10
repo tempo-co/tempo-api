@@ -10,10 +10,6 @@ import {
 export class TransactionService {
   constructor(private readonly transactionRepository: TransactionRepository) {}
 
-  async findAll(): Promise<Transaction[]> {
-    return this.transactionRepository.findAll();
-  }
-
   async findById(id: Transaction['id']): Promise<Transaction> {
     const transaction = await this.transactionRepository.findById(id);
 

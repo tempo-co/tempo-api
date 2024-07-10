@@ -23,10 +23,14 @@ export class AccountRepository {
   }
 
   findAllByUserId(userId: User['id']): Promise<Account[]> {
-    return this.repository.find({where: {user: {id: userId}}});
+    return this.repository.findBy({user: {id: userId}});
   }
 
   findById(id: Account['id']): Promise<Account | null> {
-    return this.repository.findOne({where: {id}});
+    return this.repository.findOneBy({id});
+  }
+
+  existsByUserIdAndAlias(userId: User['id'], alias: Account['alias']): Promise<boolean> {
+    return this.repository.existsBy({user: {id: userId}, alias});
   }
 }

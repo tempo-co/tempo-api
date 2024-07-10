@@ -7,8 +7,8 @@ import {BankStatementRepositoryModule} from '@entities/bank-statement/bank-state
 
 import {AccountModule} from '../accounts/account.module';
 import {TransactionModule} from '../transactions/transaction.module';
-import {BankStatementMutationsResolver} from './graphql/bank-statement.mutations.resolver';
-import {BankStatementService} from './services/bank-statement.service';
+import {BankStatementController} from './bank-statement.controller';
+import {BankStatementService} from './bank-statement.service';
 
 @Module({
   imports: [
@@ -19,6 +19,7 @@ import {BankStatementService} from './services/bank-statement.service';
     TransactionCategorizerModule,
     TransactionModule,
   ],
-  providers: [BankStatementService, BankStatementMutationsResolver],
+  providers: [BankStatementService],
+  controllers: [BankStatementController],
 })
 export class BankStatementModule {}

@@ -1,5 +1,5 @@
 import {ConflictException, Injectable, NotFoundException} from '@nestjs/common';
-import * as argon2 from 'argon2';
+import argon2 from 'argon2';
 
 import {User} from '@entities/user/user.entity';
 import {UserRepository, UserSaveOptions} from '@entities/user/user.repository';
@@ -7,10 +7,6 @@ import {UserRepository, UserSaveOptions} from '@entities/user/user.repository';
 @Injectable()
 export class UserService {
   constructor(private readonly userRepository: UserRepository) {}
-
-  async findAll(): Promise<User[]> {
-    return this.userRepository.findAll();
-  }
 
   async findById(id: User['id']): Promise<User> {
     const user = await this.userRepository.findById(id);
@@ -33,10 +29,10 @@ export class UserService {
   async save(options: UserSaveOptions): Promise<User> {
     const {name, email, password} = options;
 
-    const existingUser = await this.userRepository.findByEmail(email);
+    const emailExists = await this.userRepository.existsByEmail(email);
 
-    if (existingUser) {
-      throw new ConflictException(`An account with this email already exists.`);
+    if (emailExists) {
+      throw new ConflictException(`An account with email ${email} already exists.`);
     }
     const hash = await argon2.hash(password);
 

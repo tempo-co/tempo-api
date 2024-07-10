@@ -1,6 +1,5 @@
 import {Injectable} from '@nestjs/common';
-import {ReadStream} from 'fs-capacitor';
-import {FileUpload} from 'graphql-upload';
+import {Readable} from 'stream';
 
 import {FileParserService} from '@core/file-parser/services/file-parser.service';
 import {TransactionCategorizerService} from '@core/transaction-categorizer/services/transaction-categorizer.service';
@@ -8,8 +7,8 @@ import {TransactionMapperService} from '@core/transaction-mapper/services/transa
 import {Account} from '@entities/account/account.entity';
 import {BankStatement} from '@entities/bank-statement/bank-statement.entity';
 import {BankStatementRepository} from '@entities/bank-statement/bank-statement.repository';
-import {AccountService} from '@modules/accounts/services/account.service';
-import {TransactionService} from '@modules/transactions/services/transaction.service';
+import {AccountService} from '@modules/accounts/account.service';
+import {TransactionService} from '@modules/transactions/transaction.service';
 
 @Injectable()
 export class BankStatementService {
@@ -23,14 +22,12 @@ export class BankStatementService {
     private readonly transactionService: TransactionService,
   ) {}
 
-  async process(file: FileUpload, accountId: Account['id']): Promise<BankStatement> {
+  async process(file: Express.Multer.File, accountId: Account['id']): Promise<BankStatement> {
     const account = await this.accountService.findById(accountId);
 
-    const {createReadStream, mimetype} = file;
-    const stream = createReadStream();
-    const buffer = await this.readStream(stream);
+    const buffer = await this.readStream(file.stream);
 
-    const jsonData = this.fileParserService.parse(buffer, mimetype);
+    const jsonData = this.fileParserService.parse(buffer, file.mimetype);
 
     const mappedTransactions = await this.transactionMapperService.map(jsonData, account.bank);
 
@@ -49,7 +46,7 @@ export class BankStatementService {
     return {...savedBankStatement, transactions: savedTransactions};
   }
 
-  private async readStream(stream: ReadStream): Promise<Buffer> {
+  private async readStream(stream: Readable): Promise<Buffer> {
     const chunks: Buffer[] = [];
     for await (const chunk of stream) {
       chunks.push(chunk);

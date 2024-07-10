@@ -10,7 +10,7 @@ export class Account {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({type: 'varchar', length: 255})
+  @Column({type: 'varchar', length: 255, nullable: true})
   alias: string;
 
   @Column({type: 'decimal', precision: 12, scale: 2, default: 0})
