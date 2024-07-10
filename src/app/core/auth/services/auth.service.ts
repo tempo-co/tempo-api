@@ -1,46 +1,38 @@
-import {Injectable, UnauthorizedException} from '@nestjs/common';
-import {JwtService} from '@nestjs/jwt';
-import * as argon2 from 'argon2';
+import {BadRequestException, Injectable, UnauthorizedException} from '@nestjs/common';
+import argon2 from 'argon2';
+import {validate} from 'class-validator';
 
 import {User} from '@entities/user/user.entity';
 import {UserSaveOptions} from '@entities/user/user.repository';
-import {UserService} from '@modules/users/services/user.service';
+import {UserService} from '@modules/users/user.service';
 
-import {TypeAccessToken} from '../graphql/access-token.type';
+import {LogInDto} from '../api/login.dto';
 
 @Injectable()
 export class AuthService {
-  constructor(
-    private readonly userService: UserService,
-    private readonly jwtService: JwtService,
-  ) {}
+  constructor(private readonly userService: UserService) {}
 
-  async validateUser(email: string, password: string): Promise<User> {
-    let user: User;
+  async validateUser(dto: LogInDto): Promise<User> {
+    const errors = await validate(dto);
 
-    try {
-      user = await this.userService.findByEmail(email);
-    } catch (error) {
-      throw new UnauthorizedException();
+    if (errors.length > 0) {
+      const formattedErrors = errors.flatMap((err) => Object.values(err.constraints || {}));
+      throw new BadRequestException(formattedErrors);
     }
 
-    const passwordMatches = await argon2.verify(user.password, password);
+    const user = await this.userService.findByEmail(dto.email).catch(() => {
+      throw new UnauthorizedException();
+    });
 
-    if (!passwordMatches) {
+    const isPasswordValid = await argon2.verify(user.password, dto.password);
+
+    if (!isPasswordValid) {
       throw new UnauthorizedException();
     }
     return user;
   }
 
-  async createUser(options: UserSaveOptions): Promise<TypeAccessToken> {
-    const user = await this.userService.save(options);
-    return await this.signAccessToken(user);
-  }
-
-  async signAccessToken(user: User): Promise<TypeAccessToken> {
-    const payload = {sub: user.id, email: user.email};
-
-    const jwt = await this.jwtService.signAsync(payload);
-    return {access_token: jwt};
+  async createUser(options: UserSaveOptions): Promise<User> {
+    return this.userService.save(options);
   }
 }
