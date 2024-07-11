@@ -1,15 +1,19 @@
 import {Global, Module} from '@nestjs/common';
-import {RedisClientType, createClient} from 'redis';
+import {ConfigModule, ConfigService} from '@nestjs/config';
+import {createClient} from 'redis';
 
 import {REDIS} from './redis.constants';
 
 @Global()
 @Module({
+  imports: [ConfigModule],
   providers: [
     {
       provide: REDIS,
-      useFactory: async () => {
-        const client: RedisClientType = createClient({url: 'redis://localhost:6379'});
+      inject: [ConfigService],
+      useFactory: async (config: ConfigService) => {
+        const redisUrl = config.get<string>('REDIS_URL');
+        const client = createClient({url: redisUrl});
         await client.connect().catch((err) => {
           console.error("Couldn't connect to Redis.", err);
           throw err;
