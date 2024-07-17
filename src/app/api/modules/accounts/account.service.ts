@@ -33,11 +33,11 @@ export class AccountService {
     return this.accountRepository.findAllByUserId(userId);
   }
 
-  async findById(id: Account['id']): Promise<Account> {
-    const account = await this.accountRepository.findById(id);
+  async findById(accountId: Account['id'], userId: User['id']): Promise<Account> {
+    const account = await this.accountRepository.findByAccountIdAndUserId(accountId, userId);
 
     if (!account) {
-      throw new NotFoundException(`Account with id ${id} not found.`);
+      throw new NotFoundException(`Account with id ${accountId} not found.`);
     }
     return account;
   }

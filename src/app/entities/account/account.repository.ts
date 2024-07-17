@@ -26,8 +26,8 @@ export class AccountRepository {
     return this.repository.findBy({user: {id: userId}});
   }
 
-  findById(id: Account['id']): Promise<Account | null> {
-    return this.repository.findOneBy({id});
+  findByAccountIdAndUserId(accountId: Account['id'], userId: User['id']): Promise<Account | null> {
+    return this.repository.findOne({where: {id: accountId, user: {id: userId}}});
   }
 
   existsByUserIdAndAlias(userId: User['id'], alias: Account['alias']): Promise<boolean> {
