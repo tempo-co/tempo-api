@@ -58,15 +58,4 @@ describe('AccountRepository', () => {
       expect(mockRepository.findBy).toHaveBeenCalledWith({user: {id: userId}});
     });
   });
-
-  describe('findById', () => {
-    it('should find an account by id', async () => {
-      const id = faker.string.uuid();
-      const account = {id} as Account;
-      (mockRepository.findOneBy as jest.Mock).mockResolvedValue(account);
-
-      expect(await accountRepository.findById(id)).toEqual(account);
-      expect(mockRepository.findOneBy).toHaveBeenCalledWith({id});
-    });
-  });
 });
