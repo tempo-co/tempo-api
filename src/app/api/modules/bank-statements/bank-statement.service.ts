@@ -7,8 +7,15 @@ import {TransactionMapperService} from '@core/transaction-mapper/services/transa
 import {Account} from '@entities/account/account.entity';
 import {BankStatement} from '@entities/bank-statement/bank-statement.entity';
 import {BankStatementRepository} from '@entities/bank-statement/bank-statement.repository';
+import {User} from '@entities/user/user.entity';
 import {AccountService} from '@modules/accounts/account.service';
 import {TransactionService} from '@modules/transactions/transaction.service';
+
+type ProcessOptions = {
+  file: Express.Multer.File;
+  accountId: Account['id'];
+  userId: User['id'];
+};
 
 @Injectable()
 export class BankStatementService {
@@ -22,14 +29,16 @@ export class BankStatementService {
     private readonly transactionService: TransactionService,
   ) {}
 
-  async process(file: Express.Multer.File, accountId: Account['id']): Promise<BankStatement> {
-    const account = await this.accountService.findById(accountId);
+  async process(options: ProcessOptions): Promise<BankStatement> {
+    const {file, accountId, userId} = options;
+
+    const account = await this.accountService.findById(accountId, userId);
 
     const buffer = await this.readStream(file.stream);
 
-    const jsonData = this.fileParserService.parse(buffer, file.mimetype);
+    const records = this.fileParserService.parse(buffer, file.mimetype);
 
-    const mappedTransactions = await this.transactionMapperService.map(jsonData, account.bank);
+    const mappedTransactions = await this.transactionMapperService.map(records, account.bank);
 
     const categorizedTransactions =
       await this.transactionCategorizerService.categorize(mappedTransactions);
