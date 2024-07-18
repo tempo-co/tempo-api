@@ -1,5 +1,4 @@
 import {Injectable} from '@nestjs/common';
-import {Readable} from 'stream';
 
 import {FileParserService} from '@core/file-parser/services/file-parser.service';
 import {TransactionCategorizerService} from '@core/transaction-categorizer/services/transaction-categorizer.service';
@@ -34,16 +33,17 @@ export class BankStatementService {
 
     const account = await this.accountService.findById(accountId, userId);
 
-    const buffer = await this.readStream(file.stream);
-
-    const records = this.fileParserService.parse(buffer, file.mimetype);
+    const records = this.fileParserService.parse(file.buffer, file.mimetype);
 
     const mappedTransactions = await this.transactionMapperService.map(records, account.bank);
 
     const categorizedTransactions =
       await this.transactionCategorizerService.categorize(mappedTransactions);
 
-    const savedBankStatement = await this.bankStatementRepository.save({file: buffer, account});
+    const savedBankStatement = await this.bankStatementRepository.save({
+      file: file.buffer,
+      account,
+    });
 
     const transactions = categorizedTransactions.map((transaction) => ({
       ...transaction,
@@ -53,13 +53,5 @@ export class BankStatementService {
     const savedTransactions = await this.transactionService.saveAll(transactions);
 
     return {...savedBankStatement, transactions: savedTransactions};
-  }
-
-  private async readStream(stream: Readable): Promise<Buffer> {
-    const chunks: Buffer[] = [];
-    for await (const chunk of stream) {
-      chunks.push(chunk);
-    }
-    return Buffer.concat(chunks);
   }
 }
