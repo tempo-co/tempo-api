@@ -15,7 +15,7 @@ import {User} from '@entities/user/user.entity';
 
 import {BankStatementService} from './bank-statement.service';
 
-@Controller('bank-statement')
+@Controller('bank-statements')
 export class BankStatementController {
   constructor(private readonly bankStatementService: BankStatementService) {}
 
