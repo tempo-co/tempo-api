@@ -37,9 +37,9 @@ const generationConfig: GenerationConfig = {
   responseSchema: {
     type: FunctionDeclarationSchemaType.ARRAY,
     description: 'Array of transactions with their categories',
-    required: ['startedDate', 'completedDate', 'description', 'amount', 'currency', 'category'],
     items: {
       type: FunctionDeclarationSchemaType.OBJECT,
+      required: ['startedDate', 'completedDate', 'description', 'amount', 'currency', 'category'],
       properties: {
         startedDate: {
           type: FunctionDeclarationSchemaType.STRING,
