@@ -8,6 +8,7 @@ import {BankStatement} from '@entities/bank-statement/bank-statement.entity';
 import {BankStatementRepository} from '@entities/bank-statement/bank-statement.repository';
 import {User} from '@entities/user/user.entity';
 import {AccountService} from '@modules/accounts/account.service';
+import {FileService} from '@modules/files/file.service';
 import {TransactionService} from '@modules/transactions/transaction.service';
 
 type ProcessOptions = {
@@ -26,6 +27,7 @@ export class BankStatementService {
     private readonly transactionMapperService: TransactionMapperService,
     private readonly transactionCategorizerService: TransactionCategorizerService,
     private readonly transactionService: TransactionService,
+    private readonly fileService: FileService,
   ) {}
 
   async process(options: ProcessOptions): Promise<BankStatement> {
@@ -34,14 +36,14 @@ export class BankStatementService {
     const account = await this.accountService.findById(accountId, userId);
 
     const records = this.fileParserService.parse(file.buffer, file.mimetype);
-
     const mappedTransactions = await this.transactionMapperService.map(records, account.bank);
 
     const categorizedTransactions =
       await this.transactionCategorizerService.categorize(mappedTransactions);
 
+    const savedFile = await this.fileService.save(file);
     const savedBankStatement = await this.bankStatementRepository.save({
-      file: file.buffer,
+      file: savedFile,
       account,
     });
 
@@ -52,6 +54,7 @@ export class BankStatementService {
     }));
     const savedTransactions = await this.transactionService.saveAll(transactions);
 
-    return {...savedBankStatement, transactions: savedTransactions};
+    savedBankStatement.transactions = savedTransactions;
+    return savedBankStatement;
   }
 }
