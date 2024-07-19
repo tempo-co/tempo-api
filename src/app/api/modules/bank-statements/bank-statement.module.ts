@@ -4,6 +4,7 @@ import {FileParserModule} from '@core/file-parser/file-parser.module';
 import {TransactionCategorizerModule} from '@core/transaction-categorizer/transaction-categorizer.module';
 import {TransactionMapperModule} from '@core/transaction-mapper/transaction-mapper.module';
 import {BankStatementRepositoryModule} from '@entities/bank-statement/bank-statement.repository.module';
+import {FileModule} from '@modules/files/file.module';
 
 import {AccountModule} from '../accounts/account.module';
 import {TransactionModule} from '../transactions/transaction.module';
@@ -18,6 +19,7 @@ import {BankStatementService} from './bank-statement.service';
     TransactionMapperModule,
     TransactionCategorizerModule,
     TransactionModule,
+    FileModule,
   ],
   providers: [BankStatementService],
   controllers: [BankStatementController],

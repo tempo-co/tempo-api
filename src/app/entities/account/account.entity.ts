@@ -19,12 +19,12 @@ export class Account {
   @Column({type: 'enum', enum: Bank})
   bank: Bank;
 
-  @ManyToOne(() => User, (user) => user.accounts)
-  user: User;
-
   @OneToMany(() => Transaction, (transaction) => transaction.account)
   transactions: Transaction[];
 
   @OneToMany(() => BankStatement, (bankStatement) => bankStatement.account)
   bankStatements: BankStatement[];
+
+  @ManyToOne(() => User, (user) => user.accounts)
+  user: User;
 }
