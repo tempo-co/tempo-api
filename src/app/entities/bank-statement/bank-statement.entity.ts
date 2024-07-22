@@ -1,3 +1,4 @@
+import {Exclude, Expose, Type} from 'class-transformer';
 import {Entity, JoinColumn, ManyToOne, OneToMany, OneToOne, PrimaryGeneratedColumn} from 'typeorm';
 
 import {Account} from '@entities/account/account.entity';
@@ -11,11 +12,16 @@ export class BankStatement {
 
   @OneToOne(() => File)
   @JoinColumn()
+  @Expose()
   file: File;
 
   @OneToMany(() => Transaction, (transaction) => transaction.bankStatement)
+  @Expose()
+  @Type(() => Transaction)
   transactions: Transaction[];
 
   @ManyToOne(() => Account, (account) => account.bankStatements)
+  @Exclude()
+  @Type(() => Account)
   account: Account;
 }
