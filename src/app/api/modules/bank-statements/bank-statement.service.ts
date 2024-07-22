@@ -1,4 +1,5 @@
 import {Injectable} from '@nestjs/common';
+import {plainToInstance} from 'class-transformer';
 
 import {FileParserService} from '@core/file-parser/services/file-parser.service';
 import {TransactionCategorizerService} from '@core/transaction-categorizer/services/transaction-categorizer.service';
@@ -54,7 +55,6 @@ export class BankStatementService {
     }));
     const savedTransactions = await this.transactionService.saveAll(transactions);
 
-    savedBankStatement.transactions = savedTransactions;
-    return savedBankStatement;
+    return plainToInstance(BankStatement, {...savedBankStatement, transactions: savedTransactions});
   }
 }
