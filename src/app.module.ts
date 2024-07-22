@@ -1,6 +1,12 @@
-import {Inject, MiddlewareConsumer, Module, NestModule} from '@nestjs/common';
+import {
+  ClassSerializerInterceptor,
+  Inject,
+  MiddlewareConsumer,
+  Module,
+  NestModule,
+} from '@nestjs/common';
 import {ConfigModule, ConfigService} from '@nestjs/config';
-import {APP_GUARD} from '@nestjs/core';
+import {APP_GUARD, APP_INTERCEPTOR} from '@nestjs/core';
 import {ThrottlerGuard, ThrottlerModule, minutes} from '@nestjs/throttler';
 import {TypeOrmModule} from '@nestjs/typeorm';
 import RedisStore from 'connect-redis';
@@ -62,6 +68,10 @@ import {UserModule} from '@modules/users/user.module';
     {
       provide: APP_GUARD,
       useClass: ThrottlerGuard,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: ClassSerializerInterceptor,
     },
   ],
 })
