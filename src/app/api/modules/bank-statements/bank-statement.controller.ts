@@ -1,5 +1,6 @@
 import {
   Controller,
+  Get,
   Param,
   ParseUUIDPipe,
   Post,
@@ -15,17 +16,25 @@ import {User} from '@entities/user/user.entity';
 
 import {BankStatementService} from './bank-statement.service';
 
-@Controller('bank-statements')
+@Controller('accounts/:accountId/bank-statements')
 export class BankStatementController {
   constructor(private readonly bankStatementService: BankStatementService) {}
 
-  @Post('upload/:accountId')
+  @Post('upload')
   @UseInterceptors(FileInterceptor('file'))
-  async uploadBankStatement(
+  async upload(
     @Param('accountId', new ParseUUIDPipe({version: '4'})) accountId: Account['id'],
     @UploadedFile() file: Express.Multer.File,
     @CurrentUser() user: User,
   ): Promise<BankStatement> {
-    return this.bankStatementService.process({file, accountId, userId: user.id});
+    return this.bankStatementService.save({file, accountId, userId: user.id});
+  }
+
+  @Get()
+  async getAllByAccountIdAndUserId(
+    @Param('accountId', new ParseUUIDPipe({version: '4'})) accountId: Account['id'],
+    @CurrentUser() user: User,
+  ): Promise<BankStatement[]> {
+    return this.bankStatementService.findAllByUserIdAndAccountId(user.id, accountId);
   }
 }

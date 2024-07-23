@@ -12,7 +12,7 @@ import {AccountService} from '@modules/accounts/account.service';
 import {FileService} from '@modules/files/file.service';
 import {TransactionService} from '@modules/transactions/transaction.service';
 
-type ProcessOptions = {
+type SaveOptions = {
   file: Express.Multer.File;
   accountId: Account['id'];
   userId: User['id'];
@@ -31,7 +31,7 @@ export class BankStatementService {
     private readonly fileService: FileService,
   ) {}
 
-  async process(options: ProcessOptions): Promise<BankStatement> {
+  async save(options: SaveOptions): Promise<BankStatement> {
     const {file, accountId, userId} = options;
 
     const account = await this.accountService.findById(accountId, userId);
@@ -43,10 +43,7 @@ export class BankStatementService {
       await this.transactionCategorizerService.categorize(mappedTransactions);
 
     const savedFile = await this.fileService.save(file);
-    const savedBankStatement = await this.bankStatementRepository.save({
-      file: savedFile,
-      account,
-    });
+    const savedBankStatement = await this.bankStatementRepository.save({file: savedFile, account});
 
     const transactions = categorizedTransactions.map((transaction) => ({
       ...transaction,
@@ -56,5 +53,12 @@ export class BankStatementService {
     const savedTransactions = await this.transactionService.saveAll(transactions);
 
     return plainToInstance(BankStatement, {...savedBankStatement, transactions: savedTransactions});
+  }
+
+  async findAllByUserIdAndAccountId(
+    userId: User['id'],
+    accountId: Account['id'],
+  ): Promise<BankStatement[]> {
+    return await this.bankStatementRepository.findAllByUserIdAndAccountId(userId, accountId);
   }
 }
