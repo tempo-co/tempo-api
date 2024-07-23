@@ -11,8 +11,8 @@ import {TransactionRepository, TransactionSaveOptions} from './transaction.repos
 
 function createTransaction(): TransactionSaveOptions {
   return {
-    startedDate: faker.date.past(),
-    completedDate: faker.date.past(),
+    startedAt: faker.date.past(),
+    completedAt: faker.date.past(),
     description: faker.finance.transactionDescription(),
     amount: parseFloat(faker.finance.amount()),
     currency: faker.finance.currencyCode(),

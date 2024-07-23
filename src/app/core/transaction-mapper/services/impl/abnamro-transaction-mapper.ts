@@ -13,8 +13,8 @@ export type AbnAmroTransaction = {
 export class AbnAmroTransactionMapper implements TransactionMapper {
   map(transaction: AbnAmroTransaction): TransactionPartial {
     return {
-      startedDate: this.parseDate(transaction.transactiondate),
-      completedDate: this.parseDate(transaction.valuedate),
+      startedAt: this.parseDate(transaction.transactiondate),
+      completedAt: this.parseDate(transaction.valuedate),
       description: transaction.description.replace(/\s+/g, ' ').trim(),
       amount: parseFloat(transaction.amount),
       currency: transaction.mutationcode,

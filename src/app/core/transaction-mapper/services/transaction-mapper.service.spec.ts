@@ -27,8 +27,8 @@ describe('TransactionMapperService', () => {
           useValue: {
             create: jest.fn().mockImplementation((_bank: Bank) => ({
               map: jest.fn().mockReturnValue({
-                startedDate: faker.date.past(),
-                completedDate: faker.date.past(),
+                startedAt: faker.date.past(),
+                completedAt: faker.date.past(),
                 description: description,
                 amount: parseFloat(faker.finance.amount()),
                 currency: faker.finance.currencyCode(),

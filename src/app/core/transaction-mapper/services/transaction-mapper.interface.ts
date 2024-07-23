@@ -6,5 +6,5 @@ export interface TransactionMapper {
 
 export type TransactionPartial = Pick<
   Transaction,
-  'startedDate' | 'completedDate' | 'description' | 'amount' | 'currency'
+  'startedAt' | 'completedAt' | 'description' | 'amount' | 'currency'
 >;

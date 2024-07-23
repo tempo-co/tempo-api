@@ -38,8 +38,8 @@ describe('RevolutTransactionMapper', () => {
     it('should correctly map a RevolutTransaction to a TransactionPartial', () => {
       const input = createRevolutTransaction();
       const expectedOutput = {
-        startedDate: new Date(input.startedDate),
-        completedDate: new Date(input.completedDate),
+        startedAt: new Date(input.startedDate),
+        completedAt: new Date(input.completedDate),
         description: input.description,
         amount: parseFloat(input.amount),
         currency: input.currency,
