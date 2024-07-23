@@ -16,8 +16,8 @@ export type RevolutTransaction = {
 export class RevolutTransactionMapper implements TransactionMapper {
   map(transaction: RevolutTransaction): TransactionPartial {
     return {
-      startedDate: new Date(transaction.startedDate),
-      completedDate: new Date(transaction.completedDate),
+      startedAt: new Date(transaction.startedDate),
+      completedAt: new Date(transaction.completedDate),
       description: transaction.description.replace(/\s+/g, ' ').trim(),
       amount: parseFloat(transaction.amount),
       currency: transaction.currency,

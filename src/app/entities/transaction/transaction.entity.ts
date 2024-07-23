@@ -23,13 +23,13 @@ export class Transaction {
   @IsNotEmpty()
   @IsDate()
   @Expose()
-  startedDate: Date;
+  startedAt: Date;
 
   @Column({type: 'timestamp'})
   @IsNotEmpty()
   @IsDate()
   @Expose()
-  completedDate: Date;
+  completedAt: Date;
 
   @Column({type: 'varchar', length: 500})
   @IsNotEmpty()

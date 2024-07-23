@@ -39,13 +39,13 @@ const generationConfig: GenerationConfig = {
     description: 'Array of transactions with their categories',
     items: {
       type: FunctionDeclarationSchemaType.OBJECT,
-      required: ['startedDate', 'completedDate', 'description', 'amount', 'currency', 'category'],
+      required: ['startedAt', 'completedAt', 'description', 'amount', 'currency', 'category'],
       properties: {
-        startedDate: {
+        startedAt: {
           type: FunctionDeclarationSchemaType.STRING,
           description: 'Transaction start date',
         },
-        completedDate: {
+        completedAt: {
           type: FunctionDeclarationSchemaType.STRING,
           description: 'Transaction completion date',
         },
