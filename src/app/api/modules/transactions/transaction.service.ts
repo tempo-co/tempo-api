@@ -25,4 +25,8 @@ export class TransactionService {
     }
     return this.transactionRepository.saveAll(transactions);
   }
+
+  deleteByIds(ids: Transaction['id'][]) {
+    return this.transactionRepository.deleteByIds(ids);
+  }
 }

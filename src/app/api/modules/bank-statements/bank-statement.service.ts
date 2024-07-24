@@ -31,7 +31,7 @@ export class BankStatementService {
     private readonly fileService: FileService,
   ) {}
 
-  async save(options: SaveOptions): Promise<BankStatement> {
+  async save(options: SaveOptions) {
     const {file, accountId, userId} = options;
 
     const account = await this.accountService.findById(accountId, userId);
@@ -55,10 +55,26 @@ export class BankStatementService {
     return plainToInstance(BankStatement, {...savedBankStatement, transactions: savedTransactions});
   }
 
-  async findAllByUserIdAndAccountId(
-    userId: User['id'],
-    accountId: Account['id'],
-  ): Promise<BankStatement[]> {
-    return this.bankStatementRepository.findAllByUserIdAndAccountId(userId, accountId);
+  async findAllByAccountIdAndUserId(accountId: Account['id'], userId: User['id']) {
+    return this.bankStatementRepository.findAllByAccountIdAndUserId(accountId, userId);
+  }
+
+  async deleteByIdAndUserId(bankStatementId: BankStatement['id'], userId: User['id']) {
+    const bankStatement = await this.bankStatementRepository.findByIdAndUserId(
+      bankStatementId,
+      userId,
+    );
+
+    if (!bankStatement) {
+      return;
+    }
+
+    if (bankStatement.transactions.length > 0) {
+      const transactionIds = bankStatement.transactions.map((transaction) => transaction.id);
+      await this.transactionService.deleteByIds(transactionIds);
+    }
+
+    await this.bankStatementRepository.deleteById(bankStatementId);
+    await this.fileService.deleteById(bankStatement.file.id);
   }
 }

@@ -16,17 +16,25 @@ export class BankStatementRepository {
     private readonly repository: Repository<BankStatement>,
   ) {}
 
-  save(bankStatement: BankStatementSaveOptions): Promise<BankStatement> {
+  save(bankStatement: BankStatementSaveOptions) {
     return this.repository.save(bankStatement);
   }
 
-  findAllByUserIdAndAccountId(
-    userId: User['id'],
-    accountId: Account['id'],
-  ): Promise<BankStatement[]> {
+  findAllByAccountIdAndUserId(accountId: Account['id'], userId: User['id']) {
     return this.repository.find({
       where: {account: {id: accountId, user: {id: userId}}},
       relations: ['file', 'transactions'],
     });
+  }
+
+  findByIdAndUserId(bankStatementId: BankStatement['id'], userId: User['id']) {
+    return this.repository.findOne({
+      where: {id: bankStatementId, account: {user: {id: userId}}},
+      relations: ['file', 'transactions'],
+    });
+  }
+
+  deleteById(id: BankStatement['id']) {
+    return this.repository.delete(id);
   }
 }
