@@ -24,4 +24,25 @@ export class BankStatement {
   @Exclude()
   @Type(() => Account)
   account: Account;
+
+  @Expose()
+  get period(): {start: Date; end: Date} | null {
+    if (!this.transactions || this.transactions.length === 0) {
+      return null;
+    }
+
+    let start = this.transactions[0].startedAt;
+    let end = this.transactions[0].startedAt;
+
+    this.transactions.forEach((transaction) => {
+      if (transaction.startedAt < start) {
+        start = transaction.startedAt;
+      }
+      if (transaction.startedAt > end) {
+        end = transaction.startedAt;
+      }
+    });
+
+    return {start, end};
+  }
 }
