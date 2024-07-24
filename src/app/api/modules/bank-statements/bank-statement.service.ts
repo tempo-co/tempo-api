@@ -59,6 +59,6 @@ export class BankStatementService {
     userId: User['id'],
     accountId: Account['id'],
   ): Promise<BankStatement[]> {
-    return await this.bankStatementRepository.findAllByUserIdAndAccountId(userId, accountId);
+    return this.bankStatementRepository.findAllByUserIdAndAccountId(userId, accountId);
   }
 }

@@ -24,9 +24,7 @@ export class AccountService {
         throw new ConflictException(`Account with alias ${dto.alias} already exists.`);
       }
     }
-
-    const saveOptions = {...dto, user};
-    return this.accountRepository.save(saveOptions);
+    return this.accountRepository.save({...dto, user});
   }
 
   async findAllByUserId(userId: User['id']): Promise<Account[]> {

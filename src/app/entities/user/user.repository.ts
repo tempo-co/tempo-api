@@ -14,24 +14,18 @@ export class UserRepository {
   ) {}
 
   findById(id: User['id']): Promise<User | null> {
-    return this.repository.findOne({
-      where: {id},
-      relations: ['accounts', 'accounts.transactions'],
-    });
+    return this.repository.findOneBy({id});
   }
 
   findByEmail(email: User['email']): Promise<User | null> {
-    return this.repository.findOne({
-      where: {email},
-      relations: ['accounts', 'accounts.transactions'],
-    });
+    return this.repository.findOneBy({email});
   }
 
   save(user: UserSaveOptions): Promise<User> {
     return this.repository.save(user);
   }
 
-  async existsByEmail(email: User['email']): Promise<boolean> {
+  existsByEmail(email: User['email']): Promise<boolean> {
     return this.repository.existsBy({email});
   }
 }
