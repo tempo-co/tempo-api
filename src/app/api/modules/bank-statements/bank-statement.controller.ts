@@ -1,5 +1,6 @@
 import {
   Controller,
+  Delete,
   Get,
   Param,
   ParseUUIDPipe,
@@ -23,18 +24,27 @@ export class BankStatementController {
   @Post('upload')
   @UseInterceptors(FileInterceptor('file'))
   async upload(
-    @Param('accountId', new ParseUUIDPipe({version: '4'})) accountId: Account['id'],
-    @UploadedFile() file: Express.Multer.File,
     @CurrentUser() user: User,
+    @UploadedFile() file: Express.Multer.File,
+    @Param('accountId', new ParseUUIDPipe({version: '4'})) accountId: Account['id'],
   ): Promise<BankStatement> {
     return this.bankStatementService.save({file, accountId, userId: user.id});
   }
 
   @Get()
   async getAllByAccountIdAndUserId(
-    @Param('accountId', new ParseUUIDPipe({version: '4'})) accountId: Account['id'],
     @CurrentUser() user: User,
+    @Param('accountId', new ParseUUIDPipe({version: '4'})) accountId: Account['id'],
   ): Promise<BankStatement[]> {
-    return this.bankStatementService.findAllByUserIdAndAccountId(user.id, accountId);
+    return this.bankStatementService.findAllByAccountIdAndUserId(accountId, user.id);
+  }
+
+  @Delete(':bankStatementId')
+  async deleteById(
+    @CurrentUser() user: User,
+    @Param('bankStatementId', new ParseUUIDPipe({version: '4'}))
+    bankStatementId: BankStatement['id'],
+  ): Promise<void> {
+    return this.bankStatementService.deleteByIdAndUserId(bankStatementId, user.id);
   }
 }

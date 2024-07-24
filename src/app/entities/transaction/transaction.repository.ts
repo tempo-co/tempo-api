@@ -20,4 +20,8 @@ export class TransactionRepository {
   saveAll(transactions: TransactionSaveOptions[]): Promise<Transaction[]> {
     return this.repository.save(transactions);
   }
+
+  deleteByIds(ids: Transaction['id'][]) {
+    return this.repository.delete(ids);
+  }
 }

@@ -15,4 +15,8 @@ export class FileService {
       mimeType: file.mimetype,
     });
   }
+
+  async deleteById(id: File['id']) {
+    return this.fileRepository.deleteById(id);
+  }
 }

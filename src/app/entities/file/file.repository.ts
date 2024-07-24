@@ -16,4 +16,8 @@ export class FileRepository {
   save(file: FileSaveOptions): Promise<File> {
     return this.repository.save(file);
   }
+
+  deleteById(id: File['id']) {
+    return this.repository.delete(id);
+  }
 }
