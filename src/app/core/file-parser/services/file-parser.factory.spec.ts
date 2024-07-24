@@ -1,6 +1,7 @@
 import {BadRequestException} from '@nestjs/common';
 import {Test} from '@nestjs/testing';
 
+import {MimeType} from '../constants/mime-type.enum';
 import {FileParserFactory} from './file-parser.factory';
 import {CsvFileParser} from './impl/csv-file-parser';
 import {XlsFileParser} from './impl/xls-file-parser';
@@ -10,8 +11,8 @@ describe('FileParserFactory', () => {
 
   // Dynamically map mimetypes to their corresponding parser classes
   const parserMappings = [
-    {mimetype: 'application/vnd.ms-excel', parser: XlsFileParser},
-    {mimetype: 'text/csv', parser: CsvFileParser},
+    {mimetype: MimeType.XLS, parser: XlsFileParser},
+    {mimetype: MimeType.CSV, parser: CsvFileParser},
   ];
 
   beforeEach(async () => {

@@ -1,5 +1,6 @@
 import {BadRequestException, Injectable} from '@nestjs/common';
 
+import {MimeType} from '../constants/mime-type.enum';
 import {FileParser} from './file-parser.interface';
 import {CsvFileParser} from './impl/csv-file-parser';
 import {XlsFileParser} from './impl/xls-file-parser';
@@ -13,9 +14,9 @@ export class FileParserFactory {
 
   create(mimetype: string): FileParser {
     switch (mimetype) {
-      case 'application/vnd.ms-excel':
+      case MimeType.XLS:
         return this.xlsParser;
-      case 'text/csv':
+      case MimeType.CSV:
         return this.csvParser;
       default:
         throw new BadRequestException(`Unsupported file type: ${mimetype}`);
