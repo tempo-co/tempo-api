@@ -12,6 +12,7 @@ import {TypeOrmModule} from '@nestjs/typeorm';
 import RedisStore from 'connect-redis';
 import session from 'express-session';
 import ms from 'ms';
+import {GracefulShutdownModule} from 'nestjs-graceful-shutdown';
 import passport from 'passport';
 import {RedisClientType} from 'redis';
 
@@ -56,6 +57,7 @@ import {UserModule} from '@modules/users/user.module';
         limit: 400,
       },
     ]),
+    GracefulShutdownModule.forRoot(),
     RedisModule,
     FileParserModule,
     TransactionModule,
