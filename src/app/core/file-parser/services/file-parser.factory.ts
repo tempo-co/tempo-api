@@ -15,6 +15,7 @@ export class FileParserFactory {
   create(mimetype: string): FileParser {
     switch (mimetype) {
       case MimeType.XLS:
+      case MimeType.XLSX:
         return this.xlsParser;
       case MimeType.CSV:
         return this.csvParser;
