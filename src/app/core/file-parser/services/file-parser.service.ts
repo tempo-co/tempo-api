@@ -1,4 +1,4 @@
-import {Injectable} from '@nestjs/common';
+import {BadRequestException, Injectable} from '@nestjs/common';
 
 import {FileParserFactory} from './file-parser.factory';
 
@@ -8,7 +8,10 @@ export class FileParserService {
 
   parse(buffer: Buffer, mimetype: string): Record<string, string>[] {
     const fileParser = this.fileParserFactory.create(mimetype);
-    const records = fileParser.parse(buffer);
-    return records;
+    try {
+      return fileParser.parse(buffer);
+    } catch (error) {
+      throw new BadRequestException(`Failed to parse file: ${error.message}`);
+    }
   }
 }
