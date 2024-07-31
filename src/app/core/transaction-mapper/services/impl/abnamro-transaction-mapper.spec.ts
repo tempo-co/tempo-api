@@ -12,6 +12,7 @@ function createAbnAmroTransaction(): AbnAmroTransaction {
     description: faker.finance.transactionDescription(),
     amount: faker.finance.amount(),
     mutationcode: 'EUR',
+    accountNumber: faker.finance.accountNumber(9),
   };
 }
 
