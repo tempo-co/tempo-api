@@ -13,6 +13,7 @@ describe('FileParserService', () => {
   const mockParsers: Record<MimeType, jest.Mocked<FileParser>> = {
     [MimeType.CSV]: {parse: jest.fn()},
     [MimeType.XLS]: {parse: jest.fn()},
+    [MimeType.XLSX]: {parse: jest.fn()},
   };
 
   const mockFactory = {
