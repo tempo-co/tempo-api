@@ -7,7 +7,7 @@ export class File {
   @Expose()
   id: string;
 
-  @Column({type: 'bytea'})
+  @Column({type: 'bytea', select: false})
   @Expose()
   buffer: Buffer;
 
