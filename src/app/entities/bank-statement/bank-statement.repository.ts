@@ -27,9 +27,9 @@ export class BankStatementRepository {
     });
   }
 
-  findByIdAndUserId(bankStatementId: BankStatement['id'], userId: User['id']) {
+  findByIdAndUserId(id: BankStatement['id'], userId: User['id']) {
     return this.repository.findOne({
-      where: {id: bankStatementId, account: {user: {id: userId}}},
+      where: {id: id, account: {user: {id: userId}}},
       relations: ['file', 'transactions'],
     });
   }
