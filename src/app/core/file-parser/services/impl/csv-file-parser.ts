@@ -1,16 +1,16 @@
-import {parse} from 'csv-parse/sync';
+import {Options, parse as csvToJson} from 'csv-parse/sync';
 
 import {FileParser} from '../file-parser.interface';
 
 export class CsvFileParser implements FileParser {
   parse(buffer: Buffer): Record<string, string>[] {
-    const fileContent = buffer.toString();
-    const records = parse(fileContent, {
+    const options: Options = {
       columns: (header) => header.map((columnName: string) => this.toCamelCase(columnName)),
       skip_empty_lines: true,
       trim: true,
-    });
-    return records;
+    };
+
+    return csvToJson(buffer.toString(), options);
   }
 
   private toCamelCase(columnName: string): string {
