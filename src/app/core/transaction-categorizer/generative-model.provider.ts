@@ -28,47 +28,23 @@ export const GenerativeModelProvider: Provider = {
 };
 
 const systemInstruction =
-  `For each transaction in the provided array, add a 'category' field without ` +
-  `altering any other data. Use only the following categories: ${Object.values(Category)}. ` +
-  `Return the modified array with the added 'category' field for each transaction.`;
+  `For each transaction in the provided array, categorize it based on the description, amount ` +
+  `and currency. Return only the 'category' field, and ensure that the categories are returned ` +
+  `in the same order as the transactions provided. Use only the following categories: ` +
+  `${Object.values(Category)}. If present, use merchant names hidden within the description to ` +
+  `determine the category. Descriptions may be in different languages; consider translations ` +
+  `and common patterns. If a category cannot be determined, provide your best guess, and avoid ` +
+  `returning 'OTHER' unless absolutely necessary.`;
 
 const generationConfig: GenerationConfig = {
   responseMimeType: 'application/json',
   responseSchema: {
     type: FunctionDeclarationSchemaType.ARRAY,
-    description: 'Array of transactions with their categories',
+    description: 'Array of transaction categories',
     items: {
-      type: FunctionDeclarationSchemaType.OBJECT,
-      required: ['startedAt', 'completedAt', 'description', 'amount', 'currency', 'category'],
-      properties: {
-        startedAt: {
-          type: FunctionDeclarationSchemaType.STRING,
-          description: 'Transaction start date',
-        },
-        completedAt: {
-          type: FunctionDeclarationSchemaType.STRING,
-          description: 'Transaction completion date',
-        },
-        description: {
-          type: FunctionDeclarationSchemaType.STRING,
-          description: 'Transaction description',
-        },
-        amount: {
-          type: FunctionDeclarationSchemaType.NUMBER,
-          description: 'Transaction amount',
-        },
-        currency: {
-          type: FunctionDeclarationSchemaType.STRING,
-          description: 'Transaction currency',
-          example: 'EUR',
-        },
-        category: {
-          type: FunctionDeclarationSchemaType.STRING,
-          description: 'Transaction category',
-          format: 'enum',
-          enum: Object.values(Category),
-        },
-      },
+      type: FunctionDeclarationSchemaType.STRING,
+      description: 'Transaction category',
+      properties: {},
     },
   },
 };
