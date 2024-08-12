@@ -1,5 +1,13 @@
 import {Exclude, Expose, Type} from 'class-transformer';
-import {Entity, JoinColumn, ManyToOne, OneToMany, OneToOne, PrimaryGeneratedColumn} from 'typeorm';
+import {
+  CreateDateColumn,
+  Entity,
+  JoinColumn,
+  ManyToOne,
+  OneToMany,
+  OneToOne,
+  PrimaryGeneratedColumn,
+} from 'typeorm';
 
 import {Account} from '@entities/account/account.entity';
 import {File} from '@entities/file/file.entity';
@@ -45,4 +53,8 @@ export class BankStatement {
 
     return {start, end};
   }
+
+  @CreateDateColumn({type: 'timestamp'})
+  @Expose()
+  uploadedAt: Date;
 }

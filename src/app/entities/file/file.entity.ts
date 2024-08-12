@@ -1,5 +1,7 @@
 import {Expose} from 'class-transformer';
-import {Column, CreateDateColumn, Entity, PrimaryGeneratedColumn} from 'typeorm';
+import {Column, Entity, PrimaryGeneratedColumn} from 'typeorm';
+
+import {MimeType} from '@core/file-parser/constants/mime-type.enum';
 
 @Entity()
 export class File {
@@ -21,9 +23,5 @@ export class File {
 
   @Column({type: 'varchar', length: 255})
   @Expose()
-  mimeType: string;
-
-  @CreateDateColumn({type: 'timestamp'})
-  @Expose()
-  uploadedAt: Date;
+  type: MimeType;
 }
