@@ -1,4 +1,4 @@
-import {Injectable} from '@nestjs/common';
+import {Injectable, NotFoundException} from '@nestjs/common';
 import {plainToInstance} from 'class-transformer';
 
 import {FileParserService} from '@core/file-parser/services/file-parser.service';
@@ -59,11 +59,17 @@ export class BankStatementService {
     return this.bankStatementRepository.findAllByAccountIdAndUserId(accountId, userId);
   }
 
-  async deleteByIdAndUserId(bankStatementId: BankStatement['id'], userId: User['id']) {
-    const bankStatement = await this.bankStatementRepository.findByIdAndUserId(
-      bankStatementId,
-      userId,
-    );
+  async findFileByIdAndUserId(id: BankStatement['id'], userId: User['id']) {
+    const bankStatement = await this.bankStatementRepository.findByIdAndUserId(id, userId);
+
+    if (!bankStatement) {
+      throw new NotFoundException(`Bank statement with id ${id} not found.`);
+    }
+    return this.fileService.findById(bankStatement.file.id);
+  }
+
+  async deleteByIdAndUserId(id: BankStatement['id'], userId: User['id']) {
+    const bankStatement = await this.bankStatementRepository.findByIdAndUserId(id, userId);
 
     if (!bankStatement) {
       return;
@@ -74,7 +80,7 @@ export class BankStatementService {
       await this.transactionService.deleteByIds(transactionIds);
     }
 
-    await this.bankStatementRepository.deleteById(bankStatementId);
+    await this.bankStatementRepository.deleteById(id);
     await this.fileService.deleteById(bankStatement.file.id);
   }
 }

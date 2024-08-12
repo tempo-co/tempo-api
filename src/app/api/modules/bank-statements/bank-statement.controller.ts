@@ -5,10 +5,13 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Res,
+  StreamableFile,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
 import {FileInterceptor} from '@nestjs/platform-express';
+import {Response} from 'express';
 
 import {CurrentUser} from '@core/auth/decorators/current-user.decorator';
 import {Account} from '@entities/account/account.entity';
@@ -17,6 +20,7 @@ import {User} from '@entities/user/user.entity';
 
 import {BankStatementService} from './bank-statement.service';
 
+// TODO: REMOVE :accountId FROM PATH
 @Controller('accounts/:accountId/bank-statements')
 export class BankStatementController {
   constructor(private readonly bankStatementService: BankStatementService) {}
@@ -46,5 +50,24 @@ export class BankStatementController {
     bankStatementId: BankStatement['id'],
   ): Promise<void> {
     return this.bankStatementService.deleteByIdAndUserId(bankStatementId, user.id);
+  }
+
+  @Get(':bankStatementId/file')
+  async getFile(
+    @CurrentUser() user: User,
+    @Param('bankStatementId', new ParseUUIDPipe({version: '4'}))
+    bankStatementId: BankStatement['id'],
+    @Res({passthrough: true}) res: Response,
+  ): Promise<StreamableFile> {
+    const file = await this.bankStatementService.findFileByIdAndUserId(bankStatementId, user.id);
+
+    res.set({
+      'Content-Type': file.type,
+      'Access-Control-Expose-Headers': 'Content-Disposition',
+      'Content-Disposition': `attachment; filename="${file.name}"`,
+      'Content-Length': file.size.toString(),
+      'X-File-Id': file.id,
+    });
+    return new StreamableFile(file.buffer);
   }
 }

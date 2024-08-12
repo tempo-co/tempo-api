@@ -20,4 +20,11 @@ export class FileRepository {
   deleteById(id: File['id']) {
     return this.repository.delete(id);
   }
+
+  findById(id: File['id']) {
+    return this.repository.findOne({
+      where: {id},
+      select: ['id', 'buffer', 'name', 'size', 'type'],
+    });
+  }
 }
