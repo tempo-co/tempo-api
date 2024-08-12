@@ -7,7 +7,7 @@ import {User} from '@entities/user/user.entity';
 
 import {BankStatement} from './bank-statement.entity';
 
-export type BankStatementSaveOptions = Omit<BankStatement, 'id' | 'transactions' | 'period'>;
+export type BankStatementSaveOptions = Pick<BankStatement, 'file' | 'account'>;
 
 @Injectable()
 export class BankStatementRepository {
