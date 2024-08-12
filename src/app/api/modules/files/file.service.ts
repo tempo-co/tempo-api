@@ -1,5 +1,6 @@
-import {Injectable} from '@nestjs/common';
+import {Injectable, NotFoundException} from '@nestjs/common';
 
+import {MimeType} from '@core/file-parser/constants/mime-type.enum';
 import {File} from '@entities/file/file.entity';
 import {FileRepository} from '@entities/file/file.repository';
 
@@ -12,11 +13,20 @@ export class FileService {
       buffer: file.buffer,
       name: file.originalname,
       size: file.size,
-      mimeType: file.mimetype,
+      type: file.mimetype as MimeType,
     });
   }
 
   async deleteById(id: File['id']) {
     return this.fileRepository.deleteById(id);
+  }
+
+  async findById(id: File['id']) {
+    const file = await this.fileRepository.findById(id);
+
+    if (!file) {
+      throw new NotFoundException(`File with id ${id} not found.`);
+    }
+    return file;
   }
 }
