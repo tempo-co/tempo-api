@@ -12,9 +12,9 @@
     "outDir": "./dist",
     "baseUrl": "./",
     "paths": {
-      "@modules/*": ["src/app/api/modules/*"],
+      "@modules/*": ["src/app/modules/*"],
       "@core/*": ["src/app/core/*"],
-      "@entities/*": ["src/app/entities/*"],
+      "@config/*": ["src/app/config/*"],
     },
     "incremental": true,
     "skipLibCheck": true,

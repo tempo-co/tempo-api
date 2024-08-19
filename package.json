@@ -95,7 +95,7 @@
     "moduleNameMapper": {
       "^@modules/(.*)$": "<rootDir>/app/api/modules/$1",
       "^@core/(.*)$": "<rootDir>/app/core/$1",
-      "^@entities/(.*)$": "<rootDir>/app/entities/$1"
+      "^@config/(.*)$": "<rootDir>/app/config/$1"
     },
     "moduleFileExtensions": [
       "js",

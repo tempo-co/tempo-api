@@ -3,7 +3,7 @@ import {PassportStrategy} from '@nestjs/passport';
 import {plainToClass} from 'class-transformer';
 import {Strategy} from 'passport-local';
 
-import {User} from '@entities/user/user.entity';
+import {User} from '@modules/user/user.entity';
 
 import {LogInDto} from '../api/login.dto';
 import {AuthService} from '../services/auth.service';

@@ -2,7 +2,7 @@ import {GenerativeModel} from '@google/generative-ai';
 import {Injectable} from '@nestjs/common';
 
 import {TransactionPartial} from '@core/transaction-mapper/services/transaction-mapper.interface';
-import {Transaction} from '@entities/transaction/transaction.entity';
+import {Transaction} from '@modules/transaction/transaction.entity';
 
 import {Category} from '../constants/category.enum';
 

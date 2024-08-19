@@ -1,4 +1,4 @@
-import {Transaction} from '@entities/transaction/transaction.entity';
+import {Transaction} from '@modules/transaction/transaction.entity';
 
 export interface TransactionMapper {
   map(records: Record<string, string>): TransactionPartial;

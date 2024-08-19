@@ -2,8 +2,7 @@ import {Body, Controller, HttpCode, Post, Req, UseGuards} from '@nestjs/common';
 import {ApiResponse} from '@nestjs/swagger';
 import {Throttle, hours} from '@nestjs/throttler';
 import {Request} from 'express';
-
-import {User} from '@entities/user/user.entity';
+import {User} from 'src/app/modules/user/user.entity';
 
 import {CurrentUser} from '../decorators/current-user.decorator';
 import {Public} from '../decorators/public.decorator';
