@@ -1,7 +1,7 @@
 import {Module} from '@nestjs/common';
 import {ConfigModule} from '@nestjs/config';
 
-import {GenerativeModelProvider} from './generative-model.provider';
+import {GenerativeModelProvider} from './providers/generative-model.provider';
 import {TransactionCategorizerService} from './services/transaction-categorizer.service';
 
 @Module({

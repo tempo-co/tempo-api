@@ -1,3 +1,6 @@
+import {validationSchema} from '@config/env/validation-schema';
+import {REDIS} from '@config/redis/redis.constants';
+import {RedisModule} from '@config/redis/redis.module';
 import {
   ClassSerializerInterceptor,
   Inject,
@@ -17,14 +20,11 @@ import passport from 'passport';
 import {RedisClientType} from 'redis';
 
 import {AuthModule} from '@core/auth/auth.module';
-import {REDIS} from '@core/config/redis/redis.constants';
-import {RedisModule} from '@core/config/redis/redis.module';
-import {validationSchema} from '@core/config/validation-schema';
 import {FileParserModule} from '@core/file-parser/file-parser.module';
 import {TransactionCategorizerModule} from '@core/transaction-categorizer/transaction-categorizer.module';
-import {BankStatementModule} from '@modules/bank-statements/bank-statement.module';
-import {TransactionModule} from '@modules/transactions/transaction.module';
-import {UserModule} from '@modules/users/user.module';
+import {BankStatementModule} from '@modules/bank-statement/bank-statement.module';
+import {TransactionModule} from '@modules/transaction/transaction.module';
+import {UserModule} from '@modules/user/user.module';
 
 @Module({
   imports: [

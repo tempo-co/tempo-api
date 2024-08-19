@@ -2,9 +2,9 @@ import {BadRequestException, Injectable, UnauthorizedException} from '@nestjs/co
 import argon2 from 'argon2';
 import {validate} from 'class-validator';
 
-import {User} from '@entities/user/user.entity';
-import {UserSaveOptions} from '@entities/user/user.repository';
-import {UserService} from '@modules/users/user.service';
+import {UserSaveOptions} from '@modules/user/repository/user.repository';
+import {UserService} from '@modules/user/services/user.service';
+import {User} from '@modules/user/user.entity';
 
 import {LogInDto} from '../api/login.dto';
 
