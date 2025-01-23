@@ -1,7 +1,7 @@
 import {Controller, Get, Param, ParseUUIDPipe} from '@nestjs/common';
 
-import {TransactionService} from '../services/transaction.service';
 import {Transaction} from '../transaction.entity';
+import {TransactionService} from '../transaction.service';
 
 @Controller('transactions')
 export class TransactionController {

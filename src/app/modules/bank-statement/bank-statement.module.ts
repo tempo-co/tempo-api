@@ -10,8 +10,7 @@ import {AccountModule} from '../account/account.module';
 import {TransactionModule} from '../transaction/transaction.module';
 import {BankStatementController} from './api/bank-statement.controller';
 import {BankStatement} from './bank-statement.entity';
-import {BankStatementRepository} from './repository/bank-statement.repository';
-import {BankStatementService} from './services/bank-statement.service';
+import {BankStatementService} from './bank-statement.service';
 
 @Module({
   imports: [
@@ -23,7 +22,7 @@ import {BankStatementService} from './services/bank-statement.service';
     TransactionModule,
     FileModule,
   ],
-  providers: [BankStatementService, BankStatementRepository],
+  providers: [BankStatementService],
   controllers: [BankStatementController],
 })
 export class BankStatementModule {}

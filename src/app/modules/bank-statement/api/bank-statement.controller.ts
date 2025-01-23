@@ -18,7 +18,7 @@ import {Account} from '@modules/account/account.entity';
 import {User} from '@modules/user/user.entity';
 
 import {BankStatement} from '../bank-statement.entity';
-import {BankStatementService} from '../services/bank-statement.service';
+import {BankStatementService} from '../bank-statement.service';
 
 // TODO: REMOVE :accountId FROM PATH
 @Controller('accounts/:accountId/bank-statements')

@@ -1,17 +1,18 @@
 import {Injectable, NotFoundException} from '@nestjs/common';
+import {InjectRepository} from '@nestjs/typeorm';
 import {plainToInstance} from 'class-transformer';
+import {Repository} from 'typeorm';
 
 import {FileParserService} from '@core/file-parser/services/file-parser.service';
 import {TransactionCategorizerService} from '@core/transaction-categorizer/services/transaction-categorizer.service';
 import {TransactionMapperService} from '@core/transaction-mapper/services/transaction-mapper.service';
 import {Account} from '@modules/account/account.entity';
-import {AccountService} from '@modules/account/services/account.service';
-import {FileService} from '@modules/file/services/file.service';
-import {TransactionService} from '@modules/transaction/services/transaction.service';
+import {AccountService} from '@modules/account/account.service';
+import {FileService} from '@modules/file/file.service';
+import {TransactionService} from '@modules/transaction/transaction.service';
 import {User} from '@modules/user/user.entity';
 
-import {BankStatement} from '../bank-statement.entity';
-import {BankStatementRepository} from '../repository/bank-statement.repository';
+import {BankStatement} from './bank-statement.entity';
 
 type SaveOptions = {
   file: Express.Multer.File;
@@ -22,8 +23,8 @@ type SaveOptions = {
 @Injectable()
 export class BankStatementService {
   constructor(
-    private readonly bankStatementRepository: BankStatementRepository,
-
+    @InjectRepository(BankStatement)
+    private readonly bankStatementRepository: Repository<BankStatement>,
     private readonly accountService: AccountService,
     private readonly fileParserService: FileParserService,
     private readonly transactionMapperService: TransactionMapperService,
@@ -57,11 +58,17 @@ export class BankStatementService {
   }
 
   async findAllByAccountIdAndUserId(accountId: Account['id'], userId: User['id']) {
-    return this.bankStatementRepository.findAllByAccountIdAndUserId(accountId, userId);
+    return this.bankStatementRepository.find({
+      where: {account: {id: accountId, user: {id: userId}}},
+      relations: ['file', 'transactions'],
+    });
   }
 
   async findFileByIdAndUserId(id: BankStatement['id'], userId: User['id']) {
-    const bankStatement = await this.bankStatementRepository.findByIdAndUserId(id, userId);
+    const bankStatement = await this.bankStatementRepository.findOne({
+      where: {id: id, account: {user: {id: userId}}},
+      relations: ['file', 'transactions'],
+    });
 
     if (!bankStatement) {
       throw new NotFoundException(`Bank statement with id ${id} not found.`);
@@ -70,7 +77,10 @@ export class BankStatementService {
   }
 
   async deleteByIdAndUserId(id: BankStatement['id'], userId: User['id']) {
-    const bankStatement = await this.bankStatementRepository.findByIdAndUserId(id, userId);
+    const bankStatement = await this.bankStatementRepository.findOne({
+      where: {id: id, account: {user: {id: userId}}},
+      relations: ['file', 'transactions'],
+    });
 
     if (!bankStatement) {
       return;
@@ -81,7 +91,7 @@ export class BankStatementService {
       await this.transactionService.deleteByIds(transactionIds);
     }
 
-    await this.bankStatementRepository.deleteById(id);
+    await this.bankStatementRepository.delete(id);
     await this.fileService.deleteById(bankStatement.file.id);
   }
 }

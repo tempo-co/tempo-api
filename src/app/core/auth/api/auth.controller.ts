@@ -4,16 +4,17 @@ import {Throttle, hours} from '@nestjs/throttler';
 import {Request} from 'express';
 import {User} from 'src/app/modules/user/user.entity';
 
+import {UserService} from '@modules/user/user.service';
+
 import {CurrentUser} from '../decorators/current-user.decorator';
 import {Public} from '../decorators/public.decorator';
 import {LocalLogInGuard} from '../guards/local-login.guard';
-import {AuthService} from '../services/auth.service';
 import {LogInDto} from './login.dto';
 import {SignUpDto} from './signup.dto';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(private readonly userService: UserService) {}
 
   @Throttle({default: {limit: 12, ttl: hours(1)}})
   @Public()
@@ -36,7 +37,7 @@ export class AuthController {
   @ApiResponse({status: 409, description: 'An account with this email already exists.'})
   @ApiResponse({status: 429, description: 'Too many requests. Try again later.'})
   async signUp(@Body() dto: SignUpDto, @Req() request: Request) {
-    const user = await this.authService.createUser(dto);
+    const user = await this.userService.save(dto);
 
     await new Promise<void>((resolve) => {
       request.logIn(user, () => {

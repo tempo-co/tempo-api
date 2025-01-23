@@ -4,7 +4,7 @@ import {CurrentUser} from '@core/auth/decorators/current-user.decorator';
 import {User} from '@modules/user/user.entity';
 
 import {Account} from '../account.entity';
-import {AccountService} from '../services/account.service';
+import {AccountService} from '../account.service';
 import {AccountCreateDto} from './account-create.dto';
 
 @Controller('accounts')
