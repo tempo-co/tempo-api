@@ -1,15 +1,19 @@
 import {Injectable, NotFoundException} from '@nestjs/common';
+import {InjectRepository} from '@nestjs/typeorm';
+import {Repository} from 'typeorm';
 
 import {MimeType} from '@core/file-parser/constants/mime-type.enum';
 
-import {File} from '../file.entity';
-import {FileRepository} from '../repository/file.repository';
+import {File} from './file.entity';
 
 @Injectable()
 export class FileService {
-  constructor(private readonly fileRepository: FileRepository) {}
+  constructor(
+    @InjectRepository(File)
+    private readonly fileRepository: Repository<File>,
+  ) {}
 
-  save(file: Express.Multer.File): Promise<File> {
+  async save(file: Express.Multer.File): Promise<File> {
     return this.fileRepository.save({
       buffer: file.buffer,
       name: file.originalname,
@@ -19,11 +23,14 @@ export class FileService {
   }
 
   async deleteById(id: File['id']) {
-    return this.fileRepository.deleteById(id);
+    return this.fileRepository.delete(id);
   }
 
   async findById(id: File['id']) {
-    const file = await this.fileRepository.findById(id);
+    const file = await this.fileRepository.findOne({
+      where: {id},
+      select: ['id', 'buffer', 'name', 'size', 'type'],
+    });
 
     if (!file) {
       throw new NotFoundException(`File with id ${id} not found.`);

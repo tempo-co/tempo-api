@@ -7,7 +7,6 @@ import {UserModule} from '@modules/user/user.module';
 
 import {AuthController} from './api/auth.controller';
 import {AuthGuard} from './guards/auth.guard';
-import {AuthService} from './services/auth.service';
 import {SessionSerializer} from './services/session.serializer';
 import {LocalStrategy} from './strategies/local.strategy';
 
@@ -21,7 +20,6 @@ import {LocalStrategy} from './strategies/local.strategy';
   ],
   providers: [
     SessionSerializer,
-    AuthService,
     LocalStrategy,
     {
       provide: APP_GUARD,
@@ -29,6 +27,5 @@ import {LocalStrategy} from './strategies/local.strategy';
     },
   ],
   controllers: [AuthController],
-  exports: [AuthService],
 })
 export class AuthModule {}

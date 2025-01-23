@@ -1,15 +1,21 @@
 import {ConflictException, Injectable, NotFoundException} from '@nestjs/common';
+import {InjectRepository} from '@nestjs/typeorm';
 import argon2 from 'argon2';
+import {Repository} from 'typeorm';
 
-import {UserRepository, UserSaveOptions} from '../repository/user.repository';
-import {User} from '../user.entity';
+import {User} from './user.entity';
+
+type UserSaveOptions = Omit<User, 'id' | 'createdAt' | 'accounts'>;
 
 @Injectable()
 export class UserService {
-  constructor(private readonly userRepository: UserRepository) {}
+  constructor(
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
+  ) {}
 
   async findById(id: User['id']): Promise<User> {
-    const user = await this.userRepository.findById(id);
+    const user = await this.userRepository.findOneBy({id});
 
     if (!user) {
       throw new NotFoundException(`User with id ${id} not found.`);
@@ -18,7 +24,7 @@ export class UserService {
   }
 
   async findByEmail(email: User['id']): Promise<User> {
-    const user = await this.userRepository.findByEmail(email);
+    const user = await this.userRepository.findOneBy({email});
 
     if (!user) {
       throw new NotFoundException(`User with email ${email} not found.`);
@@ -29,7 +35,7 @@ export class UserService {
   async save(options: UserSaveOptions): Promise<User> {
     const {name, email, password} = options;
 
-    const emailExists = await this.userRepository.existsByEmail(email);
+    const emailExists = await this.userRepository.existsBy({email});
 
     if (emailExists) {
       throw new ConflictException(`An account with email ${email} already exists.`);
