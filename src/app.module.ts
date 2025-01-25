@@ -1,23 +1,30 @@
-import {Inject, MiddlewareConsumer, Module, NestModule} from '@nestjs/common';
+import {validationSchema} from '@config/env/validation-schema';
+import {REDIS} from '@config/redis/redis.constants';
+import {RedisModule} from '@config/redis/redis.module';
+import {
+  ClassSerializerInterceptor,
+  Inject,
+  MiddlewareConsumer,
+  Module,
+  NestModule,
+} from '@nestjs/common';
 import {ConfigModule, ConfigService} from '@nestjs/config';
-import {APP_GUARD} from '@nestjs/core';
+import {APP_GUARD, APP_INTERCEPTOR} from '@nestjs/core';
 import {ThrottlerGuard, ThrottlerModule, minutes} from '@nestjs/throttler';
 import {TypeOrmModule} from '@nestjs/typeorm';
 import RedisStore from 'connect-redis';
 import session from 'express-session';
 import ms from 'ms';
+import {GracefulShutdownModule} from 'nestjs-graceful-shutdown';
 import passport from 'passport';
 import {RedisClientType} from 'redis';
 
 import {AuthModule} from '@core/auth/auth.module';
-import {REDIS} from '@core/config/redis/redis.constants';
-import {RedisModule} from '@core/config/redis/redis.module';
-import {validationSchema} from '@core/config/validation-schema';
 import {FileParserModule} from '@core/file-parser/file-parser.module';
 import {TransactionCategorizerModule} from '@core/transaction-categorizer/transaction-categorizer.module';
-import {BankStatementModule} from '@modules/bank-statements/bank-statement.module';
-import {TransactionModule} from '@modules/transactions/transaction.module';
-import {UserModule} from '@modules/users/user.module';
+import {BankStatementModule} from '@modules/bank-statement/bank-statement.module';
+import {TransactionModule} from '@modules/transaction/transaction.module';
+import {UserModule} from '@modules/user/user.module';
 
 @Module({
   imports: [
@@ -50,6 +57,7 @@ import {UserModule} from '@modules/users/user.module';
         limit: 400,
       },
     ]),
+    GracefulShutdownModule.forRoot(),
     RedisModule,
     FileParserModule,
     TransactionModule,
@@ -62,6 +70,10 @@ import {UserModule} from '@modules/users/user.module';
     {
       provide: APP_GUARD,
       useClass: ThrottlerGuard,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: ClassSerializerInterceptor,
     },
   ],
 })

@@ -1,6 +1,7 @@
 import {BadRequestException} from '@nestjs/common';
 import {Test, TestingModule} from '@nestjs/testing';
 
+import {MimeType} from '../constants/mime-type.enum';
 import {FileParserFactory} from './file-parser.factory';
 import {FileParser} from './file-parser.interface';
 import {FileParserService} from './file-parser.service';
@@ -9,13 +10,14 @@ describe('FileParserService', () => {
   let service: FileParserService;
   let factory: FileParserFactory;
 
-  const mockParsers: Record<string, jest.Mocked<FileParser>> = {
-    'text/csv': {parse: jest.fn()},
-    'application/vnd.ms-excel': {parse: jest.fn()},
+  const mockParsers: Record<MimeType, jest.Mocked<FileParser>> = {
+    [MimeType.CSV]: {parse: jest.fn()},
+    [MimeType.XLS]: {parse: jest.fn()},
+    [MimeType.XLSX]: {parse: jest.fn()},
   };
 
   const mockFactory = {
-    create: jest.fn((mimetype: string): FileParser => {
+    create: jest.fn((mimetype: MimeType): FileParser => {
       const parser = mockParsers[mimetype];
       if (!parser) throw new BadRequestException(`Unsupported file type: ${mimetype}`);
       return parser;
@@ -37,12 +39,12 @@ describe('FileParserService', () => {
 
   const testCases = [
     {
-      mimetype: 'text/csv',
+      mimetype: MimeType.CSV,
       buffer: Buffer.from('transactionDate,valueDate\n2023-04-01,2023-04-02'),
       result: [{transactionDate: '2023-04-01', valueDate: '2023-04-02'}],
     },
     {
-      mimetype: 'application/vnd.ms-excel',
+      mimetype: MimeType.XLS,
       buffer: Buffer.from('some xls content'),
       result: [{transactionDate: '2023-04-01', valueDate: '2023-04-02'}],
     },

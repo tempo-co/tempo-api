@@ -12,6 +12,7 @@ function createAbnAmroTransaction(): AbnAmroTransaction {
     description: faker.finance.transactionDescription(),
     amount: faker.finance.amount(),
     mutationcode: 'EUR',
+    accountNumber: faker.finance.accountNumber(9),
   };
 }
 
@@ -35,8 +36,8 @@ describe('AbnAmroTransactionMapper', () => {
     it('should correctly map an AbnAmroTransaction to a TransactionPartial', () => {
       const input = createAbnAmroTransaction();
       const expectedOutput = {
-        startedDate: new Date(2023, 0, 1),
-        completedDate: new Date(2023, 0, 2),
+        startedAt: new Date(2023, 0, 1),
+        completedAt: new Date(2023, 0, 2),
         description: input.description,
         amount: parseFloat(input.amount),
         currency: input.mutationcode,

@@ -2,19 +2,39 @@ import {GenerativeModel} from '@google/generative-ai';
 import {Injectable} from '@nestjs/common';
 
 import {TransactionPartial} from '@core/transaction-mapper/services/transaction-mapper.interface';
-import {Transaction} from '@entities/transaction/transaction.entity';
+import {Transaction} from '@modules/transaction/transaction.entity';
 
-type TransactionPartialWithCategory = TransactionPartial & {category: Transaction['category']};
+import {Category} from '../constants/category.enum';
+
+type CategorizedTransactionPartial = TransactionPartial & {category: Transaction['category']};
 
 @Injectable()
 export class TransactionCategorizerService {
   constructor(private readonly model: GenerativeModel) {}
 
-  async categorize(transactions: TransactionPartial[]): Promise<TransactionPartialWithCategory[]> {
-    const strTransactions = JSON.stringify(transactions);
-    const result = await this.model.generateContent(strTransactions);
+  async categorize(transactions: TransactionPartial[]): Promise<CategorizedTransactionPartial[]> {
+    try {
+      const serializedTransactions = JSON.stringify(
+        transactions.map(({description, amount, currency}) => ({description, amount, currency})),
+      );
+      const result = await this.model.generateContent(serializedTransactions);
+      const categories: string[] = JSON.parse(result.response.text());
 
-    const categorizedTransactions = JSON.parse(result.response.text());
-    return categorizedTransactions;
+      return transactions.map((transaction, index) => ({
+        ...transaction,
+        category: this.mapCategory(categories[index]),
+      }));
+    } catch (error) {
+      return transactions.map((transaction) => ({
+        ...transaction,
+        category: Category.OTHER,
+      }));
+    }
+  }
+
+  private mapCategory(category: string): Category {
+    return Object.values(Category).includes(category as Category)
+      ? (category as Category)
+      : Category.OTHER;
   }
 }

@@ -9,7 +9,6 @@ export class XlsFileParser implements FileParser {
     const worksheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[worksheetName];
 
-    const data: Record<string, string>[] = utils.sheet_to_json(worksheet, {raw: false});
-    return data;
+    return utils.sheet_to_json(worksheet, {raw: false});
   }
 }
