@@ -9,6 +9,7 @@ import {TransactionMapperService} from '@core/transaction-mapper/services/transa
 import {Account} from '@modules/account/account.entity';
 import {AccountService} from '@modules/account/account.service';
 import {FileService} from '@modules/file/file.service';
+import {PaginationDto} from '@modules/transaction/api/pagination.dto';
 import {TransactionService} from '@modules/transaction/transaction.service';
 import {User} from '@modules/user/user.entity';
 
@@ -57,11 +58,27 @@ export class BankStatementService {
     return plainToInstance(BankStatement, {...savedBankStatement, transactions: savedTransactions});
   }
 
-  async findAllByAccountIdAndUserId(accountId: Account['id'], userId: User['id']) {
-    return this.bankStatementRepository.find({
-      where: {account: {id: accountId, user: {id: userId}}},
-      relations: ['file', 'transactions'],
-    });
+  async findAllByAccountIdAndUserId(
+    accountId: Account['id'],
+    userId: User['id'],
+    {pageIndex, pageSize}: PaginationDto,
+  ): Promise<{
+    bankStatements: BankStatement[];
+    total: number;
+  }> {
+    const [bankStatements, total] = await this.bankStatementRepository
+      .createQueryBuilder('bankStatement')
+      .innerJoin('bankStatement.account', 'account')
+      .innerJoin('account.user', 'user')
+      .where('user.id = :userId', {userId})
+      .andWhere('account.id = :accountId', {accountId})
+      .leftJoinAndSelect('bankStatement.file', 'file')
+      .leftJoinAndSelect('bankStatement.transactions', 'transactions')
+      .skip(pageIndex * pageSize)
+      .take(pageSize)
+      .getManyAndCount();
+
+    return {bankStatements, total};
   }
 
   async findFileByIdAndUserId(id: BankStatement['id'], userId: User['id']) {
