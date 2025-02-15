@@ -5,6 +5,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
   Res,
   StreamableFile,
   UploadedFile,
@@ -15,6 +16,7 @@ import {Response} from 'express';
 
 import {CurrentUser} from '@core/auth/decorators/current-user.decorator';
 import {Account} from '@modules/account/account.entity';
+import {PaginationDto} from '@modules/transaction/api/pagination.dto';
 import {User} from '@modules/user/user.entity';
 
 import {BankStatement} from '../bank-statement.entity';
@@ -39,8 +41,12 @@ export class BankStatementController {
   async getAllByAccountIdAndUserId(
     @CurrentUser() user: User,
     @Param('accountId', new ParseUUIDPipe({version: '4'})) accountId: Account['id'],
-  ): Promise<BankStatement[]> {
-    return this.bankStatementService.findAllByAccountIdAndUserId(accountId, user.id);
+    @Query() paginationDto: PaginationDto,
+  ): Promise<{
+    bankStatements: BankStatement[];
+    total: number;
+  }> {
+    return this.bankStatementService.findAllByAccountIdAndUserId(accountId, user.id, paginationDto);
   }
 
   @Delete(':bankStatementId')
