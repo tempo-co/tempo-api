@@ -37,7 +37,7 @@ export class BankStatementController {
   @ApiResponse({status: 400, description: 'Validation of the request body failed.'})
   @ApiResponse({status: 401, description: 'Invalid credentials.'})
   @ApiResponse({status: 409, description: 'A bank statement already exists for this period.'})
-  @ApiResponse({status: 422, description: 'Validation failed for a transaction.'})
+  @ApiResponse({status: 422, description: 'File is not a valid bank statement.'})
   async upload(
     @CurrentUser() user: User,
     @UploadedFile() file: Express.Multer.File,

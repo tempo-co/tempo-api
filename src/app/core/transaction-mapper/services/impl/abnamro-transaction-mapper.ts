@@ -35,9 +35,7 @@ export class AbnAmroTransactionMapper implements TransactionMapper {
   map(transaction: AbnAmroTransaction): TransactionPartial {
     const {error} = abnAmroTransactionSchema.validate(transaction);
     if (error) {
-      throw new UnprocessableEntityException(
-        `Validation failed for a transaction. Invalid schema: ${error.message}`,
-      );
+      throw new UnprocessableEntityException('File is not a valid ABN AMRO bank statement.');
     }
 
     return {
@@ -57,9 +55,7 @@ export class AbnAmroTransactionMapper implements TransactionMapper {
     const date = new Date(year, month, day);
 
     if (date.getFullYear() !== year || date.getMonth() !== month || date.getDate() !== day) {
-      throw new UnprocessableEntityException(
-        `Validation failed for a transaction. Invalid date value: ${dateString}`,
-      );
+      throw new UnprocessableEntityException('File is not a valid ABN AMRO bank statement.');
     }
     return date;
   }

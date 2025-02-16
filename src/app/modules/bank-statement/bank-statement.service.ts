@@ -146,9 +146,7 @@ export class BankStatementService {
     });
 
     if (overlappingStatement) {
-      throw new ConflictException(
-        `A bank statement already exists for this period (${periodStart.toISOString()} - ${periodEnd.toISOString()}).`,
-      );
+      throw new ConflictException(`A bank statement already exists for this period.`);
     }
   }
 }
