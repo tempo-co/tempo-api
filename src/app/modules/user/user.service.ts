@@ -3,9 +3,9 @@ import {InjectRepository} from '@nestjs/typeorm';
 import argon2 from 'argon2';
 import {Repository} from 'typeorm';
 
-import {User} from './user.entity';
+import {SignUpDto} from '@core/auth/api/signup.dto';
 
-type UserSaveOptions = Omit<User, 'id' | 'createdAt' | 'accounts'>;
+import {User} from './user.entity';
 
 @Injectable()
 export class UserService {
@@ -32,9 +32,7 @@ export class UserService {
     return user;
   }
 
-  async save(options: UserSaveOptions): Promise<User> {
-    const {name, email, password} = options;
-
+  async save({name, email, password}: SignUpDto): Promise<User> {
     const emailExists = await this.userRepository.existsBy({email});
 
     if (emailExists) {
