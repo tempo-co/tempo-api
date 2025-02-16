@@ -34,7 +34,7 @@ export class BankStatementController {
     @UploadedFile() file: Express.Multer.File,
     @Param('accountId', new ParseUUIDPipe({version: '4'})) accountId: Account['id'],
   ): Promise<BankStatement> {
-    return this.bankStatementService.save({file, accountId, userId: user.id});
+    return this.bankStatementService.save(file, accountId, user.id);
   }
 
   @Get()
