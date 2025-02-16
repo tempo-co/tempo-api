@@ -1,4 +1,4 @@
-import {BadRequestException} from '@nestjs/common';
+import {UnprocessableEntityException} from '@nestjs/common';
 import Joi from 'joi';
 
 import {currencyCodes} from '@core/transaction-mapper/constants/currency-codes';
@@ -39,7 +39,7 @@ export class RevolutTransactionMapper implements TransactionMapper {
   map(transaction: RevolutTransaction): TransactionPartial {
     const {error} = revolutTransactionSchema.validate(transaction);
     if (error) {
-      throw new BadRequestException(
+      throw new UnprocessableEntityException(
         `Validation failed for a transaction. Invalid schema: ${error.message}`,
       );
     }

@@ -1,4 +1,4 @@
-import {BadRequestException} from '@nestjs/common';
+import {UnprocessableEntityException} from '@nestjs/common';
 import Joi from 'joi';
 
 import {currencyCodes} from '@core/transaction-mapper/constants/currency-codes';
@@ -35,7 +35,7 @@ export class AbnAmroTransactionMapper implements TransactionMapper {
   map(transaction: AbnAmroTransaction): TransactionPartial {
     const {error} = abnAmroTransactionSchema.validate(transaction);
     if (error) {
-      throw new BadRequestException(
+      throw new UnprocessableEntityException(
         `Validation failed for a transaction. Invalid schema: ${error.message}`,
       );
     }
@@ -57,7 +57,7 @@ export class AbnAmroTransactionMapper implements TransactionMapper {
     const date = new Date(year, month, day);
 
     if (date.getFullYear() !== year || date.getMonth() !== month || date.getDate() !== day) {
-      throw new BadRequestException(
+      throw new UnprocessableEntityException(
         `Validation failed for a transaction. Invalid date value: ${dateString}`,
       );
     }
