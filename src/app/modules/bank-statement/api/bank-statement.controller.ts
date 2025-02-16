@@ -2,6 +2,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
   ParseUUIDPipe,
   Post,
@@ -12,6 +13,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import {FileInterceptor} from '@nestjs/platform-express';
+import {ApiResponse} from '@nestjs/swagger';
 import {Response} from 'express';
 
 import {CurrentUser} from '@core/auth/decorators/current-user.decorator';
@@ -29,6 +31,13 @@ export class BankStatementController {
 
   @Post('upload')
   @UseInterceptors(FileInterceptor('file'))
+  @Post('login')
+  @HttpCode(200)
+  @ApiResponse({status: 200, description: 'Bank statement has been successfully created.'})
+  @ApiResponse({status: 400, description: 'Validation of the request body failed.'})
+  @ApiResponse({status: 401, description: 'Invalid credentials.'})
+  @ApiResponse({status: 409, description: 'A bank statement already exists for this period.'})
+  @ApiResponse({status: 422, description: 'Validation failed for a transaction.'})
   async upload(
     @CurrentUser() user: User,
     @UploadedFile() file: Express.Multer.File,
