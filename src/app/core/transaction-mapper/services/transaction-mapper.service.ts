@@ -1,4 +1,4 @@
-import {BadRequestException, Injectable} from '@nestjs/common';
+import {Injectable, UnprocessableEntityException} from '@nestjs/common';
 import {validate} from 'class-validator';
 
 import {Bank} from '../constants/bank.enum';
@@ -19,9 +19,7 @@ export class TransactionMapperService {
         const validationErrors = await validate(transaction);
 
         if (validationErrors.length > 0) {
-          throw new BadRequestException(
-            'Validation failed for a transaction: ' + validationErrors.toString(),
-          );
+          throw new UnprocessableEntityException(`File is not a valid ${bank} bank statement.`);
         }
         return transaction;
       }),

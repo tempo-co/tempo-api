@@ -39,9 +39,7 @@ export class RevolutTransactionMapper implements TransactionMapper {
   map(transaction: RevolutTransaction): TransactionPartial {
     const {error} = revolutTransactionSchema.validate(transaction);
     if (error) {
-      throw new UnprocessableEntityException(
-        `Validation failed for a transaction. Invalid schema: ${error.message}`,
-      );
+      throw new UnprocessableEntityException('File is not a valid Revolut bank statement.');
     }
 
     return {
