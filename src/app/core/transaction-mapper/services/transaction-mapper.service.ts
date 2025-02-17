@@ -24,6 +24,10 @@ export class TransactionMapperService {
         return transaction;
       }),
     );
+
+    if (transactions.length === 0) {
+      throw new UnprocessableEntityException(`File does not contain any valid transactions.`);
+    }
     return transactions;
   }
 }
