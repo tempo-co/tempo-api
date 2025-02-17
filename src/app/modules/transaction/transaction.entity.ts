@@ -1,5 +1,15 @@
 import {Exclude, Expose, Type} from 'class-transformer';
-import {IsDate, IsEnum, IsNotEmpty, IsNumber, IsString, Length, Max, Min} from 'class-validator';
+import {
+  IsDate,
+  IsEnum,
+  IsIn,
+  IsNotEmpty,
+  IsNumber,
+  IsString,
+  Length,
+  Max,
+  Min,
+} from 'class-validator';
 import {
   Column,
   CreateDateColumn,
@@ -10,6 +20,7 @@ import {
 } from 'typeorm';
 
 import {Category} from '@core/transaction-categorizer/constants/category.enum';
+import {currencyCodes} from '@core/transaction-mapper/constants/currency-codes';
 import {Account} from '@modules/account/account.entity';
 import {BankStatement} from '@modules/bank-statement/bank-statement.entity';
 
@@ -50,6 +61,7 @@ export class Transaction {
   @IsNotEmpty()
   @IsString()
   @Length(3, 3)
+  @IsIn(currencyCodes)
   @Expose()
   currency: string;
 
