@@ -1,7 +1,7 @@
 import {UnprocessableEntityException} from '@nestjs/common';
 import Joi from 'joi';
 
-import {currencyCodes} from '@core/transaction-mapper/constants/currency-codes';
+import {amountPattern} from '@core/transaction-mapper/constants/amount.regex';
 
 import {TransactionMapper, TransactionPartial} from '../transaction-mapper.interface';
 
@@ -18,16 +18,12 @@ export type AbnAmroTransaction = {
 
 const abnAmroTransactionSchema = Joi.object({
   accountNumber: Joi.optional(),
-  mutationcode: Joi.string()
-    .valid(...currencyCodes)
-    .required(),
+  mutationcode: Joi.string().required(),
   transactiondate: Joi.string().length(8).required(),
   valuedate: Joi.string().length(8).required(),
   startsaldo: Joi.optional(),
   endsaldo: Joi.optional(),
-  amount: Joi.string()
-    .pattern(/^-?\d+(\.\d{1,2})?$/)
-    .required(),
+  amount: Joi.string().pattern(amountPattern).required(),
   description: Joi.string().required(),
 });
 
