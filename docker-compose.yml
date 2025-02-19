@@ -16,7 +16,7 @@ services:
     ports:
       - '${DB_PORT}:${DB_PORT}'
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
 
   pgadmin:
     image: dpage/pgadmin4
@@ -31,6 +31,5 @@ services:
       - postgres
 
 volumes:
-  pgdata:
-    name: "postgres12"
-    external: true
+  postgres_data:
+    driver: local
