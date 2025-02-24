@@ -4,6 +4,7 @@ import {Repository} from 'typeorm';
 
 import {User} from '@modules/user/user.entity';
 
+import {FilterDto} from './api/filter.dto';
 import {PaginationDto} from './api/pagination.dto';
 import {Transaction} from './transaction.entity';
 
@@ -16,7 +17,7 @@ export class TransactionService {
     private readonly transactionRepository: Repository<Transaction>,
   ) {}
 
-  async findById(id: Transaction['id']): Promise<Transaction> {
+  async findById(id: Transaction['id']) {
     const transaction = await this.transactionRepository.findOneBy({id});
 
     if (!transaction) {
@@ -25,23 +26,24 @@ export class TransactionService {
     return transaction;
   }
 
-  async findAllByUserId(
-    userId: User['id'],
-    {pageIndex, pageSize}: PaginationDto,
-  ): Promise<{
-    transactions: Transaction[];
-    total: number;
-  }> {
-    const [transactions, total] = await this.transactionRepository
+  async findAllByUserId(userId: User['id'], pagination: PaginationDto, filter: FilterDto) {
+    const {pageIndex, pageSize} = pagination;
+    const {categories} = filter;
+
+    const query = this.transactionRepository
       .createQueryBuilder('transaction')
       .innerJoin('transaction.account', 'account')
       .innerJoin('account.user', 'user')
       .where('user.id = :userId', {userId})
       .orderBy('transaction.completedAt', 'DESC')
       .skip(pageIndex * pageSize)
-      .take(pageSize)
-      .getManyAndCount();
+      .take(pageSize);
 
+    if (categories && categories.length > 0) {
+      query.andWhere('transaction.category IN (:...categories)', {categories});
+    }
+
+    const [transactions, total] = await query.getManyAndCount();
     return {transactions, total};
   }
 
