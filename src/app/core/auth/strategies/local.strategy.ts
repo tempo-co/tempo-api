@@ -17,20 +17,19 @@ export class LocalStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(email: User['email'], password: User['password']): Promise<User> {
-    const dto = plainToClass(LogInDto, {email, password});
-
-    const errors = await validate(dto);
+    const credentials = plainToClass(LogInDto, {email, password});
+    const errors = await validate(credentials);
 
     if (errors.length > 0) {
       const formattedErrors = errors.flatMap((err) => Object.values(err.constraints || {}));
       throw new BadRequestException(formattedErrors);
     }
 
-    const user = await this.userService.findByEmail(dto.email).catch(() => {
+    const user = await this.userService.findByEmail(credentials.email).catch(() => {
       throw new UnauthorizedException();
     });
 
-    const isPasswordValid = await argon2.verify(user.password, dto.password);
+    const isPasswordValid = await argon2.verify(user.password, credentials.password);
 
     if (!isPasswordValid) {
       throw new UnauthorizedException();
