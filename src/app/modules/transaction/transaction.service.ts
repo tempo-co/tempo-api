@@ -28,7 +28,7 @@ export class TransactionService {
 
   async findAllByUserId(userId: User['id'], pagination: PaginationDto, filter: FilterDto) {
     const {pageIndex, pageSize} = pagination;
-    const {categories} = filter;
+    const {categories, startedAt} = filter;
 
     const query = this.transactionRepository
       .createQueryBuilder('transaction')
@@ -41,6 +41,11 @@ export class TransactionService {
 
     if (categories && categories.length > 0) {
       query.andWhere('transaction.category IN (:...categories)', {categories});
+    }
+    if (startedAt) {
+      const from = new Date(startedAt.from);
+      const to = startedAt.to ? new Date(startedAt.to) : from;
+      query.andWhere('transaction.startedAt BETWEEN :from AND :to', {from, to});
     }
 
     const [transactions, total] = await query.getManyAndCount();
