@@ -1,7 +1,7 @@
-import {BadRequestException} from '@nestjs/common';
+import {UnprocessableEntityException} from '@nestjs/common';
 import Joi from 'joi';
 
-import {currencyCodes} from '@core/transaction-mapper/constants/currency-codes';
+import {amountPattern} from '@core/transaction-mapper/constants/amount.regex';
 
 import {TransactionMapper, TransactionPartial} from '../transaction-mapper.interface';
 
@@ -18,16 +18,12 @@ export type AbnAmroTransaction = {
 
 const abnAmroTransactionSchema = Joi.object({
   accountNumber: Joi.optional(),
-  mutationcode: Joi.string()
-    .valid(...currencyCodes)
-    .required(),
+  mutationcode: Joi.string().required(),
   transactiondate: Joi.string().length(8).required(),
   valuedate: Joi.string().length(8).required(),
   startsaldo: Joi.optional(),
   endsaldo: Joi.optional(),
-  amount: Joi.string()
-    .pattern(/^-?\d+(\.\d{1,2})?$/)
-    .required(),
+  amount: Joi.string().pattern(amountPattern).required(),
   description: Joi.string().required(),
 });
 
@@ -35,9 +31,7 @@ export class AbnAmroTransactionMapper implements TransactionMapper {
   map(transaction: AbnAmroTransaction): TransactionPartial {
     const {error} = abnAmroTransactionSchema.validate(transaction);
     if (error) {
-      throw new BadRequestException(
-        `Validation failed for a transaction. Invalid schema: ${error.message}`,
-      );
+      throw new UnprocessableEntityException('File is not a valid ABN AMRO bank statement.');
     }
 
     return {
@@ -57,9 +51,7 @@ export class AbnAmroTransactionMapper implements TransactionMapper {
     const date = new Date(year, month, day);
 
     if (date.getFullYear() !== year || date.getMonth() !== month || date.getDate() !== day) {
-      throw new BadRequestException(
-        `Validation failed for a transaction. Invalid date value: ${dateString}`,
-      );
+      throw new UnprocessableEntityException('File is not a valid ABN AMRO bank statement.');
     }
     return date;
   }

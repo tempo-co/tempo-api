@@ -34,11 +34,7 @@ export class BankStatement {
   account: Account;
 
   @Expose()
-  get period(): {start: Date; end: Date} | null {
-    if (!this.transactions || this.transactions.length === 0) {
-      return null;
-    }
-
+  get period(): {start: Date; end: Date} {
     let start = this.transactions[0].startedAt;
     let end = this.transactions[0].startedAt;
 

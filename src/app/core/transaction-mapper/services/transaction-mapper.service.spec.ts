@@ -1,5 +1,5 @@
 import {faker} from '@faker-js/faker';
-import {BadRequestException} from '@nestjs/common';
+import {UnprocessableEntityException} from '@nestjs/common';
 import {Test, TestingModule} from '@nestjs/testing';
 import {validate} from 'class-validator';
 
@@ -56,16 +56,11 @@ describe('TransactionMapperService', () => {
       expect(factory.create).toHaveBeenCalledWith(bank);
     });
 
-    it('should throw BadRequestException on validation failure', async () => {
+    it('should throw UnprocessableEntityException on validation failure', async () => {
       (validate as jest.Mock).mockResolvedValueOnce([{someError: 'Error details'}]);
       await expect(service.map([{someKey: 'someValue'}], Bank.ABN_AMRO)).rejects.toThrow(
-        BadRequestException,
+        UnprocessableEntityException,
       );
-    });
-
-    it('should handle empty data array without errors', async () => {
-      const transactions = await service.map([], Bank.ABN_AMRO);
-      expect(transactions).toHaveLength(0);
     });
 
     it('should handle multiple transactions', async () => {

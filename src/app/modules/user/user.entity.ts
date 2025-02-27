@@ -1,5 +1,5 @@
 import {Exclude, Expose, Type} from 'class-transformer';
-import {Column, CreateDateColumn, Entity, OneToMany, PrimaryGeneratedColumn} from 'typeorm';
+import {Column, CreateDateColumn, Entity, Index, OneToMany, PrimaryGeneratedColumn} from 'typeorm';
 
 import {Account} from '@modules/account/account.entity';
 
@@ -13,6 +13,7 @@ export class User {
   @Expose()
   name: string;
 
+  @Index()
   @Column({type: 'varchar', length: 255, unique: true})
   @Expose()
   email: string;

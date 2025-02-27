@@ -2,19 +2,23 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
   Res,
   StreamableFile,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
 import {FileInterceptor} from '@nestjs/platform-express';
+import {ApiResponse} from '@nestjs/swagger';
 import {Response} from 'express';
 
 import {CurrentUser} from '@core/auth/decorators/current-user.decorator';
 import {Account} from '@modules/account/account.entity';
+import {PaginationDto} from '@modules/transaction/api/pagination.dto';
 import {User} from '@modules/user/user.entity';
 
 import {BankStatement} from '../bank-statement.entity';
@@ -27,20 +31,31 @@ export class BankStatementController {
 
   @Post('upload')
   @UseInterceptors(FileInterceptor('file'))
+  @Post('login')
+  @HttpCode(200)
+  @ApiResponse({status: 200, description: 'Bank statement has been successfully created.'})
+  @ApiResponse({status: 400, description: 'Validation of the request body failed.'})
+  @ApiResponse({status: 401, description: 'Invalid credentials.'})
+  @ApiResponse({status: 409, description: 'A bank statement already exists for this period.'})
+  @ApiResponse({status: 422, description: 'File is not a valid bank statement.'})
   async upload(
     @CurrentUser() user: User,
     @UploadedFile() file: Express.Multer.File,
     @Param('accountId', new ParseUUIDPipe({version: '4'})) accountId: Account['id'],
   ): Promise<BankStatement> {
-    return this.bankStatementService.save({file, accountId, userId: user.id});
+    return this.bankStatementService.save(file, accountId, user.id);
   }
 
   @Get()
   async getAllByAccountIdAndUserId(
     @CurrentUser() user: User,
     @Param('accountId', new ParseUUIDPipe({version: '4'})) accountId: Account['id'],
-  ): Promise<BankStatement[]> {
-    return this.bankStatementService.findAllByAccountIdAndUserId(accountId, user.id);
+    @Query() paginationDto: PaginationDto,
+  ): Promise<{
+    bankStatements: BankStatement[];
+    total: number;
+  }> {
+    return this.bankStatementService.findAllByAccountIdAndUserId(accountId, user.id, paginationDto);
   }
 
   @Delete(':bankStatementId')
