@@ -1,7 +1,7 @@
-import {BadRequestException} from '@nestjs/common';
+import {UnprocessableEntityException} from '@nestjs/common';
 import Joi from 'joi';
 
-import {currencyCodes} from '@core/transaction-mapper/constants/currency-codes';
+import {amountPattern} from '@core/transaction-mapper/constants/amount.regex';
 
 import {TransactionMapper, TransactionPartial} from '../transaction-mapper.interface';
 
@@ -24,13 +24,9 @@ const revolutTransactionSchema = Joi.object({
   startedDate: Joi.string().isoDate().required(),
   completedDate: Joi.string().isoDate().required(),
   description: Joi.string().required(),
-  amount: Joi.string()
-    .pattern(/^-?\d+(\.\d{1,2})?$/)
-    .required(),
+  amount: Joi.string().pattern(amountPattern).required(),
   fee: Joi.optional(),
-  currency: Joi.string()
-    .valid(...currencyCodes)
-    .required(),
+  currency: Joi.string().required(),
   state: Joi.optional(),
   balance: Joi.optional(),
 });
@@ -39,9 +35,7 @@ export class RevolutTransactionMapper implements TransactionMapper {
   map(transaction: RevolutTransaction): TransactionPartial {
     const {error} = revolutTransactionSchema.validate(transaction);
     if (error) {
-      throw new BadRequestException(
-        `Validation failed for a transaction. Invalid schema: ${error.message}`,
-      );
+      throw new UnprocessableEntityException('File is not a valid Revolut bank statement.');
     }
 
     return {
