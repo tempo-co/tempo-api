@@ -9,7 +9,7 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 
-import {Account} from '@modules/account/account.entity';
+import {BankAccount} from '@modules/bank-account/bank-account.entity';
 import {File} from '@modules/file/file.entity';
 import {Transaction} from '@modules/transaction/transaction.entity';
 
@@ -28,10 +28,10 @@ export class BankStatement {
   @Type(() => Transaction)
   transactions: Transaction[];
 
-  @ManyToOne(() => Account, (account) => account.bankStatements)
+  @ManyToOne(() => BankAccount, (bankAccount) => bankAccount.bankStatements)
   @Exclude()
-  @Type(() => Account)
-  account: Account;
+  @Type(() => BankAccount)
+  bankAccount: BankAccount;
 
   @Expose()
   get period(): {start: Date; end: Date} {

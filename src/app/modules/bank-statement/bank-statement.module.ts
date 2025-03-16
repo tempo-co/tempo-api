@@ -6,7 +6,7 @@ import {TransactionCategorizerModule} from '@core/transaction-categorizer/transa
 import {TransactionMapperModule} from '@core/transaction-mapper/transaction-mapper.module';
 import {FileModule} from '@modules/file/file.module';
 
-import {AccountModule} from '../account/account.module';
+import {BankAccountModule} from '../bank-account/bank-account.module';
 import {TransactionModule} from '../transaction/transaction.module';
 import {BankStatementController} from './api/bank-statement.controller';
 import {BankStatement} from './bank-statement.entity';
@@ -15,7 +15,7 @@ import {BankStatementService} from './bank-statement.service';
 @Module({
   imports: [
     TypeOrmModule.forFeature([BankStatement]),
-    AccountModule,
+    BankAccountModule,
     FileParserModule,
     TransactionMapperModule,
     TransactionCategorizerModule,

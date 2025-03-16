@@ -21,7 +21,7 @@ import {
 
 import {Category} from '@core/transaction-categorizer/constants/category.enum';
 import {currencyCodes} from '@core/transaction-mapper/constants/currency-codes';
-import {Account} from '@modules/account/account.entity';
+import {BankAccount} from '@modules/bank-account/bank-account.entity';
 import {BankStatement} from '@modules/bank-statement/bank-statement.entity';
 
 @Entity()
@@ -78,10 +78,9 @@ export class Transaction {
   @Expose()
   category: Category;
 
-  @ManyToOne(() => Account, (account) => account.transactions)
-  @Exclude()
-  @Type(() => Account)
-  account: Account;
+  @ManyToOne(() => BankAccount, (bankAccount) => bankAccount.transactions)
+  @Type(() => BankAccount)
+  bankAccount: BankAccount;
 
   @ManyToOne(() => BankStatement, (bankStatement) => bankStatement.transactions, {nullable: true})
   @Exclude()

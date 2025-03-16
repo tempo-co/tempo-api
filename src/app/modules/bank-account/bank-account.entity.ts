@@ -7,7 +7,7 @@ import {Transaction} from '@modules/transaction/transaction.entity';
 import {User} from '@modules/user/user.entity';
 
 @Entity()
-export class Account {
+export class BankAccount {
   @PrimaryGeneratedColumn('uuid')
   @Expose()
   id: string;
@@ -24,17 +24,21 @@ export class Account {
   @Expose()
   bank: Bank;
 
-  @OneToMany(() => Transaction, (transaction) => transaction.account)
+  @Column({type: 'varchar', length: 3})
+  @Expose()
+  currency: string;
+
+  @OneToMany(() => Transaction, (transaction) => transaction.bankAccount)
   @Exclude()
   @Type(() => Transaction)
   transactions: Transaction[];
 
-  @OneToMany(() => BankStatement, (bankStatement) => bankStatement.account)
+  @OneToMany(() => BankStatement, (bankStatement) => bankStatement.bankAccount)
   @Exclude()
   @Type(() => BankStatement)
   bankStatements: BankStatement[];
 
-  @ManyToOne(() => User, (user) => user.accounts)
+  @ManyToOne(() => User, (user) => user.bankAccounts)
   @Exclude()
   @Type(() => User)
   user: User;

@@ -7,24 +7,19 @@ import {UserModule} from '@modules/user/user.module';
 
 import {AuthController} from './api/auth.controller';
 import {AuthGuard} from './guards/auth.guard';
+import {AuthService} from './services/auth.service';
+import {EmailVerifierService} from './services/email-verifier.service';
 import {SessionSerializer} from './services/session.serializer';
 import {LocalStrategy} from './strategies/local.strategy';
 
 @Module({
-  imports: [
-    ConfigModule,
-    UserModule,
-    PassportModule.register({
-      session: true,
-    }),
-  ],
+  imports: [ConfigModule, UserModule, PassportModule.register({session: true})],
   providers: [
+    AuthService,
+    EmailVerifierService,
     SessionSerializer,
     LocalStrategy,
-    {
-      provide: APP_GUARD,
-      useClass: AuthGuard,
-    },
+    {provide: APP_GUARD, useClass: AuthGuard},
   ],
   controllers: [AuthController],
 })

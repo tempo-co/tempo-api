@@ -1,8 +1,17 @@
-import {CanActivate, ExecutionContext, Injectable, UnauthorizedException} from '@nestjs/common';
+import {
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import {Reflector} from '@nestjs/core';
 import {Request} from 'express';
 
+import {User} from '@modules/user/user.entity';
+
 import {IS_PUBLIC_KEY} from '../decorators/public.decorator';
+import {SKIP_EMAIL_VERIFICATION_KEY} from '../decorators/skip-email-verification.decorator';
 
 @Injectable()
 export class AuthGuard implements CanActivate {
@@ -18,9 +27,20 @@ export class AuthGuard implements CanActivate {
     }
 
     const request = context.switchToHttp().getRequest() as Request;
+    const user = request.user as User;
+
     if (!request.isAuthenticated()) {
       throw new UnauthorizedException();
     }
+
+    const isSkipEmailVerification = this.reflector.getAllAndOverride<boolean>(
+      SKIP_EMAIL_VERIFICATION_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+    if (!isSkipEmailVerification && user && !user.isEmailVerified) {
+      throw new ForbiddenException('Email not verified.');
+    }
+
     return true;
   }
 }

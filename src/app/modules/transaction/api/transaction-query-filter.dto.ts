@@ -1,25 +1,25 @@
-import {IsArray, IsDate, IsEnum, IsOptional, ValidateNested} from 'class-validator';
+import {Type} from 'class-transformer';
+import {IsArray, IsDateString, IsEnum, IsOptional, ValidateNested} from 'class-validator';
 
 import {Category} from '@core/transaction-categorizer/constants/category.enum';
 
-import {Transaction} from '../transaction.entity';
-
 export class DateRangeDto {
-  @IsDate()
+  @IsDateString()
   from: Date;
 
-  @IsDate()
+  @IsDateString()
   @IsOptional()
   to?: Date;
 }
 
-export class FilterDto {
+export class TransactionQueryFilterDto {
   @IsOptional()
   @IsArray()
   @IsEnum(Category, {each: true})
-  categories?: Transaction['category'][];
+  categories?: Category[];
 
   @IsOptional()
   @ValidateNested()
+  @Type(() => DateRangeDto)
   startedAt?: DateRangeDto;
 }
