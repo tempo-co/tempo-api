@@ -11,7 +11,7 @@ export class FileParserService {
     try {
       return fileParser.parse(buffer);
     } catch (error) {
-      throw new BadRequestException(`Failed to parse file: ${error.message}`);
+      throw new BadRequestException('Failed to parse file.');
     }
   }
 }

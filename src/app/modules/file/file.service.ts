@@ -33,7 +33,7 @@ export class FileService {
     });
 
     if (!file) {
-      throw new NotFoundException(`File with id ${id} not found.`);
+      throw new NotFoundException(`File not found.`);
     }
     return file;
   }

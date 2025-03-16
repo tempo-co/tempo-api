@@ -1,7 +1,7 @@
 import {Exclude, Expose, Type} from 'class-transformer';
 import {Column, CreateDateColumn, Entity, Index, OneToMany, PrimaryGeneratedColumn} from 'typeorm';
 
-import {Account} from '@modules/account/account.entity';
+import {BankAccount} from '@modules/bank-account/bank-account.entity';
 
 @Entity()
 export class User {
@@ -18,6 +18,10 @@ export class User {
   @Expose()
   email: string;
 
+  @Column({type: 'boolean', default: false})
+  @Expose()
+  isEmailVerified: boolean;
+
   @Column({type: 'varchar', length: 255})
   @Exclude()
   password: string;
@@ -26,8 +30,8 @@ export class User {
   @Expose()
   createdAt: Date;
 
-  @OneToMany(() => Account, (account) => account.user)
+  @OneToMany(() => BankAccount, (bankAccount) => bankAccount.user)
   @Expose()
-  @Type(() => Account)
-  accounts: Account[];
+  @Type(() => BankAccount)
+  bankAccounts: BankAccount[];
 }

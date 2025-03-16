@@ -1,6 +1,8 @@
 import {validationSchema} from '@config/env/validation-schema';
 import {REDIS} from '@config/redis/redis.constants';
 import {RedisModule} from '@config/redis/redis.module';
+import {MailerModule} from '@nestjs-modules/mailer';
+import {HandlebarsAdapter} from '@nestjs-modules/mailer/dist/adapters/handlebars.adapter';
 import {
   ClassSerializerInterceptor,
   Inject,
@@ -17,6 +19,7 @@ import session from 'express-session';
 import ms from 'ms';
 import {GracefulShutdownModule} from 'nestjs-graceful-shutdown';
 import passport from 'passport';
+import {join} from 'path';
 import {RedisClientType} from 'redis';
 
 import {AuthModule} from '@core/auth/auth.module';
@@ -51,6 +54,26 @@ import {UserModule} from '@modules/user/user.module';
         autoLoadEntities: true,
       }),
     }),
+    MailerModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        transport: {
+          host: config.get<string>('EMAIL_HOST'),
+          auth: {
+            user: config.get<string>('EMAIL_USERNAME'),
+            pass: config.get<string>('EMAIL_PASSWORD'),
+          },
+        },
+        defaults: {from: '"Flair" <no-reply@flair.com>'},
+        preview: config.get<string>('NODE_ENV') === 'development',
+        template: {
+          dir: join(__dirname, 'app', 'templates'),
+          adapter: new HandlebarsAdapter(),
+          options: {strict: true},
+        },
+      }),
+    }),
     ThrottlerModule.forRoot([
       {
         ttl: minutes(1),
@@ -59,12 +82,12 @@ import {UserModule} from '@modules/user/user.module';
     ]),
     GracefulShutdownModule.forRoot(),
     RedisModule,
+    AuthModule,
     FileParserModule,
     TransactionModule,
-    AuthModule,
+    TransactionCategorizerModule,
     UserModule,
     BankStatementModule,
-    TransactionCategorizerModule,
   ],
   providers: [
     {
