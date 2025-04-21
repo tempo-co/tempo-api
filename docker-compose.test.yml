@@ -1,0 +1,23 @@
+services:
+  mailhog:
+    image: mailhog/mailhog
+    container_name: mailhog_test
+    ports:
+      - "${EMAIL_PORT}:${EMAIL_PORT}"
+      - "${EMAIL_UI_PORT}:${EMAIL_UI_PORT}"
+
+  redis:
+    image: redis
+    container_name: redis_test
+    ports:
+      - "${REDIS_PORT}:${REDIS_PORT}"
+
+  postgres:
+    image: postgres
+    container_name: postgres_test
+    environment:
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    ports:
+      - "${DB_PORT}:${DB_PORT}"

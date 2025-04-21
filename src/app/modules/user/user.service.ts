@@ -46,7 +46,7 @@ export class UserService {
   async verifyPassword(hash: User['password'], password: User['password']) {
     const isPasswordValid = await argon2.verify(hash, password);
     if (!isPasswordValid) {
-      throw new UnauthorizedException('Password is incorrect.');
+      throw new UnauthorizedException();
     }
   }
 

@@ -1,1 +1,1 @@
-export const REDIS = Symbol('AUTH:REDIS');
+export const REDIS = Symbol('REDIS');

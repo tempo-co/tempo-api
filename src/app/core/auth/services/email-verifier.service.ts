@@ -3,8 +3,8 @@ import {MailerService} from '@nestjs-modules/mailer';
 import {BadRequestException, Injectable} from '@nestjs/common';
 import {Inject} from '@nestjs/common';
 import {ConfigService} from '@nestjs/config';
+import Redis from 'ioredis';
 import ms from 'ms';
-import {RedisClientType} from 'redis';
 
 import {User} from '@modules/user/user.entity';
 import {UserService} from '@modules/user/user.service';
@@ -18,14 +18,17 @@ export class EmailVerifierService {
   private readonly WEB_BASE_URL: string;
 
   constructor(
-    @Inject(REDIS) private readonly redisClient: RedisClientType,
+    @Inject(REDIS) private readonly redisClient: Redis,
     private readonly configService: ConfigService,
     private readonly mailerService: MailerService,
     private readonly userService: UserService,
   ) {
-    this.EXPIRATION = ms(this.configService.get('EMAIL_VERIFICATION_EXPIRATION') as string);
     this.REDIS_KEY = this.configService.get('EMAIL_VERIFICATION_REDIS_KEY') as string;
     this.WEB_BASE_URL = this.configService.get('WEB_BASE_URL') as string;
+
+    const expirationMs = ms(this.configService.get('EMAIL_VERIFICATION_EXPIRATION') as string);
+    const expirationSeconds = Math.floor(expirationMs / 1000);
+    this.EXPIRATION = expirationSeconds;
   }
 
   async verify(code: string) {
@@ -75,7 +78,7 @@ export class EmailVerifierService {
   }
 
   async requestEmailChange(user: User, {newEmail, password}: EmailChangeDto) {
-    this.userService.verifyPassword(user.password, password);
+    await this.userService.verifyPassword(user.password, password);
     await this.userService.validateEmailIsUnique(newEmail);
 
     const code = await this.createCode(newEmail);
@@ -113,7 +116,7 @@ export class EmailVerifierService {
       try {
         await this.getEmailByCode(code);
       } catch {
-        await this.redisClient.set(key, email, {EX: this.EXPIRATION});
+        await this.redisClient.set(key, email, 'EX', this.EXPIRATION);
         return code;
       }
     }
