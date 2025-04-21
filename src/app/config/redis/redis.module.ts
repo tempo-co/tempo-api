@@ -14,11 +14,7 @@ import {REDIS} from './redis.constants';
       useFactory: async (config: ConfigService) => {
         const redisUrl = config.get<string>('REDIS_URL');
         const client = createClient({url: redisUrl});
-        await client.connect().catch((err) => {
-          console.error("Couldn't connect to Redis.", err);
-          throw err;
-        });
-        return client;
+        return await client.connect();
       },
     },
   ],

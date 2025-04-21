@@ -9,8 +9,6 @@ import {TransactionQueryDto} from './api/transaction-query.dto';
 import {TransactionUpdateDto} from './api/transaction-update.dto';
 import {Transaction} from './transaction.entity';
 
-type TransactionSaveOptions = Omit<Transaction, 'id' | 'createdAt' | 'updatedAt'>;
-
 @Injectable()
 export class TransactionService {
   constructor(
@@ -62,7 +60,7 @@ export class TransactionService {
     return {transactions, total};
   }
 
-  async saveAll(transactions: TransactionSaveOptions[]) {
+  async saveAll(transactions: Omit<Transaction, 'id' | 'createdAt' | 'updatedAt'>[]) {
     if (transactions.length === 0) {
       return Promise.resolve([]);
     }

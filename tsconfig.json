@@ -6,7 +6,7 @@
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
     "allowSyntheticDefaultImports": true,
-    "esModuleInterop" : true,
+    "esModuleInterop": true,
     "target": "ES2021",
     "sourceMap": true,
     "outDir": "./dist",
@@ -14,7 +14,7 @@
     "paths": {
       "@modules/*": ["src/app/modules/*"],
       "@core/*": ["src/app/core/*"],
-      "@config/*": ["src/app/config/*"],
+      "@config/*": ["src/app/config/*"]
     },
     "incremental": true,
     "skipLibCheck": true,
@@ -22,6 +22,8 @@
     "noImplicitAny": true,
     "strictBindCallApply": true,
     "forceConsistentCasingInFileNames": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
   }
 }
