@@ -1,17 +1,15 @@
 import {REDIS} from '@config/redis/redis.constants';
 import {MailerService} from '@nestjs-modules/mailer';
-import {BadRequestException, Injectable, UnauthorizedException} from '@nestjs/common';
+import {BadRequestException, Injectable} from '@nestjs/common';
 import {Inject} from '@nestjs/common';
 import {ConfigService} from '@nestjs/config';
-import argon2 from 'argon2';
 import ms from 'ms';
-import crypto from 'node:crypto';
 import {RedisClientType} from 'redis';
 
 import {User} from '@modules/user/user.entity';
 import {UserService} from '@modules/user/user.service';
 
-import {EmailChangeDto} from '../api/email-change.dto';
+import {EmailChangeDto} from '../api/dtos/email-change.dto';
 
 @Injectable()
 export class EmailVerifierService {
@@ -77,11 +75,7 @@ export class EmailVerifierService {
   }
 
   async requestEmailChange(user: User, {newEmail, password}: EmailChangeDto) {
-    const isPasswordValid = await argon2.verify(user.password, password);
-    if (!isPasswordValid) {
-      throw new UnauthorizedException();
-    }
-
+    this.userService.verifyPassword(user.password, password);
     await this.userService.validateEmailIsUnique(newEmail);
 
     const code = await this.createCode(newEmail);
@@ -113,7 +107,7 @@ export class EmailVerifierService {
 
   async createCode(email: User['email']) {
     while (true) {
-      const code = crypto.randomInt(100000, 999999).toString();
+      const code = Array.from({length: 6}, () => Math.floor(Math.random() * 10)).join('');
       const key = `${this.REDIS_KEY}:${code}`;
 
       try {

@@ -13,7 +13,7 @@ export class UserController {
 
   @Get('me')
   @SkipEmailVerification()
-  findOne(@CurrentUser() user: User): Promise<User> {
+  findOne(@CurrentUser() user: User) {
     return this.userService.findById(user.id);
   }
 

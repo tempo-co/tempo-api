@@ -1,9 +1,12 @@
-import {ConflictException, Injectable, NotFoundException} from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import {InjectRepository} from '@nestjs/typeorm';
 import argon2 from 'argon2';
 import {Repository} from 'typeorm';
-
-import {SignUpDto} from '@core/auth/api/signup.dto';
 
 import {User} from './user.entity';
 
@@ -14,7 +17,7 @@ export class UserService {
     private readonly userRepository: Repository<User>,
   ) {}
 
-  async findById(id: User['id']): Promise<User> {
+  async findById(id: User['id']) {
     const user = await this.userRepository.findOneBy({id});
 
     if (!user) {
@@ -23,7 +26,7 @@ export class UserService {
     return user;
   }
 
-  async findByEmail(email: User['email']): Promise<User> {
+  async findByEmail(email: User['email']) {
     const user = await this.userRepository.findOneBy({email});
 
     if (!user) {
@@ -40,14 +43,18 @@ export class UserService {
     }
   }
 
-  async save({name, email, password}: SignUpDto): Promise<User> {
-    await this.validateEmailIsUnique(email);
-
-    const hash = await argon2.hash(password);
-    return this.userRepository.save({name, email, password: hash});
+  async verifyPassword(hash: User['password'], password: User['password']) {
+    const isPasswordValid = await argon2.verify(hash, password);
+    if (!isPasswordValid) {
+      throw new UnauthorizedException('Password is incorrect.');
+    }
   }
 
-  async update(id: User['id'], updates: Partial<Pick<User, 'isEmailVerified' | 'name' | 'email'>>) {
+  async save(name: User['name'], email: User['email'], password: User['password']) {
+    return this.userRepository.save({name, email, password});
+  }
+
+  async update(id: User['id'], updates: Partial<User>) {
     await this.userRepository.update({id}, updates);
     return this.findById(id);
   }

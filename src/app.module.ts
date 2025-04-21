@@ -23,6 +23,7 @@ import {join} from 'path';
 import {RedisClientType} from 'redis';
 
 import {AuthModule} from '@core/auth/auth.module';
+import {SessionMiddleware} from '@core/auth/services/session.middleware';
 import {FileParserModule} from '@core/file-parser/file-parser.module';
 import {TransactionCategorizerModule} from '@core/transaction-categorizer/transaction-categorizer.module';
 import {BankStatementModule} from '@modules/bank-statement/bank-statement.module';
@@ -60,10 +61,7 @@ import {UserModule} from '@modules/user/user.module';
       useFactory: (config: ConfigService) => ({
         transport: {
           host: config.get<string>('EMAIL_HOST'),
-          auth: {
-            user: config.get<string>('EMAIL_USERNAME'),
-            pass: config.get<string>('EMAIL_PASSWORD'),
-          },
+          port: config.get<number>('EMAIL_PORT'),
         },
         defaults: {from: '"Flair" <no-reply@flair.com>'},
         preview: config.get<string>('NODE_ENV') === 'development',
@@ -129,6 +127,7 @@ export class AppModule implements NestModule {
         }),
         passport.initialize(),
         passport.session(),
+        SessionMiddleware,
       )
       .forRoutes('*');
   }
