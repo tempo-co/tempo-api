@@ -7,6 +7,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    environment: development
 
     steps:
       - uses: actions/checkout@v4
@@ -15,22 +16,6 @@ jobs:
         with:
           node-version: 20.x
           cache: 'npm'
-      - name: Set up environment variables
-        run: |
-          echo "
-          NODE_ENV=${{ secrets.NODE_ENV }}
-          PORT=${{ secrets.PORT }}
-          DB_HOST=${{ secrets.DB_HOST }}
-          DB_PORT=${{ secrets.DB_PORT }}
-          DB_USERNAME=${{ secrets.DB_USERNAME }}
-          DB_PASSWORD=${{ secrets.DB_PASSWORD }}
-          DB_NAME=${{ secrets.DB_NAME }}
-          DB_SYNCHRONIZE=${{ secrets.DB_SYNCHRONIZE }}
-          SESSION_SECRET=${{ secrets.SESSION_SECRET }}
-          SESSION_EXPIRATION=${{ secrets.SESSION_EXPIRATION }}
-          REDIS_URL=${{ secrets.REDIS_URL }}
-          GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
-          " >> $GITHUB_ENV
       - run: npm ci
       - run: npm run build
       - run: npm run lint:check
