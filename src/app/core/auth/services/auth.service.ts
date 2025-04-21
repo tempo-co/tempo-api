@@ -52,7 +52,7 @@ export class AuthService {
   }
 
   async changePassword(user: User, dto: ChangePasswordDto) {
-    this.userService.verifyPassword(user.password, dto.currentPassword);
+    await this.userService.verifyPassword(user.password, dto.currentPassword);
 
     const hash = await argon2.hash(dto.newPassword);
     await this.userService.update(user.id, {password: hash});

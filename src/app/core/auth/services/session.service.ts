@@ -3,7 +3,7 @@ import {ConflictException, Inject, Injectable, NotFoundException} from '@nestjs/
 import {ConfigService} from '@nestjs/config';
 import {Request} from 'express';
 import * as geoip from 'fast-geoip';
-import {RedisClientType} from 'redis';
+import Redis from 'ioredis';
 import {IResult, UAParser} from 'ua-parser-js';
 
 import {User} from '@modules/user/user.entity';
@@ -17,7 +17,7 @@ export class SessionService {
   private readonly REDIS_KEY: string;
 
   constructor(
-    @Inject(REDIS) private readonly redisClient: RedisClientType,
+    @Inject(REDIS) private readonly redisClient: Redis,
     private readonly configService: ConfigService,
     private readonly userService: UserService,
   ) {
@@ -32,21 +32,26 @@ export class SessionService {
    */
   async getSessions(userId: User['id'], currentSessionId: string) {
     const userSessions: SessionDto[] = [];
-    const scanBatchSize = 250;
-    let cursor: number = 0;
+
+    const scanBatchSize = '250';
+    let cursor = '0';
     const prefix = `${this.REDIS_KEY}:`;
+    const matchPattern = `${prefix}*`;
 
     while (true) {
-      const reply = await this.redisClient.scan(cursor, {
-        MATCH: `${prefix}*`,
-        COUNT: scanBatchSize,
-      });
+      const reply = await this.redisClient.scan(
+        cursor,
+        'MATCH',
+        matchPattern,
+        'COUNT',
+        scanBatchSize,
+      );
 
-      cursor = reply.cursor;
-      const keys = reply.keys;
+      cursor = reply[0];
+      const keys = reply[1];
 
       if (keys.length > 0) {
-        const sessionDataStrings = await this.redisClient.mGet(keys);
+        const sessionDataStrings = await this.redisClient.mget(keys);
 
         for (let i = 0; i < keys.length; i++) {
           const key = keys[i];
@@ -72,7 +77,7 @@ export class SessionService {
         }
       }
 
-      if (cursor === 0) break;
+      if (cursor === '0') break;
     }
 
     userSessions.sort((a, b) => {
@@ -93,11 +98,11 @@ export class SessionService {
     currentSessionId: string,
     sessionIdToRevoke: string,
   ) {
-    await this.userService.verifyPassword(currentUser.password, password);
-
     if (sessionIdToRevoke === currentSessionId) {
       throw new ConflictException('Cannot revoke the current session. Log out instead.');
     }
+
+    await this.userService.verifyPassword(currentUser.password, password);
 
     const sessionKey = `${this.REDIS_KEY}:${sessionIdToRevoke}`;
     const sessionDataString = await this.redisClient.get(sessionKey);

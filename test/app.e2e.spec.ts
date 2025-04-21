@@ -1,7 +1,8 @@
 import {INestApplication} from '@nestjs/common';
 import {Test, TestingModule} from '@nestjs/testing';
-import {AppModule} from 'src/app.module';
 import request from 'supertest';
+
+import {AppModule} from '../src/app.module';
 
 describe('AppController (e2e)', () => {
   let app: INestApplication;
@@ -15,7 +16,16 @@ describe('AppController (e2e)', () => {
     await app.init();
   });
 
+  afterEach(async () => {
+    if (app) {
+      await app.close();
+    }
+  });
+
   it('/ (GET)', () => {
-    return request(app.getHttpServer()).get('/').expect(404).expect('Not found');
+    return request(app.getHttpServer())
+      .get('/')
+      .expect(404)
+      .expect({message: 'Cannot GET /', error: 'Not Found', statusCode: 404});
   });
 });

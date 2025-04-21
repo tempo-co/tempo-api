@@ -28,7 +28,7 @@ export class LocalStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException();
     });
 
-    this.userService.verifyPassword(user.password, credentials.password);
+    await this.userService.verifyPassword(user.password, credentials.password);
     return user;
   }
 }

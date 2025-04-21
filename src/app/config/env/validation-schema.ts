@@ -9,7 +9,7 @@ const expirationDuration = Joi.string().pattern(durationPattern).required();
 
 export const validationSchema = Joi.object({
   WEB_BASE_URL: uriString,
-  NODE_ENV: Joi.string().valid('development', 'production').required(),
+  NODE_ENV: Joi.string().valid('development', 'production', 'test').required(),
   PORT: portNumber,
   DB_HOST: nonWhitespaceString,
   DB_PORT: portNumber,
