@@ -14,7 +14,7 @@ export class LocalLogInGuard extends AuthGuard('local') implements CanActivate {
     const request = context.switchToHttp().getRequest();
 
     await super.logIn(request);
-    this.sessionService.initializeSessionMetadata(request);
+    await this.sessionService.initializeSessionMetadata(request);
     return result;
   }
 }

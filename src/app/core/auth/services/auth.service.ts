@@ -47,7 +47,7 @@ export class AuthService {
         resolve();
       });
     });
-    this.sessionService.initializeSessionMetadata(request);
+    await this.sessionService.initializeSessionMetadata(request);
     return {message: 'User logged in.'};
   }
 
