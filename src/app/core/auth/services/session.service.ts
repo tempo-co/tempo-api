@@ -2,6 +2,7 @@ import {REDIS} from '@config/redis/redis.constants';
 import {ConflictException, Inject, Injectable, NotFoundException} from '@nestjs/common';
 import {ConfigService} from '@nestjs/config';
 import {Request} from 'express';
+import * as geoip from 'fast-geoip';
 import {RedisClientType} from 'redis';
 import {IResult, UAParser} from 'ua-parser-js';
 
@@ -59,10 +60,13 @@ export class SessionService {
 
           userSessions.push({
             id: sessionId,
-            ip: sessionData.metadata?.ip,
-            userAgent: sessionData.metadata?.userAgent,
+            ip: sessionData.metadata?.ip ?? 'Unknown',
+            userAgent: sessionData.metadata?.userAgent ?? 'Unknown',
+            clientDescription: sessionData.metadata?.clientDescription ?? 'Unknown device',
+            clientLocation: sessionData.metadata?.clientLocation ?? 'Unknown',
+            deviceType: sessionData.metadata?.deviceType ?? 'Unknown',
             createdAt: sessionData.metadata?.createdAt ?? new Date(0).toISOString(),
-            lastSeen: sessionData.metadata?.lastSeen ?? new Date(0).toISOString(),
+            lastSeenAt: sessionData.metadata?.lastSeenAt ?? new Date(0).toISOString(),
             isCurrent: sessionId === currentSessionId,
           });
         }
@@ -76,7 +80,7 @@ export class SessionService {
       if (isCurrentSortOrder !== 0) {
         return isCurrentSortOrder;
       }
-      return new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime();
+      return new Date(b.lastSeenAt).getTime() - new Date(a.lastSeenAt).getTime();
     });
 
     return userSessions;
@@ -111,63 +115,108 @@ export class SessionService {
   }
 
   /** Initializes the metadata (ip, user agent, timestamps) on a session. */
-  initializeSessionMetadata(request: Request) {
+  async initializeSessionMetadata(request: Request) {
     if (!request.session) {
       return;
     }
     const session: AuthenticatedSession = request.session;
-
     if (!session.passport?.user || session.metadata) {
       return;
     }
 
+    const ip = request.ip ?? 'Unknown';
+    const userAgent = request.headers['user-agent'] ?? 'Unknown';
     const now = new Date().toISOString();
-    const userAgent = request.headers['user-agent'];
+
+    const {clientDescription, deviceType} = this.getClientDescription(userAgent);
+    const clientLocation = await this.getClientLocation(ip);
+
     session.metadata = {
-      ip: request.ip ?? 'unknown',
-      userAgent: userAgent ?? 'unknown',
-      clientDescription: this.getClientDescription(userAgent),
+      ip,
+      userAgent,
+      deviceType,
+      clientDescription,
       createdAt: now,
-      lastSeen: now,
+      lastSeenAt: now,
+      clientLocation,
     };
   }
 
-  /** Updates the `lastSeen` timestamp in the session metadata */
+  /** Updates the `lastSeenAt` timestamp in the session metadata */
   updateLastSeen(session: AuthenticatedSession) {
     if (!session.passport?.user || !session.metadata) {
       return;
     }
-    session.metadata.lastSeen = new Date().toISOString();
+    session.metadata.lastSeenAt = new Date().toISOString();
   }
 
-  /** Formats a session's user agent into a readable string. */
-  getClientDescription(userAgent: string | undefined) {
-    const trimmedUserAgent = userAgent?.trim();
-    if (!trimmedUserAgent || trimmedUserAgent.toLowerCase() === 'unknown') {
-      return 'Unknown device';
+  /** Attempts to look up the geolocation for a given IP address. */
+  async getClientLocation(ip: string) {
+    //  • IPv4 loopback:       127.x.x.x
+    //  • IPv6 loopback:       ::1
+    //  • full IPv6 loopback:  0:0:0:0:0:0:0:1
+    //  • IPv4‑mapped IPv6:    ::ffff:127.x.x.x
+    const localhostRegex =
+      /^(?:127(?:\.\d{1,3}){3}|::1|0:0:0:0:0:0:0:1|::ffff:127(?:\.\d{1,3}){3})$/;
+
+    if (ip === 'Unknown' || localhostRegex.test(ip)) {
+      return 'Unknown';
     }
 
-    const parser = new UAParser(trimmedUserAgent);
+    try {
+      const geoData = await geoip.lookup(ip);
+      if (!geoData) {
+        return 'Unknown';
+      }
+
+      const parts = [geoData.city, geoData.region, geoData.country].filter(Boolean);
+
+      if (parts.length === 0) return 'Unknown';
+      if (geoData.city && geoData.country) return `${geoData.city}, ${geoData.country}`;
+      if (geoData.region && geoData.country) return `${geoData.region}, ${geoData.country}`;
+
+      return geoData.country ?? 'Unknown';
+    } catch {
+      return 'Unknown';
+    }
+  }
+
+  /** Formats a session's user agent into a readable description and device type. */
+  getClientDescription(userAgent: string) {
+    if (userAgent === 'Unknown') {
+      return {
+        clientDescription: 'Unknown device',
+        deviceType: 'Unknown',
+      };
+    }
+
+    const parser = new UAParser(userAgent);
     const result: IResult = parser.getResult();
 
     const browserName = result.browser?.name;
     const osName = result.os?.name;
     const osVersion = result.os?.version;
-    const deviceType = result.device?.type;
+    const deviceType = result.device?.type ?? 'desktop';
 
     let osPart = '';
-
     if (osName) {
       osPart = osVersion ? `${osName} ${osVersion}` : osName;
     }
-    if (browserName && osPart) return `${browserName} on ${osPart}`;
-    if (browserName) return browserName;
-    if (osPart) return osPart;
 
-    if (deviceType) {
-      const capitalizedDeviceType = deviceType.charAt(0).toUpperCase() + deviceType.slice(1);
-      return `Device type: ${capitalizedDeviceType}`;
+    let clientDescription = 'Unknown device';
+    if (browserName && osPart) {
+      clientDescription = `${browserName} on ${osPart}`;
+    } else if (browserName) {
+      clientDescription = browserName;
+    } else if (osPart) {
+      clientDescription = osPart;
+    } else {
+      clientDescription = deviceType.charAt(0).toUpperCase() + deviceType.slice(1);
     }
-    return 'Unknown device';
+
+    return {
+      clientDescription,
+      deviceType,
+    };
   }
 }
