@@ -3,14 +3,14 @@ import {InjectRepository} from '@nestjs/typeorm';
 import {plainToInstance} from 'class-transformer';
 import {Repository} from 'typeorm';
 
-import {FileParserService} from '@core/file-parser/services/file-parser.service';
-import {TransactionCategorizerService} from '@core/transaction-categorizer/services/transaction-categorizer.service';
-import {TransactionPartial} from '@core/transaction-mapper/services/transaction-mapper.interface';
-import {TransactionMapperService} from '@core/transaction-mapper/services/transaction-mapper.service';
 import {BankAccount} from '@modules/bank-account/bank-account.entity';
 import {BankAccountService} from '@modules/bank-account/bank-account.service';
 import {PaginationDto} from '@modules/bank-statement/api/pagination.dto';
+import {FileParserService} from '@modules/file/file-parser/services/file-parser.service';
 import {FileService} from '@modules/file/file.service';
+import {TransactionCategorizerService} from '@modules/transaction/transaction-categorizer/services/transaction-categorizer.service';
+import {TransactionPartial} from '@modules/transaction/transaction-mapper/services/transaction-mapper.interface';
+import {TransactionMapperService} from '@modules/transaction/transaction-mapper/services/transaction-mapper.service';
 import {TransactionService} from '@modules/transaction/transaction.service';
 import {User} from '@modules/user/user.entity';
 

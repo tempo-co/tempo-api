@@ -1,12 +1,12 @@
 import {faker} from '@faker-js/faker';
 import {INestApplication, ValidationPipe} from '@nestjs/common';
-import {ConfigService} from '@nestjs/config';
-import {Test, TestingModule} from '@nestjs/testing';
+import {Test} from '@nestjs/testing';
 import axios from 'axios';
 import request from 'supertest';
 import TestAgent from 'supertest/lib/agent';
 
-import {SignUpDto} from '@core/auth/api/dtos/signup.dto';
+import {ConfigurationService} from '@core/config/config.service';
+import {SignUpDto} from '@modules/auth/api/dtos/signup.dto';
 import {User} from '@modules/user/user.entity';
 
 import {AppModule} from '../src/app.module';
@@ -36,18 +36,14 @@ describe('AuthController (e2e)', () => {
   let mailhogApiUrl: string;
 
   beforeAll(async () => {
-    const moduleFixture: TestingModule = await Test.createTestingModule({
-      imports: [AppModule],
-    }).compile();
-
+    const moduleFixture = await Test.createTestingModule({imports: [AppModule]}).compile();
     app = moduleFixture.createNestApplication();
 
     app.useGlobalPipes(new ValidationPipe({whitelist: true, transform: true}));
-
     await app.init();
 
-    const configService = moduleFixture.get<ConfigService>(ConfigService);
-    const mailhogPort = configService.get<number>('EMAIL_UI_PORT');
+    const configService = moduleFixture.get(ConfigurationService);
+    const mailhogPort = configService.get('EMAIL_UI_PORT');
     mailhogApiUrl = `http://localhost:${mailhogPort}`;
   });
 
@@ -240,7 +236,6 @@ describe('AuthController (e2e)', () => {
         .find((cookie: string) => cookie.startsWith('session='));
 
       expect(sessionCookie).toBeDefined();
-      console.log(sessionCookie);
       expect(sessionCookie).toMatch(/Max-Age=0|Expires=.*1970/);
       expect(sessionCookie).toMatch(/Path=\//);
 

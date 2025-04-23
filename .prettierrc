@@ -7,7 +7,7 @@
 
   "importOrderParserPlugins": ["typescript", "decorators-legacy"],
   "plugins": ["@trivago/prettier-plugin-sort-imports"],
-  "importOrder": ["<THIRD_PARTY_MODULES>", "^@(entities|core|modules)", "^[./]"],
+  "importOrder": ["<THIRD_PARTY_MODULES>", "^@(core|modules)", "^[./]"],
   "importOrderSeparation": true,
   "importOrderSortSpecifiers": true
 }

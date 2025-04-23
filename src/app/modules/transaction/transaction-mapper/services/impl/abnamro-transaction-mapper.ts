@@ -1,36 +1,26 @@
 import {UnprocessableEntityException} from '@nestjs/common';
-import Joi from 'joi';
+import {z} from 'zod';
 
-import {amountPattern} from '@core/transaction-mapper/constants/amount.regex';
-
+import {amountPattern} from '../../constants/amount.regex';
 import {TransactionMapper, TransactionPartial} from '../transaction-mapper.interface';
 
-export type AbnAmroTransaction = {
-  accountNumber: string;
-  mutationcode: string;
-  transactiondate: string;
-  valuedate: string;
-  startsaldo: string;
-  endsaldo: string;
-  amount: string;
-  description: string;
-};
-
-const abnAmroTransactionSchema = Joi.object({
-  accountNumber: Joi.optional(),
-  mutationcode: Joi.string().required(),
-  transactiondate: Joi.string().length(8).required(),
-  valuedate: Joi.string().length(8).required(),
-  startsaldo: Joi.optional(),
-  endsaldo: Joi.optional(),
-  amount: Joi.string().pattern(amountPattern).required(),
-  description: Joi.string().required(),
+const abnAmroTransactionSchema = z.object({
+  accountNumber: z.string().optional(),
+  mutationcode: z.string(),
+  transactiondate: z.string().length(8),
+  valuedate: z.string().length(8),
+  startsaldo: z.string().optional(),
+  endsaldo: z.string().optional(),
+  amount: z.string().regex(amountPattern),
+  description: z.string(),
 });
+
+export type AbnAmroTransaction = z.infer<typeof abnAmroTransactionSchema>;
 
 export class AbnAmroTransactionMapper implements TransactionMapper {
   map(transaction: AbnAmroTransaction): TransactionPartial {
-    const {error} = abnAmroTransactionSchema.validate(transaction);
-    if (error) {
+    const validationResult = abnAmroTransactionSchema.safeParse(transaction);
+    if (!validationResult.success) {
       throw new UnprocessableEntityException('File is not a valid ABN AMRO bank statement.');
     }
 

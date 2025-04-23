@@ -1,8 +1,8 @@
 import {Expose} from 'class-transformer';
 import {IsEnum, IsIn, IsNotEmpty, IsOptional, IsString, Length, MaxLength} from 'class-validator';
 
-import {Bank} from '@core/transaction-mapper/constants/bank.enum';
-import {currencyCodes} from '@core/transaction-mapper/constants/currency-codes';
+import {Bank} from '@modules/transaction/transaction-mapper/constants/bank.enum';
+import {currencyCodes} from '@modules/transaction/transaction-mapper/constants/currency-codes';
 
 import {BankAccount} from '../bank-account.entity';
 

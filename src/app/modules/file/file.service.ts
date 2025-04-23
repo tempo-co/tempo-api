@@ -2,7 +2,7 @@ import {Injectable, NotFoundException} from '@nestjs/common';
 import {InjectRepository} from '@nestjs/typeorm';
 import {Repository} from 'typeorm';
 
-import {MimeType} from '@core/file-parser/constants/mime-type.enum';
+import {MimeType} from '@modules/file/file-parser/constants/mime-type.enum';
 
 import {File} from './file.entity';
 

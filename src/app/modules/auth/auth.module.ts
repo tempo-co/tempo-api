@@ -1,5 +1,4 @@
 import {Module} from '@nestjs/common';
-import {ConfigModule} from '@nestjs/config';
 import {APP_GUARD} from '@nestjs/core';
 import {PassportModule} from '@nestjs/passport';
 
@@ -14,7 +13,7 @@ import {SessionService} from './services/session.service';
 import {LocalStrategy} from './strategies/local.strategy';
 
 @Module({
-  imports: [ConfigModule, UserModule, PassportModule.register({session: true})],
+  imports: [UserModule, PassportModule.register({session: true})],
   providers: [
     AuthService,
     SessionService,

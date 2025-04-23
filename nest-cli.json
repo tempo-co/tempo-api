@@ -13,7 +13,7 @@
     ],
     "assets": [
       {
-        "include": "app/templates/**/*",
+        "include": "app/core/email/templates/**/*",
         "outDir": "dist"
       }
     ],

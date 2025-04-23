@@ -1,6 +1,4 @@
-import {REDIS} from '@config/redis/redis.constants';
 import {ConflictException, NotFoundException, UnauthorizedException} from '@nestjs/common';
-import {ConfigService} from '@nestjs/config';
 import {Test, TestingModule} from '@nestjs/testing';
 import {Request} from 'express';
 import {Session} from 'express-session';
@@ -8,6 +6,8 @@ import * as geoip from 'fast-geoip';
 import Redis from 'ioredis';
 import {UAParser} from 'ua-parser-js';
 
+import {ConfigurationService} from '@core/config/config.service';
+import {REDIS} from '@core/redis/redis.constants';
 import {User} from '@modules/user/user.entity';
 import {UserService} from '@modules/user/user.service';
 
@@ -51,7 +51,7 @@ type MockSession = Session & AuthenticatedSession;
 describe('SessionService', () => {
   let service: SessionService;
   let redisClient: jest.Mocked<Redis>;
-  let configService: jest.Mocked<ConfigService>;
+  let configService: jest.Mocked<ConfigurationService>;
   let userService: jest.Mocked<UserService>;
 
   const SESSION_KEY_PREFIX = 'test_sessions';
@@ -71,7 +71,7 @@ describe('SessionService', () => {
           useValue: mockRedisClient,
         },
         {
-          provide: ConfigService,
+          provide: ConfigurationService,
           useValue: mockConfigService,
         },
         {
@@ -83,7 +83,7 @@ describe('SessionService', () => {
 
     service = module.get<SessionService>(SessionService);
     redisClient = module.get(REDIS);
-    configService = module.get(ConfigService);
+    configService = module.get(ConfigurationService);
     userService = module.get(UserService);
 
     configService.get.mockReturnValue(SESSION_KEY_PREFIX);

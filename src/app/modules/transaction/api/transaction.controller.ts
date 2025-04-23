@@ -1,6 +1,6 @@
 import {Body, Controller, Get, Param, ParseUUIDPipe, Patch, Query} from '@nestjs/common';
 
-import {CurrentUser} from '@core/auth/decorators/current-user.decorator';
+import {CurrentUser} from '@modules/auth/decorators/current-user.decorator';
 import {User} from '@modules/user/user.entity';
 
 import {Transaction} from '../transaction.entity';

@@ -1,7 +1,7 @@
 import {Expose} from 'class-transformer';
 import {Column, Entity, PrimaryGeneratedColumn} from 'typeorm';
 
-import {MimeType} from '@core/file-parser/constants/mime-type.enum';
+import {MimeType} from '@modules/file/file-parser/constants/mime-type.enum';
 
 @Entity()
 export class File {
