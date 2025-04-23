@@ -57,6 +57,7 @@ describe('AuthController (e2e)', () => {
 
   describe('/auth/login (POST)', () => {
     let userCredentials: SignUpDto;
+    let agent: TestAgent;
 
     beforeEach(async () => {
       userCredentials = {
@@ -65,18 +66,19 @@ describe('AuthController (e2e)', () => {
         password: faker.internet.password({length: 10}),
       };
       await request(app.getHttpServer()).post('/auth/signup').send(userCredentials).expect(201);
-    });
 
-    it('should log in with correct credentials', async () => {
-      const agent = request.agent(app.getHttpServer());
-
-      const response = await agent
+      agent = request.agent(app.getHttpServer());
+      await agent
         .post('/auth/login')
         .send({
           email: userCredentials.email,
           password: userCredentials.password,
         })
         .expect(200);
+    });
+
+    it('should log in with correct credentials and establish session', async () => {
+      const response = await agent.get('/users/me').expect(200);
 
       const user: User = response.body;
       expect(user).toBeDefined();
@@ -97,8 +99,15 @@ describe('AuthController (e2e)', () => {
       expect(sessionCookie).toMatch(/Path=\//);
       expect(sessionCookie).toMatch(/SameSite=Strict/);
       expect(sessionCookie).toMatch(/Expires=/);
+    });
 
-      await agent.get('/users/me').expect(200);
+    it('should return 403 Forbidden when accessing email-verified route without verification', async () => {
+      await agent
+        .get('/auth/sessions')
+        .expect(403)
+        .expect((res) => {
+          expect(res.body.message).toMatch(/email not verified/i);
+        });
     });
 
     it('should fail to log in with incorrect password', async () => {
@@ -269,6 +278,8 @@ describe('AuthController (e2e)', () => {
 
       expect(response.body?.email).toEqual(signUpDto.email);
 
+      // Wait for BullMQ to process the job
+      await new Promise((resolve) => setTimeout(resolve, 1000));
       const mailhogResponse = await axios.get<MailHogResponse>(`${mailhogApiUrl}/api/v2/messages`);
       const emails = mailhogResponse?.data?.items;
 
