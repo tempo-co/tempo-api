@@ -2,6 +2,8 @@ import {Module} from '@nestjs/common';
 import {APP_GUARD} from '@nestjs/core';
 import {PassportModule} from '@nestjs/passport';
 
+import {EmailModule} from '@core/email/email.module';
+import {EmailService} from '@core/email/email.service';
 import {UserModule} from '@modules/user/user.module';
 
 import {AuthController} from './api/auth.controller';
@@ -13,13 +15,14 @@ import {SessionService} from './services/session.service';
 import {LocalStrategy} from './strategies/local.strategy';
 
 @Module({
-  imports: [UserModule, PassportModule.register({session: true})],
+  imports: [UserModule, EmailModule, PassportModule.register({session: true})],
   providers: [
     AuthService,
     SessionService,
     EmailVerifierService,
     SessionSerializer,
     LocalStrategy,
+    EmailService,
     {provide: APP_GUARD, useClass: AuthGuard},
   ],
   controllers: [AuthController],

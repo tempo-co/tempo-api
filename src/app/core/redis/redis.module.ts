@@ -13,7 +13,7 @@ import {REDIS} from './redis.constants';
       inject: [ConfigurationService],
       useFactory: (config: ConfigurationService) => {
         const redisUrl = config.get('REDIS_URL');
-        return new Redis(redisUrl);
+        return new Redis(redisUrl, {maxRetriesPerRequest: null, enableReadyCheck: true});
       },
     },
   ],

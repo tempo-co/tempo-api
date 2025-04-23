@@ -1,10 +1,10 @@
-import {MailerService} from '@nestjs-modules/mailer';
 import {BadRequestException, Injectable} from '@nestjs/common';
 import {Inject} from '@nestjs/common';
 import Redis from 'ioredis';
 import ms from 'ms';
 
 import {ConfigurationService} from '@core/config/config.service';
+import {EmailService} from '@core/email/email.service';
 import {REDIS} from '@core/redis/redis.constants';
 import {User} from '@modules/user/user.entity';
 import {UserService} from '@modules/user/user.service';
@@ -20,7 +20,7 @@ export class EmailVerifierService {
   constructor(
     @Inject(REDIS) private readonly redisClient: Redis,
     private readonly configService: ConfigurationService,
-    private readonly mailerService: MailerService,
+    private readonly emailService: EmailService,
     private readonly userService: UserService,
   ) {
     this.REDIS_KEY = this.configService.get('EMAIL_VERIFICATION_REDIS_KEY');
@@ -51,7 +51,7 @@ export class EmailVerifierService {
     const code = await this.createCode(user.email);
     const verificationUrl = await this.createUrl(code);
 
-    await this.mailerService.sendMail({
+    await this.emailService.send({
       to: user.email,
       subject: `Welcome to Flair - ${code} is your verification code`,
       template: 'welcome',
@@ -67,7 +67,7 @@ export class EmailVerifierService {
     const code = await this.createCode(user.email);
     const verificationUrl = await this.createUrl(code);
 
-    await this.mailerService.sendMail({
+    await this.emailService.send({
       to: user.email,
       subject: `${code} is your verification code`,
       template: 'verify-email',
@@ -83,7 +83,7 @@ export class EmailVerifierService {
 
     const code = await this.createCode(newEmail);
 
-    await this.mailerService.sendMail({
+    await this.emailService.send({
       to: newEmail,
       subject: `${code} is your verification code`,
       template: 'verify-new-email',
