@@ -5,26 +5,23 @@ import {
   GoogleGenerativeAI,
 } from '@google/generative-ai';
 import {Provider} from '@nestjs/common';
-import {ConfigService} from '@nestjs/config';
+
+import {ConfigurationService} from '@core/config/config.service';
 
 import {Category} from '../constants/category.enum';
 
 export const GenerativeModelProvider: Provider = {
   provide: GenerativeModel,
-  useFactory: async (configService: ConfigService): Promise<GenerativeModel> => {
-    const apiKey = configService.get<string>('GEMINI_API_KEY');
-    if (!apiKey) {
-      throw new Error('GEMINI_API_KEY not found in environment variables.');
-    }
-    const genAI = new GoogleGenerativeAI(apiKey);
+  inject: [ConfigurationService],
+  useFactory: async (configService: ConfigurationService) => {
+    const apiKey = configService.get('GEMINI_API_KEY');
 
-    return genAI.getGenerativeModel({
+    return new GoogleGenerativeAI(apiKey).getGenerativeModel({
       model: 'gemini-1.5-flash',
       systemInstruction,
       generationConfig,
     });
   },
-  inject: [ConfigService],
 };
 
 const systemInstruction =

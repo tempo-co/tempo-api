@@ -19,10 +19,11 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
-import {Category} from '@core/transaction-categorizer/constants/category.enum';
-import {currencyCodes} from '@core/transaction-mapper/constants/currency-codes';
 import {BankAccount} from '@modules/bank-account/bank-account.entity';
 import {BankStatement} from '@modules/bank-statement/bank-statement.entity';
+import {Category} from '@modules/transaction/transaction-categorizer/constants/category.enum';
+
+import {currencyCodes} from './transaction-mapper/constants/currency-codes';
 
 @Entity()
 export class Transaction {

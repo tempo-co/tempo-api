@@ -1,10 +1,10 @@
 import {Module} from '@nestjs/common';
 import {TypeOrmModule} from '@nestjs/typeorm';
 
-import {FileParserModule} from '@core/file-parser/file-parser.module';
-import {TransactionCategorizerModule} from '@core/transaction-categorizer/transaction-categorizer.module';
-import {TransactionMapperModule} from '@core/transaction-mapper/transaction-mapper.module';
+import {FileParserModule} from '@modules/file/file-parser/file-parser.module';
 import {FileModule} from '@modules/file/file.module';
+import {TransactionCategorizerModule} from '@modules/transaction/transaction-categorizer/transaction-categorizer.module';
+import {TransactionMapperModule} from '@modules/transaction/transaction-mapper/transaction-mapper.module';
 
 import {BankAccountModule} from '../bank-account/bank-account.module';
 import {TransactionModule} from '../transaction/transaction.module';

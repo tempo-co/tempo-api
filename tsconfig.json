@@ -12,9 +12,8 @@
     "outDir": "./dist",
     "baseUrl": "./",
     "paths": {
-      "@modules/*": ["src/app/modules/*"],
       "@core/*": ["src/app/core/*"],
-      "@config/*": ["src/app/config/*"]
+      "@modules/*": ["src/app/modules/*"]
     },
     "incremental": true,
     "skipLibCheck": true,

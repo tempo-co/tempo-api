@@ -1,7 +1,7 @@
 import {Type} from 'class-transformer';
 import {IsArray, IsDateString, IsEnum, IsOptional, ValidateNested} from 'class-validator';
 
-import {Category} from '@core/transaction-categorizer/constants/category.enum';
+import {Category} from '@modules/transaction/transaction-categorizer/constants/category.enum';
 
 export class DateRangeDto {
   @IsDateString()

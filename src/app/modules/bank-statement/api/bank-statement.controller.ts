@@ -16,7 +16,7 @@ import {FileInterceptor} from '@nestjs/platform-express';
 import {ApiResponse} from '@nestjs/swagger';
 import {Response} from 'express';
 
-import {CurrentUser} from '@core/auth/decorators/current-user.decorator';
+import {CurrentUser} from '@modules/auth/decorators/current-user.decorator';
 import {BankAccount} from '@modules/bank-account/bank-account.entity';
 import {PaginationDto} from '@modules/bank-statement/api/pagination.dto';
 import {User} from '@modules/user/user.entity';

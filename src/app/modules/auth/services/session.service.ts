@@ -1,11 +1,11 @@
-import {REDIS} from '@config/redis/redis.constants';
 import {ConflictException, Inject, Injectable, NotFoundException} from '@nestjs/common';
-import {ConfigService} from '@nestjs/config';
 import {Request} from 'express';
 import * as geoip from 'fast-geoip';
 import Redis from 'ioredis';
 import {IResult, UAParser} from 'ua-parser-js';
 
+import {ConfigurationService} from '@core/config/config.service';
+import {REDIS} from '@core/redis/redis.constants';
 import {User} from '@modules/user/user.entity';
 import {UserService} from '@modules/user/user.service';
 
@@ -18,10 +18,10 @@ export class SessionService {
 
   constructor(
     @Inject(REDIS) private readonly redisClient: Redis,
-    private readonly configService: ConfigService,
+    private readonly configService: ConfigurationService,
     private readonly userService: UserService,
   ) {
-    this.REDIS_KEY = this.configService.get('SESSION_REDIS_KEY') as string;
+    this.REDIS_KEY = this.configService.get('SESSION_REDIS_KEY');
   }
 
   /**

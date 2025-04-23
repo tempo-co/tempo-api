@@ -1,8 +1,8 @@
 import {Exclude, Expose, Type} from 'class-transformer';
 import {Column, Entity, ManyToOne, OneToMany, PrimaryGeneratedColumn} from 'typeorm';
 
-import {Bank} from '@core/transaction-mapper/constants/bank.enum';
 import {BankStatement} from '@modules/bank-statement/bank-statement.entity';
+import {Bank} from '@modules/transaction/transaction-mapper/constants/bank.enum';
 import {Transaction} from '@modules/transaction/transaction.entity';
 import {User} from '@modules/user/user.entity';
 
