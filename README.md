@@ -1,6 +1,6 @@
 <p>
   <a href="https://coveralls.io/github/eduard-cc/flair-api?branch=main">
-    <img src="https://coveralls.io/repos/github/eduard-cc/flair-api/badge.svg?branch=e2e" alt="Coverage Status" />
+    <img src="https://coveralls.io/repos/github/eduard-cc/flair-api/badge.svg?branch=main" alt="Coverage Status" />
   </a>
   <a href="https://github.com/eduard-cc/flair-api/actions">
     <img src="https://github.com/eduard-cc/flair-api/actions/workflows/ci.yml/badge.svg" alt="Build Status" />

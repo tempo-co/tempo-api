@@ -56,6 +56,10 @@ export class TransactionService {
       query.andWhere('transaction.startedAt BETWEEN :from AND :to', {from, to});
     }
 
+    if (filter.banks && filter.banks.length > 0) {
+      query.andWhere('bankAccount.bank IN (:...banks)', {banks: filter.banks});
+    }
+
     const [transactions, total] = await query.getManyAndCount();
     return {transactions, total};
   }
