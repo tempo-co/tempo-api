@@ -10,18 +10,17 @@ import {
   UNVERIFIED_USER_PASSWORD,
   VERIFIED_USER_EMAIL,
   VERIFIED_USER_PASSWORD,
-} from '../setup/constants';
-import {getApp} from '../setup/e2e.setup';
+} from '../../setup/constants';
+import {getApp} from '../../setup/e2e.setup';
 
 describe('AuthController - Change password', () => {
   let httpServer: any;
 
   beforeAll(() => {
-    const app = getApp();
-    httpServer = app.getHttpServer();
+    httpServer = getApp().getHttpServer();
   });
 
-  describe('POST /auth/change-password', () => {
+  describe('/auth/change-password (POST)', () => {
     it('should change password for logged-in user and allow login with new password', async () => {
       const agent = request.agent(httpServer);
       await agent

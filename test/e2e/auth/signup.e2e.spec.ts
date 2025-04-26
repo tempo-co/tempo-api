@@ -10,9 +10,9 @@ import {
   UNVERIFIED_USER_PASSWORD,
   VERIFIED_USER_EMAIL,
   VERIFIED_USER_PASSWORD,
-} from '../setup/constants';
-import {getApp} from '../setup/e2e.setup';
-import {clearEmails, extractVerificationCode, findEmailByRecipient} from '../utils/email.util';
+} from '../../setup/constants';
+import {getApp} from '../../setup/e2e.setup';
+import {clearEmails, extractVerificationCode, findEmailByRecipient} from '../../utils/email.util';
 
 describe('AuthController - Signup', () => {
   let mailhogApiUrl: string;
