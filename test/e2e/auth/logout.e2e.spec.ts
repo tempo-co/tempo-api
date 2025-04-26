@@ -4,14 +4,13 @@ import TestAgent from 'supertest/lib/agent';
 
 import {SignUpDto} from '@modules/auth/api/dtos/signup.dto';
 
-import {getApp} from '../setup/e2e.setup';
+import {getApp} from '../../setup/e2e.setup';
 
 describe('AuthController - Logout', () => {
   let httpServer: any;
 
   beforeAll(async () => {
-    const app = getApp();
-    httpServer = app.getHttpServer();
+    httpServer = getApp().getHttpServer();
   });
 
   describe('/auth/logout (POST)', () => {
