@@ -41,6 +41,7 @@ export const configSchema = z.object({
   EMAIL_HOST: z.string().min(1),
   EMAIL_PORT: portSchema,
   EMAIL_UI_PORT: portSchema,
+  EMAIL_UI_URL: z.string().url(),
   EMAIL_VERIFICATION_EXPIRATION: durationSchema,
   EMAIL_VERIFICATION_REDIS_KEY: z.string().min(1),
 

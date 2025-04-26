@@ -16,6 +16,7 @@ import {ConfigurationService} from '@core/config/config.service';
         database: config.get('DB_NAME'),
         synchronize: config.get('DB_SYNCHRONIZE'),
         autoLoadEntities: true,
+        dropSchema: config.get('NODE_ENV') === 'test',
       }),
     }),
   ],
