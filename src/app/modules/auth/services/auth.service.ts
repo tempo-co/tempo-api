@@ -1,5 +1,6 @@
 import {Injectable} from '@nestjs/common';
 import argon2 from 'argon2';
+import {plainToInstance} from 'class-transformer';
 import {Request} from 'express';
 
 import {User} from '@modules/user/user.entity';
@@ -26,7 +27,7 @@ export class AuthService {
 
     await this.emailVerifierService.sendWelcomeEmail(user);
     await this.logIn(user, request);
-    return user;
+    return plainToInstance(User, user);
   }
 
   async logOut(request: Request) {

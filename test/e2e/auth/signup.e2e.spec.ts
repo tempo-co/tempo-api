@@ -39,6 +39,10 @@ describe('AuthController - Signup', () => {
       const response = await request(httpServer).post('/auth/signup').send(signUpDto).expect(201);
 
       expect(response.body?.email).toEqual(signUpDto.email);
+      expect(response.body?.name).toEqual(signUpDto.name);
+      expect(response.body?.id).toBeDefined();
+      expect(response.body?.isEmailVerified).toBe(false);
+      expect(response.body?.createdAt).toBeDefined();
 
       const welcomeEmail = await findEmailByRecipient(signUpDto.email, mailhogApiUrl);
       expect(welcomeEmail).toBeDefined();

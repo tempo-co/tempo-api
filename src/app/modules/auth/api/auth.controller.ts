@@ -10,7 +10,7 @@ import {
   Res,
   UseGuards,
 } from '@nestjs/common';
-import {ApiResponse} from '@nestjs/swagger';
+import {ApiOperation, ApiResponse, ApiTags} from '@nestjs/swagger';
 import {Throttle, minutes} from '@nestjs/throttler';
 import {Request, Response} from 'express';
 
@@ -28,8 +28,10 @@ import {EmailChangeDto} from './dtos/email-change.dto';
 import {EmailVerifyDto} from './dtos/email-verify.dto';
 import {LogInDto} from './dtos/login.dto';
 import {SessionRevokeDto, SessionRevokeParamsDto} from './dtos/revoke-session.dto';
+import {SessionDto} from './dtos/session.dto';
 import {SignUpDto} from './dtos/signup.dto';
 
+@ApiTags('Auth')
 @Controller('auth')
 export class AuthController {
   constructor(
@@ -37,6 +39,20 @@ export class AuthController {
     private readonly authService: AuthService,
     private readonly sessionService: SessionService,
   ) {}
+
+  @Public()
+  @Post('signup')
+  @HttpCode(201)
+  @SkipEmailVerification()
+  @Throttle({default: {limit: 6, ttl: minutes(1)}})
+  @ApiResponse({status: 201, description: 'User created.'})
+  @ApiResponse({status: 400, description: 'Validation of the request body failed.'})
+  @ApiResponse({status: 409, description: 'This email is already in use.'})
+  @ApiResponse({status: 429, description: 'Too many requests. Try again later.'})
+  @ApiOperation({summary: 'Registers a new user'})
+  async signUp(@Body() dto: SignUpDto, @Req() request: Request) {
+    return this.authService.signUp(dto, request);
+  }
 
   @Public()
   @Post('login')
@@ -47,6 +63,7 @@ export class AuthController {
   @ApiResponse({status: 400, description: 'Validation of the request body failed.'})
   @ApiResponse({status: 401, description: 'Invalid credentials.'})
   @ApiResponse({status: 429, description: 'Too many requests. Try again later.'})
+  @ApiOperation({summary: 'Logs in a user and starts a session'})
   async logIn(@Body() _dto: LogInDto, @CurrentUser() user: User) {
     return user;
   }
@@ -58,22 +75,10 @@ export class AuthController {
   @ApiResponse({status: 200, description: 'User logged out.'})
   @ApiResponse({status: 401, description: 'User is not logged in.'})
   @ApiResponse({status: 429, description: 'Too many requests. Try again later.'})
+  @ApiOperation({summary: 'Logs out the current user and destroys the session'})
   async logOut(@Req() request: Request, @Res({passthrough: true}) res: Response) {
     res.clearCookie('session');
     return this.authService.logOut(request);
-  }
-
-  @Public()
-  @Post('signup')
-  @HttpCode(201)
-  @SkipEmailVerification()
-  @Throttle({default: {limit: 6, ttl: minutes(1)}})
-  @ApiResponse({status: 201, description: 'User created.'})
-  @ApiResponse({status: 400, description: 'Validation of the request body failed.'})
-  @ApiResponse({status: 409, description: 'This email is already in use.'})
-  @ApiResponse({status: 429, description: 'Too many requests. Try again later.'})
-  async signUp(@Body() dto: SignUpDto, @Req() request: Request) {
-    return this.authService.signUp(dto, request);
   }
 
   @Post('change-password')
@@ -86,6 +91,7 @@ export class AuthController {
     description: 'User is not logged in or current password is incorrect.',
   })
   @ApiResponse({status: 429, description: 'Too many requests. Try again later.'})
+  @ApiOperation({summary: 'Changes the password for the current user'})
   async changePassword(@CurrentUser() user: User, @Body() dto: ChangePasswordDto) {
     return this.authService.changePassword(user, dto);
   }
@@ -98,6 +104,7 @@ export class AuthController {
   @ApiResponse({status: 400, description: 'Email is already verified.'})
   @ApiResponse({status: 401, description: 'User is not logged in.'})
   @ApiResponse({status: 429, description: 'Too many requests. Try again later.'})
+  @ApiOperation({summary: 'Resends the email verification code to the current user'})
   async sendVerifyEmail(@CurrentUser() user: User) {
     return this.emailVerifierService.sendVerifyEmail(user);
   }
@@ -110,6 +117,7 @@ export class AuthController {
   @ApiResponse({status: 200, description: 'Email verified.'})
   @ApiResponse({status: 400, description: 'Invalid or expired verification code.'})
   @ApiResponse({status: 429, description: 'Too many requests. Try again later.'})
+  @ApiOperation({summary: "Verifies a user's email using a code"})
   async verifyEmail(@Body() dto: EmailVerifyDto, @Req() request: Request) {
     const user = await this.emailVerifierService.verify(dto.code);
     if (!request.isAuthenticated()) {
@@ -126,6 +134,7 @@ export class AuthController {
   @ApiResponse({status: 401, description: 'User is not logged in or password is incorrect.'})
   @ApiResponse({status: 409, description: 'This email is already in use.'})
   @ApiResponse({status: 429, description: 'Too many requests. Try again later.'})
+  @ApiOperation({summary: "Requests a change to the user's email"})
   async requestEmailChange(@CurrentUser() user: User, @Body() dto: EmailChangeDto) {
     return this.emailVerifierService.requestEmailChange(user, dto);
   }
@@ -134,19 +143,21 @@ export class AuthController {
   @HttpCode(200)
   @Throttle({default: {limit: 6, ttl: minutes(1)}})
   @ApiResponse({status: 200, description: 'Email changed.'})
-  @ApiResponse({status: 400, description: 'Validation of the request body failed.'})
+  @ApiResponse({status: 400, description: 'Validation of the request body failed or invalid code.'})
   @ApiResponse({status: 401, description: 'User is not logged in.'})
   @ApiResponse({status: 409, description: 'This email is already in use.'})
   @ApiResponse({status: 429, description: 'Too many requests. Try again later.'})
+  @ApiOperation({summary: 'Verifies the new email using a code'})
   async verifyEmailChange(@CurrentUser() user: User, @Body() dto: EmailVerifyDto) {
     return this.emailVerifierService.verifyEmailChange(user, dto.code);
   }
 
   @Get('sessions')
   @HttpCode(200)
-  @ApiResponse({status: 200, description: 'List of active sessions.'})
+  @ApiResponse({status: 200, description: 'List of active sessions.', type: [SessionDto]})
   @ApiResponse({status: 401, description: 'User is not logged in.'})
   @ApiResponse({status: 429, description: 'Too many requests. Try again later.'})
+  @ApiOperation({summary: 'Retrieves all active sessions for the current user'})
   async getSessions(@CurrentUser() user: User, @Req() request: Request) {
     return this.sessionService.getSessions(user.id, request.session.id);
   }
@@ -159,6 +170,7 @@ export class AuthController {
   @ApiResponse({status: 404, description: 'Session not found or expired.'})
   @ApiResponse({status: 409, description: 'Cannot revoke the current session. Log out instead.'})
   @ApiResponse({status: 429, description: 'Too many requests. Try again later.'})
+  @ApiOperation({summary: 'Revokes a user session'})
   async revokeSession(
     @CurrentUser() user: User,
     @Req() request: Request,

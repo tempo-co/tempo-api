@@ -13,7 +13,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import {FileInterceptor} from '@nestjs/platform-express';
-import {ApiResponse} from '@nestjs/swagger';
+import {ApiResponse, ApiTags} from '@nestjs/swagger';
 import {Response} from 'express';
 
 import {CurrentUser} from '@modules/auth/decorators/current-user.decorator';
@@ -24,6 +24,7 @@ import {User} from '@modules/user/user.entity';
 import {BankStatement} from '../bank-statement.entity';
 import {BankStatementService} from '../bank-statement.service';
 
+@ApiTags('Bank statements')
 // TODO: REMOVE :bankAccountId FROM PATH
 @Controller('bank-accounts/:bankAccountId/bank-statements')
 export class BankStatementController {

@@ -36,5 +36,5 @@ function setupSwagger(app: NestExpressApplication) {
   };
   const document = SwaggerModule.createDocument(app, config, options);
 
-  SwaggerModule.setup('api', app, document);
+  SwaggerModule.setup('docs', app, document);
 }
