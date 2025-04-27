@@ -1,4 +1,5 @@
 import {Body, Controller, Get, Patch} from '@nestjs/common';
+import {ApiTags} from '@nestjs/swagger';
 
 import {CurrentUser} from '@modules/auth/decorators/current-user.decorator';
 import {SkipEmailVerification} from '@modules/auth/decorators/skip-email-verification.decorator';
@@ -7,6 +8,7 @@ import {User} from '../user.entity';
 import {UserService} from '../user.service';
 import {UserUpdateDto} from './user-update.dto';
 
+@ApiTags('Users')
 @Controller('users')
 export class UserController {
   constructor(private readonly userService: UserService) {}

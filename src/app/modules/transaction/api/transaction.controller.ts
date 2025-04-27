@@ -1,4 +1,5 @@
 import {Body, Controller, Get, Param, ParseUUIDPipe, Patch, Query} from '@nestjs/common';
+import {ApiTags} from '@nestjs/swagger';
 
 import {CurrentUser} from '@modules/auth/decorators/current-user.decorator';
 import {User} from '@modules/user/user.entity';
@@ -8,6 +9,7 @@ import {TransactionService} from '../transaction.service';
 import {TransactionQueryDto} from './transaction-query.dto';
 import {TransactionUpdateDto} from './transaction-update.dto';
 
+@ApiTags('Transactions')
 @Controller('transactions')
 export class TransactionController {
   constructor(private readonly transactionService: TransactionService) {}
