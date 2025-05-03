@@ -1,4 +1,5 @@
 import {faker} from '@faker-js/faker';
+import {Server} from 'node:net';
 import request from 'supertest';
 import TestAgent from 'supertest/lib/agent';
 
@@ -18,7 +19,7 @@ import {clearEmails, extractVerificationCode, findEmailByRecipient} from '../../
 
 describe('AuthController - Change email', () => {
   let mailhogApiUrl: string;
-  let httpServer: any;
+  let httpServer: Server;
 
   beforeAll(async () => {
     const app = getApp();

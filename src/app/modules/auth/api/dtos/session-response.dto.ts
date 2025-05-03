@@ -1,4 +1,4 @@
-export class SessionDto {
+export class SessionResponseDto {
   id: string;
   ip: string;
   userAgent: string;

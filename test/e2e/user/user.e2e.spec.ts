@@ -1,5 +1,6 @@
 import {faker} from '@faker-js/faker';
 import {INestApplication} from '@nestjs/common';
+import {Server} from 'node:net';
 import request from 'supertest';
 import TestAgent from 'supertest/lib/agent';
 
@@ -15,7 +16,7 @@ import {
 import {getApp} from '../../setup/e2e.setup';
 
 describe('UserController - /me', () => {
-  let httpServer: any;
+  let httpServer: Server;
   let app: INestApplication;
 
   beforeAll(async () => {

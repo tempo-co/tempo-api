@@ -1,10 +1,11 @@
 import {INestApplication, ValidationPipe} from '@nestjs/common';
 import {Test} from '@nestjs/testing';
+import {Server} from 'node:net';
 
 import {AppModule} from '../../src/app.module';
 import {seedDatabase} from './seed-database';
 
-let app: INestApplication;
+let app: INestApplication<Server>;
 
 beforeAll(async () => {
   const moduleFixture = await Test.createTestingModule({imports: [AppModule]}).compile();
@@ -19,6 +20,6 @@ afterAll(async () => {
   if (app) await app.close();
 });
 
-export function getApp(): INestApplication {
+export function getApp() {
   return app;
 }

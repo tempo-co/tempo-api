@@ -1,4 +1,5 @@
 import {faker} from '@faker-js/faker';
+import {Server} from 'node:net';
 import request from 'supertest';
 
 import {ChangePasswordDto} from '@modules/auth/api/dtos/change-password.dto';
@@ -14,7 +15,7 @@ import {
 import {getApp} from '../../setup/e2e.setup';
 
 describe('AuthController - Change password', () => {
-  let httpServer: any;
+  let httpServer: Server;
 
   beforeAll(() => {
     httpServer = getApp().getHttpServer();

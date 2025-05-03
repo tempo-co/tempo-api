@@ -1,4 +1,5 @@
 import {faker} from '@faker-js/faker';
+import {Server} from 'node:net';
 import request from 'supertest';
 import TestAgent from 'supertest/lib/agent';
 
@@ -8,7 +9,7 @@ import {User} from '@modules/user/user.entity';
 import {getApp} from '../../setup/e2e.setup';
 
 describe('AuthController - Login', () => {
-  let httpServer: any;
+  let httpServer: Server;
 
   beforeAll(async () => {
     httpServer = getApp().getHttpServer();
