@@ -1,4 +1,4 @@
-import {ConflictException, NotFoundException, UnauthorizedException} from '@nestjs/common';
+import {ConflictException, NotFoundException} from '@nestjs/common';
 import {Test, TestingModule} from '@nestjs/testing';
 import {Request} from 'express';
 import {Session} from 'express-session';
@@ -8,8 +8,6 @@ import {UAParser} from 'ua-parser-js';
 
 import {ConfigurationService} from '@core/config/config.service';
 import {REDIS} from '@core/redis/redis.constants';
-import {User} from '@modules/user/user.entity';
-import {UserService} from '@modules/user/user.service';
 
 import {AuthenticatedSession} from './authenticated-session.interface';
 import {SessionService} from './session.service';
@@ -37,22 +35,12 @@ const mockConfigService = {
   get: jest.fn(),
 };
 
-const mockUserService = {
-  verifyPassword: jest.fn(),
-  findById: jest.fn(),
-  findByEmail: jest.fn(),
-  validateEmailIsUnique: jest.fn(),
-  save: jest.fn(),
-  update: jest.fn(),
-};
-
 type MockSession = Session & AuthenticatedSession;
 
 describe('SessionService', () => {
   let service: SessionService;
   let redisClient: jest.Mocked<Redis>;
   let configService: jest.Mocked<ConfigurationService>;
-  let userService: jest.Mocked<UserService>;
 
   const SESSION_KEY_PREFIX = 'test_sessions';
   const MOCK_USER_ID = 'user-123';
@@ -74,17 +62,12 @@ describe('SessionService', () => {
           provide: ConfigurationService,
           useValue: mockConfigService,
         },
-        {
-          provide: UserService,
-          useValue: mockUserService,
-        },
       ],
     }).compile();
 
     service = module.get<SessionService>(SessionService);
     redisClient = module.get(REDIS);
     configService = module.get(ConfigurationService);
-    userService = module.get(UserService);
 
     configService.get.mockReturnValue(SESSION_KEY_PREFIX);
     (service as any).REDIS_KEY = SESSION_KEY_PREFIX;
@@ -293,9 +276,6 @@ describe('SessionService', () => {
   });
 
   describe('revokeSession', () => {
-    const mockUser = {id: MOCK_USER_ID, password: 'hashedPassword'} as User;
-    const correctPassword = 'password123';
-    const wrongPassword = 'wrongPassword';
     const sessionIdToRevoke = 'session-to-revoke';
     const sessionKeyToRevoke = `${SESSION_KEY_PREFIX}:${sessionIdToRevoke}`;
     const mockSessionData: Partial<AuthenticatedSession> & {id?: string} = {
@@ -314,18 +294,15 @@ describe('SessionService', () => {
     };
 
     it('should successfully revoke a session', async () => {
-      userService.verifyPassword.mockResolvedValueOnce(undefined); // Simulate successful verification
       redisClient.get.mockResolvedValueOnce(JSON.stringify(mockSessionData));
       redisClient.del.mockResolvedValueOnce(1); // Simulate successful deletion
 
       const result = await service.revokeSession(
-        mockUser,
-        correctPassword,
+        MOCK_USER_ID,
         MOCK_CURRENT_SESSION_ID,
         sessionIdToRevoke,
       );
 
-      expect(userService.verifyPassword).toHaveBeenCalledWith(mockUser.password, correctPassword);
       expect(redisClient.get).toHaveBeenCalledWith(sessionKeyToRevoke);
       expect(redisClient.del).toHaveBeenCalledWith(sessionKeyToRevoke);
       expect(result).toEqual({message: 'Session revoked.'});
@@ -333,40 +310,17 @@ describe('SessionService', () => {
 
     it('should throw ConflictException if attempting to revoke the current session', async () => {
       await expect(
-        service.revokeSession(
-          mockUser,
-          correctPassword,
-          MOCK_CURRENT_SESSION_ID,
-          MOCK_CURRENT_SESSION_ID,
-        ),
+        service.revokeSession(MOCK_USER_ID, MOCK_CURRENT_SESSION_ID, MOCK_CURRENT_SESSION_ID),
       ).rejects.toThrow(ConflictException);
-      expect(userService.verifyPassword).not.toHaveBeenCalled();
-      expect(redisClient.get).not.toHaveBeenCalled();
-      expect(redisClient.del).not.toHaveBeenCalled();
-    });
-
-    it('should throw UnauthorizedException if password verification fails', async () => {
-      userService.verifyPassword.mockRejectedValueOnce(new UnauthorizedException());
-      await expect(
-        service.revokeSession(mockUser, wrongPassword, MOCK_CURRENT_SESSION_ID, sessionIdToRevoke),
-      ).rejects.toThrow(UnauthorizedException);
-      expect(userService.verifyPassword).toHaveBeenCalledWith(mockUser.password, wrongPassword);
       expect(redisClient.get).not.toHaveBeenCalled();
       expect(redisClient.del).not.toHaveBeenCalled();
     });
 
     it('should throw NotFoundException if session to revoke is not found in Redis', async () => {
-      userService.verifyPassword.mockResolvedValueOnce(undefined);
       redisClient.get.mockResolvedValueOnce(null); // Simulate session not found
       await expect(
-        service.revokeSession(
-          mockUser,
-          correctPassword,
-          MOCK_CURRENT_SESSION_ID,
-          sessionIdToRevoke,
-        ),
+        service.revokeSession(MOCK_USER_ID, MOCK_CURRENT_SESSION_ID, sessionIdToRevoke),
       ).rejects.toThrow(new NotFoundException(`Session not found or expired.`));
-      expect(userService.verifyPassword).toHaveBeenCalledWith(mockUser.password, correctPassword);
       expect(redisClient.get).toHaveBeenCalledWith(sessionKeyToRevoke);
       expect(redisClient.del).not.toHaveBeenCalled();
     });
@@ -376,17 +330,10 @@ describe('SessionService', () => {
         ...mockSessionData,
         passport: {user: 'different-user-id'},
       };
-      userService.verifyPassword.mockResolvedValueOnce(undefined);
       redisClient.get.mockResolvedValueOnce(JSON.stringify(differentUserSessionData));
       await expect(
-        service.revokeSession(
-          mockUser,
-          correctPassword,
-          MOCK_CURRENT_SESSION_ID,
-          sessionIdToRevoke,
-        ),
+        service.revokeSession(MOCK_USER_ID, MOCK_CURRENT_SESSION_ID, sessionIdToRevoke),
       ).rejects.toThrow(new NotFoundException(`Session not found or expired.`));
-      expect(userService.verifyPassword).toHaveBeenCalledWith(mockUser.password, correctPassword);
       expect(redisClient.get).toHaveBeenCalledWith(sessionKeyToRevoke);
       expect(redisClient.del).not.toHaveBeenCalled();
     });

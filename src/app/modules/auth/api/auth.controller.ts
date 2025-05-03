@@ -27,8 +27,8 @@ import {ChangePasswordDto} from './dtos/change-password.dto';
 import {EmailChangeDto} from './dtos/email-change.dto';
 import {EmailVerifyDto} from './dtos/email-verify.dto';
 import {LogInDto} from './dtos/login.dto';
-import {SessionRevokeDto, SessionRevokeParamsDto} from './dtos/revoke-session.dto';
-import {SessionDto} from './dtos/session.dto';
+import {SessionResponseDto} from './dtos/session-response.dto';
+import {SessionRevokeDto} from './dtos/session-revoke.dto';
 import {SignUpDto} from './dtos/signup.dto';
 
 @ApiTags('Auth')
@@ -154,7 +154,7 @@ export class AuthController {
 
   @Get('sessions')
   @HttpCode(200)
-  @ApiResponse({status: 200, description: 'List of active sessions.', type: [SessionDto]})
+  @ApiResponse({status: 200, description: 'List of active sessions.', type: [SessionResponseDto]})
   @ApiResponse({status: 401, description: 'User is not logged in.'})
   @ApiResponse({status: 429, description: 'Too many requests. Try again later.'})
   @ApiOperation({summary: 'Retrieves all active sessions for the current user'})
@@ -166,22 +166,27 @@ export class AuthController {
   @HttpCode(200)
   @ApiResponse({status: 200, description: 'Session revoked.'})
   @ApiResponse({status: 400, description: 'Validation of the request body failed.'})
-  @ApiResponse({status: 401, description: 'User is not logged in or password is incorrect.'})
+  @ApiResponse({status: 401, description: 'User is not logged in.'})
   @ApiResponse({status: 404, description: 'Session not found or expired.'})
   @ApiResponse({status: 409, description: 'Cannot revoke the current session. Log out instead.'})
   @ApiResponse({status: 429, description: 'Too many requests. Try again later.'})
-  @ApiOperation({summary: 'Revokes a user session'})
+  @ApiOperation({summary: 'Revokes a user session.'})
   async revokeSession(
     @CurrentUser() user: User,
     @Req() request: Request,
-    @Param() params: SessionRevokeParamsDto,
-    @Body() dto: SessionRevokeDto,
+    @Param() dto: SessionRevokeDto,
   ) {
-    return this.sessionService.revokeSession(
-      user,
-      dto.password,
-      request.session.id,
-      params.sessionId,
-    );
+    return this.sessionService.revokeSession(user.id, request.session.id, dto.sessionId);
+  }
+
+  @Delete('sessions')
+  @HttpCode(200)
+  @Throttle({default: {limit: 6, ttl: minutes(1)}})
+  @ApiResponse({status: 200, description: 'All other sessions revoked.'})
+  @ApiResponse({status: 401, description: 'User is not logged in.'})
+  @ApiResponse({status: 429, description: 'Too many requests. Try again later.'})
+  @ApiOperation({summary: 'Revokes all sessions except the current one.'})
+  async revokeAllOtherSessions(@CurrentUser() user: User, @Req() request: Request) {
+    return await this.sessionService.revokeAllOtherSessions(user.id, request.session.id);
   }
 }

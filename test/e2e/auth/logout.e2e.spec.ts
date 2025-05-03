@@ -1,4 +1,5 @@
 import {faker} from '@faker-js/faker';
+import {Server} from 'node:net';
 import request from 'supertest';
 import TestAgent from 'supertest/lib/agent';
 
@@ -7,7 +8,7 @@ import {SignUpDto} from '@modules/auth/api/dtos/signup.dto';
 import {getApp} from '../../setup/e2e.setup';
 
 describe('AuthController - Logout', () => {
-  let httpServer: any;
+  let httpServer: Server;
 
   beforeAll(async () => {
     httpServer = getApp().getHttpServer();

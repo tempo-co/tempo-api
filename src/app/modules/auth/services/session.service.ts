@@ -7,9 +7,8 @@ import {IResult, UAParser} from 'ua-parser-js';
 import {ConfigurationService} from '@core/config/config.service';
 import {REDIS} from '@core/redis/redis.constants';
 import {User} from '@modules/user/user.entity';
-import {UserService} from '@modules/user/user.service';
 
-import {SessionDto} from '../api/dtos/session.dto';
+import {SessionResponseDto} from '../api/dtos/session-response.dto';
 import {AuthenticatedSession} from './authenticated-session.interface';
 
 @Injectable()
@@ -19,7 +18,6 @@ export class SessionService {
   constructor(
     @Inject(REDIS) private readonly redisClient: Redis,
     private readonly configService: ConfigurationService,
-    private readonly userService: UserService,
   ) {
     this.REDIS_KEY = this.configService.get('SESSION_REDIS_KEY');
   }
@@ -31,7 +29,7 @@ export class SessionService {
    * NOTE: This implementation does not scale well.
    */
   async getSessions(userId: User['id'], currentSessionId: string) {
-    const userSessions: SessionDto[] = [];
+    const userSessions: SessionResponseDto[] = [];
 
     const scanBatchSize = '250';
     let cursor = '0';
@@ -82,9 +80,8 @@ export class SessionService {
 
     userSessions.sort((a, b) => {
       const isCurrentSortOrder = Number(b.isCurrent) - Number(a.isCurrent);
-      if (isCurrentSortOrder !== 0) {
-        return isCurrentSortOrder;
-      }
+      if (isCurrentSortOrder !== 0) return isCurrentSortOrder;
+
       return new Date(b.lastSeenAt).getTime() - new Date(a.lastSeenAt).getTime();
     });
 
@@ -92,42 +89,51 @@ export class SessionService {
   }
 
   /** Revokes a user's active session. */
-  async revokeSession(
-    currentUser: User,
-    password: User['password'],
-    currentSessionId: string,
-    sessionIdToRevoke: string,
-  ) {
+  async revokeSession(userId: User['id'], currentSessionId: string, sessionIdToRevoke: string) {
     if (sessionIdToRevoke === currentSessionId) {
       throw new ConflictException('Cannot revoke the current session. Log out instead.');
     }
 
-    await this.userService.verifyPassword(currentUser.password, password);
-
     const sessionKey = `${this.REDIS_KEY}:${sessionIdToRevoke}`;
     const sessionDataString = await this.redisClient.get(sessionKey);
     if (!sessionDataString) {
-      throw new NotFoundException(`Session not found or expired.`);
+      throw new NotFoundException('Session not found or expired.');
     }
 
     const sessionData: AuthenticatedSession = JSON.parse(sessionDataString);
-    if (sessionData?.passport?.user !== currentUser.id) {
-      throw new NotFoundException(`Session not found or expired.`);
+    if (sessionData?.passport?.user !== userId) {
+      throw new NotFoundException('Session not found or expired.');
     }
 
     await this.redisClient.del(sessionKey);
     return {message: 'Session revoked.'};
   }
 
+  /** Revokes all sessions except the current one. */
+  async revokeAllOtherSessions(userId: User['id'], currentSessionId: string) {
+    const allSessions = await this.getSessions(userId, currentSessionId);
+
+    const sessionsToRevoke = allSessions.filter((session) => !session.isCurrent);
+    if (sessionsToRevoke.length === 0) {
+      return {message: 'No other sessions to revoke.'};
+    }
+
+    const pipeline = this.redisClient.pipeline();
+    for (const session of sessionsToRevoke) {
+      const sessionKey = `${this.REDIS_KEY}:${session.id}`;
+      pipeline.del(sessionKey);
+    }
+    await pipeline.exec();
+
+    return {message: `Successfully revoked ${sessionsToRevoke.length} session(s).`};
+  }
+
   /** Initializes the metadata (ip, user agent, timestamps) on a session. */
   async initializeSessionMetadata(request: Request) {
-    if (!request.session) {
-      return;
-    }
+    if (!request.session) return;
+
     const session: AuthenticatedSession = request.session;
-    if (!session.passport?.user || session.metadata) {
-      return;
-    }
+    if (!session.passport?.user || session.metadata) return;
 
     const ip = request.ip ?? 'Unknown';
     const userAgent = request.headers['user-agent'] ?? 'Unknown';
@@ -149,9 +155,7 @@ export class SessionService {
 
   /** Updates the `lastSeenAt` timestamp in the session metadata */
   updateLastSeen(session: AuthenticatedSession) {
-    if (!session.passport?.user || !session.metadata) {
-      return;
-    }
+    if (!session.passport?.user || !session.metadata) return;
     session.metadata.lastSeenAt = new Date().toISOString();
   }
 
@@ -170,9 +174,7 @@ export class SessionService {
 
     try {
       const geoData = await geoip.lookup(ip);
-      if (!geoData) {
-        return 'Unknown';
-      }
+      if (!geoData) return 'Unknown';
 
       const parts = [geoData.city, geoData.region, geoData.country].filter(Boolean);
 
@@ -219,9 +221,6 @@ export class SessionService {
       clientDescription = deviceType.charAt(0).toUpperCase() + deviceType.slice(1);
     }
 
-    return {
-      clientDescription,
-      deviceType,
-    };
+    return {clientDescription, deviceType};
   }
 }
