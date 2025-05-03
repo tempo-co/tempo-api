@@ -11,7 +11,7 @@ export class User {
 
   @Column({type: 'varchar', length: 255})
   @Expose()
-  name: string;
+  username: string;
 
   @Index()
   @Column({type: 'varchar', length: 255, unique: true})

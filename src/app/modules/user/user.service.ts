@@ -50,8 +50,8 @@ export class UserService {
     }
   }
 
-  async save(name: User['name'], email: User['email'], password: User['password']) {
-    return this.userRepository.save({name, email, password});
+  async save(username: User['username'], email: User['email'], password: User['password']) {
+    return this.userRepository.save({username, email, password});
   }
 
   async update(id: User['id'], updates: Partial<User>) {

@@ -42,7 +42,7 @@ describe('UserController - /me', () => {
       expect(user).toBeDefined();
       expect(user.id).toBeDefined();
       expect(user.email).toEqual(VERIFIED_USER_EMAIL);
-      expect(user.name).toEqual('Verified User');
+      expect(user.username).toEqual('Verified User');
       expect(user.isEmailVerified).toBe(true);
       expect(user.createdAt).toBeDefined();
       expect(user.password).toBeUndefined();
@@ -66,7 +66,7 @@ describe('UserController - /me', () => {
       expect(user).toBeDefined();
       expect(user.id).toBeDefined();
       expect(user.email).toEqual(UNVERIFIED_USER_EMAIL);
-      expect(user.name).toEqual('Unverified User');
+      expect(user.username).toEqual('Unverified User');
       expect(user.isEmailVerified).toBe(false);
       expect(user.createdAt).toBeDefined();
       expect(user.password).toBeUndefined();
@@ -102,39 +102,39 @@ describe('UserController - /me', () => {
         .expect(200);
     });
 
-    it('should update the name for an authenticated VERIFIED user', async () => {
-      const newName = faker.person.fullName();
-      const updateDto: UserUpdateDto = {name: newName};
+    it('should update the username for an authenticated VERIFIED user', async () => {
+      const newUsername = faker.person.fullName();
+      const updateDto: UserUpdateDto = {username: newUsername};
 
       const patchResponse = await verifiedAgent.patch('/users/me').send(updateDto).expect(200);
 
       const updatedUser: User = patchResponse.body;
       expect(updatedUser).toBeDefined();
-      expect(updatedUser.name).toEqual(newName);
+      expect(updatedUser.username).toEqual(newUsername);
       expect(updatedUser.email).toEqual(VERIFIED_USER_EMAIL);
       expect(updatedUser.isEmailVerified).toBe(true);
       expect(updatedUser.password).toBeUndefined();
 
       const getResponse = await verifiedAgent.get('/users/me').expect(200);
-      expect(getResponse.body.name).toEqual(newName);
+      expect(getResponse.body.username).toEqual(newUsername);
     });
 
-    it('should strip disallowed fields and update the name for an authenticated VERIFIED user', async () => {
-      const updateDto = {name: 'Valid Name Again', email: 'ignored@mail.com'};
+    it('should strip disallowed fields and update the username for an authenticated VERIFIED user', async () => {
+      const updateDto = {username: 'Valid Username Again', email: 'ignored@mail.com'};
 
       await verifiedAgent
         .patch('/users/me')
         .send(updateDto)
         .expect(200)
         .expect((res) => {
-          expect(res.body.name).toEqual('Valid Name Again');
+          expect(res.body.username).toEqual('Valid Username Again');
           expect(res.body.email).toEqual(VERIFIED_USER_EMAIL);
         });
     });
 
     it('should return 403 Forbidden for an UNVERIFIED user', async () => {
-      const newName = faker.person.fullName();
-      const updateDto: UserUpdateDto = {name: newName};
+      const newUsername = faker.person.fullName();
+      const updateDto: UserUpdateDto = {username: newUsername};
 
       await unverifiedAgent
         .patch('/users/me')
@@ -146,24 +146,24 @@ describe('UserController - /me', () => {
     });
 
     it('should return 401 Unauthorized if the user is not authenticated', async () => {
-      const updateDto: UserUpdateDto = {name: 'Attempt Update'};
+      const updateDto: UserUpdateDto = {username: 'Attempt Update'};
       await request(httpServer).patch('/users/me').send(updateDto).expect(401);
     });
 
-    it('should return 400 Bad Request if name is missing', async () => {
+    it('should return 400 Bad Request if username is missing', async () => {
       await verifiedAgent
         .patch('/users/me')
         .send({})
         .expect(400)
         .expect((res) => {
           expect(res.body.message).toEqual(
-            expect.arrayContaining([expect.stringMatching(/name must be a string/i)]),
+            expect.arrayContaining([expect.stringMatching(/username must be a string/i)]),
           );
         });
     });
 
-    it('should return 400 Bad Request if name is empty', async () => {
-      const updateDto: Partial<UserUpdateDto> = {name: ''};
+    it('should return 400 Bad Request if username is empty', async () => {
+      const updateDto: Partial<UserUpdateDto> = {username: ''};
       await verifiedAgent
         .patch('/users/me')
         .send(updateDto)
@@ -171,15 +171,15 @@ describe('UserController - /me', () => {
         .expect((res) => {
           expect(res.body.message).toEqual(
             expect.arrayContaining([
-              expect.stringMatching(/name must be longer than or equal to 1 characters/i),
+              expect.stringMatching(/username must be longer than or equal to 1 characters/i),
             ]),
           );
         });
     });
 
-    it('should return 400 Bad Request if name is too long', async () => {
-      const longName = 'a'.repeat(256);
-      const updateDto: UserUpdateDto = {name: longName};
+    it('should return 400 Bad Request if username is too long', async () => {
+      const longUsername = 'a'.repeat(256);
+      const updateDto: UserUpdateDto = {username: longUsername};
       await verifiedAgent
         .patch('/users/me')
         .send(updateDto)
@@ -187,21 +187,21 @@ describe('UserController - /me', () => {
         .expect((res) => {
           expect(res.body.message).toEqual(
             expect.arrayContaining([
-              expect.stringMatching(/name must be shorter than or equal to 255 characters/i),
+              expect.stringMatching(/username must be shorter than or equal to 255 characters/i),
             ]),
           );
         });
     });
 
-    it('should return 400 Bad Request if name is not a string', async () => {
-      const updateDto = {name: 12345};
+    it('should return 400 Bad Request if username is not a string', async () => {
+      const updateDto = {username: 12345};
       await verifiedAgent
         .patch('/users/me')
         .send(updateDto)
         .expect(400)
         .expect((res) => {
           expect(res.body.message).toEqual(
-            expect.arrayContaining([expect.stringMatching(/name must be a string/i)]),
+            expect.arrayContaining([expect.stringMatching(/username must be a string/i)]),
           );
         });
     });

@@ -19,11 +19,11 @@ export class AuthService {
     private readonly sessionService: SessionService,
   ) {}
 
-  async signUp({name, email, password}: SignUpDto, request: Request) {
+  async signUp({username, email, password}: SignUpDto, request: Request) {
     await this.userService.validateEmailIsUnique(email);
 
     const hash = await argon2.hash(password);
-    const user = await this.userService.save(name, email, hash);
+    const user = await this.userService.save(username, email, hash);
 
     await this.emailVerifierService.sendWelcomeEmail(user);
     await this.logIn(user, request);
