@@ -55,7 +55,7 @@ export class EmailVerifierService {
       to: user.email,
       subject: `Welcome to Flair - ${code} is your verification code`,
       template: 'welcome',
-      context: {name: user.name, verificationUrl, code},
+      context: {username: user.username, verificationUrl, code},
     });
   }
 
@@ -71,7 +71,7 @@ export class EmailVerifierService {
       to: user.email,
       subject: `${code} is your verification code`,
       template: 'verify-email',
-      context: {name: user.name, verificationUrl, code},
+      context: {username: user.username, verificationUrl, code},
     });
 
     return {message: 'Verification email sent.'};
@@ -87,7 +87,7 @@ export class EmailVerifierService {
       to: newEmail,
       subject: `${code} is your verification code`,
       template: 'verify-new-email',
-      context: {name: user.name, code},
+      context: {username: user.username, code},
     });
     return {message: 'Verification email sent.'};
   }

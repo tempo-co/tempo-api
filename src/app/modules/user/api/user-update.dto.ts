@@ -5,5 +5,5 @@ import {User} from '../user.entity';
 export class UserUpdateDto {
   @IsString()
   @Length(1, 255)
-  name: User['name'];
+  username: User['username'];
 }

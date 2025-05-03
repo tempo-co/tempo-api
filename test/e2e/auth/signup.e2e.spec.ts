@@ -32,7 +32,7 @@ describe('AuthController - Signup', () => {
   describe('/auth/signup (POST)', () => {
     it('should sign up a new user and send welcome email', async () => {
       const signUpDto: SignUpDto = {
-        name: faker.person.fullName(),
+        username: faker.person.fullName(),
         email: faker.internet.email(),
         password: faker.internet.password({length: 10}),
       };
@@ -40,7 +40,7 @@ describe('AuthController - Signup', () => {
       const response = await request(httpServer).post('/auth/signup').send(signUpDto).expect(201);
 
       expect(response.body?.email).toEqual(signUpDto.email);
-      expect(response.body?.name).toEqual(signUpDto.name);
+      expect(response.body?.username).toEqual(signUpDto.username);
       expect(response.body?.id).toBeDefined();
       expect(response.body?.isEmailVerified).toBe(false);
       expect(response.body?.createdAt).toBeDefined();
@@ -55,21 +55,21 @@ describe('AuthController - Signup', () => {
       expect(recipientEmail).toEqual(signUpDto.email);
       expect(subject).toContain('Welcome to Flair');
       expect(subject).toContain('is your verification code');
-      expect(body).toContain(signUpDto.name);
+      expect(body).toContain(signUpDto.username);
       expect(body).toMatch(/Or use the[\s\S]*?following code:\s*(\d{6})/i);
     });
 
     it('should fail with 409 Conflict if email is already in use', async () => {
       const email = faker.internet.email();
-      const existingUserDto = {
-        name: faker.person.fullName(),
+      const existingUserDto: SignUpDto = {
+        username: faker.person.fullName(),
         email: email,
         password: faker.internet.password({length: 10}),
       };
       await request(httpServer).post('/auth/signup').send(existingUserDto).expect(201);
 
-      const duplicateSignUpDto = {
-        name: faker.person.fullName(),
+      const duplicateSignUpDto: SignUpDto = {
+        username: faker.person.fullName(),
         email: email,
         password: faker.internet.password({length: 11}),
       };
@@ -84,8 +84,8 @@ describe('AuthController - Signup', () => {
     });
 
     it('should fail with 400 Bad Request if password is too short', async () => {
-      const signUpDto = {
-        name: faker.person.fullName(),
+      const signUpDto: SignUpDto = {
+        username: faker.person.fullName(),
         email: faker.internet.email(),
         password: '123',
       };
@@ -103,8 +103,8 @@ describe('AuthController - Signup', () => {
         });
     });
 
-    it('should fail with 400 Bad Request if name is missing', async () => {
-      const signUpDto = {
+    it('should fail with 400 Bad Request if username is missing', async () => {
+      const signUpDto: Partial<SignUpDto> = {
         email: faker.internet.email(),
         password: faker.internet.password({length: 10}),
       };
@@ -114,14 +114,14 @@ describe('AuthController - Signup', () => {
         .expect(400)
         .expect((res) => {
           expect(res.body.message).toEqual(
-            expect.arrayContaining([expect.stringMatching(/name should not be empty/i)]),
+            expect.arrayContaining([expect.stringMatching(/username should not be empty/i)]),
           );
         });
     });
 
     it('should fail with 400 Bad Request if email is missing', async () => {
-      const signUpDto = {
-        name: faker.person.fullName(),
+      const signUpDto: Partial<SignUpDto> = {
+        username: faker.person.fullName(),
         password: faker.internet.password({length: 10}),
       };
       await request(httpServer)
@@ -135,9 +135,9 @@ describe('AuthController - Signup', () => {
         });
     });
 
-    it('should fail with 400 Bad Request if name is empty', async () => {
-      const signUpDto = {
-        name: '',
+    it('should fail with 400 Bad Request if username is empty', async () => {
+      const signUpDto: SignUpDto = {
+        username: '',
         email: faker.internet.email(),
         password: faker.internet.password({length: 10}),
       };
@@ -147,14 +147,14 @@ describe('AuthController - Signup', () => {
         .expect(400)
         .expect((res) => {
           expect(res.body.message).toEqual(
-            expect.arrayContaining([expect.stringMatching(/name should not be empty/i)]),
+            expect.arrayContaining([expect.stringMatching(/username should not be empty/i)]),
           );
         });
     });
 
     it('should fail with 400 Bad Request if email is empty', async () => {
-      const signUpDto = {
-        name: faker.person.fullName(),
+      const signUpDto: SignUpDto = {
+        username: faker.person.fullName(),
         email: '',
         password: faker.internet.password({length: 10}),
       };
@@ -170,8 +170,8 @@ describe('AuthController - Signup', () => {
     });
 
     it('should fail with 400 Bad Request if email is not a valid email format', async () => {
-      const signUpDto = {
-        name: faker.person.fullName(),
+      const signUpDto: SignUpDto = {
+        username: faker.person.fullName(),
         email: 'not-a-valid-email',
         password: faker.internet.password({length: 10}),
       };
@@ -260,7 +260,7 @@ describe('AuthController - Signup', () => {
 
     beforeEach(async () => {
       userCredentials = {
-        name: faker.person.fullName(),
+        username: faker.person.fullName(),
         email: faker.internet.email(),
         password: faker.internet.password({length: 10}),
       };
