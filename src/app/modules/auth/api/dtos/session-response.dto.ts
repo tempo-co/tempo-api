@@ -1,11 +1,11 @@
 export class SessionResponseDto {
-  id: string;
-  ip: string;
-  userAgent: string;
-  deviceType: string;
-  clientDescription: string;
-  clientLocation: string;
-  createdAt: string;
-  lastSeenAt: string;
-  isCurrent: boolean;
+	id: string;
+	ip: string;
+	userAgent: string;
+	deviceType: string;
+	clientDescription: string;
+	clientLocation: string;
+	createdAt: string;
+	lastSeenAt: string;
+	isCurrent: boolean;
 }

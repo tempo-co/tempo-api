@@ -2,35 +2,35 @@ import {Injectable, NotFoundException} from '@nestjs/common';
 import {InjectRepository} from '@nestjs/typeorm';
 import {Repository} from 'typeorm';
 
-import {User} from '@modules/user/user.entity';
-import {UserService} from '@modules/user/user.service';
+import {Account} from '@modules/account/account.entity';
+import {AccountService} from '@modules/account/account.service';
 
 import {BankAccountCreateDto} from './api/bank-account-create.dto';
 import {BankAccount} from './bank-account.entity';
 
 @Injectable()
 export class BankAccountService {
-  constructor(
-    @InjectRepository(BankAccount)
-    private readonly bankAccountRepository: Repository<BankAccount>,
-    private readonly userService: UserService,
-  ) {}
+	constructor(
+		@InjectRepository(BankAccount)
+		private readonly bankAccountRepository: Repository<BankAccount>,
+		private readonly accountService: AccountService,
+	) {}
 
-  async save(dto: BankAccountCreateDto, userId: User['id']): Promise<BankAccount> {
-    const user = await this.userService.findById(userId);
-    return this.bankAccountRepository.save({...dto, user});
-  }
+	async save(dto: BankAccountCreateDto, accountId: Account['id']): Promise<BankAccount> {
+		const account = await this.accountService.findById(accountId);
+		return this.bankAccountRepository.save({...dto, account});
+	}
 
-  async findAllByUserId(userId: User['id']) {
-    return this.bankAccountRepository.findBy({user: {id: userId}});
-  }
+	async findAllByAccountId(accountId: Account['id']) {
+		return this.bankAccountRepository.findBy({account: {id: accountId}});
+	}
 
-  async findById(id: BankAccount['id'], userId: User['id']) {
-    const bankAccount = await this.bankAccountRepository.findOneBy({id, user: {id: userId}});
+	async findById(id: BankAccount['id'], accountId: Account['id']) {
+		const bankAccount = await this.bankAccountRepository.findOneBy({id, account: {id: accountId}});
 
-    if (!bankAccount) {
-      throw new NotFoundException(`Bank account not found.`);
-    }
-    return bankAccount;
-  }
+		if (!bankAccount) {
+			throw new NotFoundException(`Bank account not found.`);
+		}
+		return bankAccount;
+	}
 }

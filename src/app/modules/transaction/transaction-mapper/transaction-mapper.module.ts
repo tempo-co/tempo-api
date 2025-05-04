@@ -6,12 +6,7 @@ import {TransactionMapperFactory} from './services/transaction-mapper.factory';
 import {TransactionMapperService} from './services/transaction-mapper.service';
 
 @Module({
-  providers: [
-    TransactionMapperService,
-    TransactionMapperFactory,
-    AbnAmroTransactionMapper,
-    RevolutTransactionMapper,
-  ],
-  exports: [TransactionMapperService],
+	providers: [TransactionMapperService, TransactionMapperFactory, AbnAmroTransactionMapper, RevolutTransactionMapper],
+	exports: [TransactionMapperService],
 })
 export class TransactionMapperModule {}

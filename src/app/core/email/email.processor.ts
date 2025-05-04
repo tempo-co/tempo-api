@@ -7,21 +7,21 @@ import {EMAIL_QUEUE} from '@core/queue/queue.constants';
 
 @Processor(EMAIL_QUEUE)
 export class EmailProcessor extends WorkerHost {
-  private readonly logger = new Logger(EmailProcessor.name);
+	private readonly logger = new Logger(EmailProcessor.name);
 
-  constructor(private readonly mailerService: MailerService) {
-    super();
-  }
+	constructor(private readonly mailerService: MailerService) {
+		super();
+	}
 
-  async process(job: Job<ISendMailOptions>) {
-    try {
-      await this.mailerService.sendMail(job.data);
-    } catch (error) {
-      this.logger.error(
-        `Error sending email job ${job.id} for recipient ${job.data.to}: ${error.message}`,
-        error.stack,
-      );
-      throw error;
-    }
-  }
+	async process(job: Job<ISendMailOptions>) {
+		try {
+			await this.mailerService.sendMail(job.data);
+		} catch (error) {
+			this.logger.error(
+				`Error sending email job ${job.id} for recipient ${job.data.to}: ${error.message}`,
+				error.stack,
+			);
+			throw error;
+		}
+	}
 }

@@ -6,7 +6,7 @@ import {CsvFileParser} from './services/impl/csv-file-parser';
 import {XlsFileParser} from './services/impl/xls-file-parser';
 
 @Module({
-  providers: [FileParserService, FileParserFactory, XlsFileParser, CsvFileParser],
-  exports: [FileParserService],
+	providers: [FileParserService, FileParserFactory, XlsFileParser, CsvFileParser],
+	exports: [FileParserService],
 })
 export class FileParserModule {}

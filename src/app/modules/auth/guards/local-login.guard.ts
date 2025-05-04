@@ -5,16 +5,16 @@ import {SessionService} from '../services/session.service';
 
 @Injectable()
 export class LocalLogInGuard extends AuthGuard('local') implements CanActivate {
-  constructor(private readonly sessionService: SessionService) {
-    super();
-  }
+	constructor(private readonly sessionService: SessionService) {
+		super();
+	}
 
-  async canActivate(context: ExecutionContext) {
-    const result = (await super.canActivate(context)) as boolean;
-    const request = context.switchToHttp().getRequest();
+	async canActivate(context: ExecutionContext) {
+		const result = (await super.canActivate(context)) as boolean;
+		const request = context.switchToHttp().getRequest();
 
-    await super.logIn(request);
-    await this.sessionService.initializeSessionMetadata(request);
-    return result;
-  }
+		await super.logIn(request);
+		await this.sessionService.initializeSessionMetadata(request);
+		return result;
+	}
 }

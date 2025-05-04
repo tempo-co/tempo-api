@@ -7,20 +7,20 @@ import {XlsFileParser} from './impl/xls-file-parser';
 
 @Injectable()
 export class FileParserFactory {
-  constructor(
-    private readonly xlsParser: XlsFileParser,
-    private readonly csvParser: CsvFileParser,
-  ) {}
+	constructor(
+		private readonly xlsParser: XlsFileParser,
+		private readonly csvParser: CsvFileParser,
+	) {}
 
-  create(mimetype: string): FileParser {
-    switch (mimetype) {
-      case MimeType.XLS:
-      case MimeType.XLSX:
-        return this.xlsParser;
-      case MimeType.CSV:
-        return this.csvParser;
-      default:
-        throw new BadRequestException(`Unsupported file type: ${mimetype}`);
-    }
-  }
+	create(mimetype: string): FileParser {
+		switch (mimetype) {
+			case MimeType.XLS:
+			case MimeType.XLSX:
+				return this.xlsParser;
+			case MimeType.CSV:
+				return this.csvParser;
+			default:
+				throw new BadRequestException(`Unsupported file type: ${mimetype}`);
+		}
+	}
 }

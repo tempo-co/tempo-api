@@ -13,16 +13,16 @@ import {BankStatement} from './bank-statement.entity';
 import {BankStatementService} from './bank-statement.service';
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([BankStatement]),
-    BankAccountModule,
-    FileParserModule,
-    TransactionMapperModule,
-    TransactionCategorizerModule,
-    TransactionModule,
-    FileModule,
-  ],
-  providers: [BankStatementService],
-  controllers: [BankStatementController],
+	imports: [
+		TypeOrmModule.forFeature([BankStatement]),
+		BankAccountModule,
+		FileParserModule,
+		TransactionMapperModule,
+		TransactionCategorizerModule,
+		TransactionModule,
+		FileModule,
+	],
+	providers: [BankStatementService],
+	controllers: [BankStatementController],
 })
 export class BankStatementModule {}
