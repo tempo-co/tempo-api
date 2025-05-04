@@ -27,12 +27,7 @@ export class UserService {
   }
 
   async findByEmail(email: User['email']) {
-    const user = await this.userRepository.findOneBy({email});
-
-    if (!user) {
-      throw new NotFoundException(`User not found.`);
-    }
-    return user;
+    return await this.userRepository.findOneBy({email});
   }
 
   async validateEmailIsUnique(email: User['email']) {

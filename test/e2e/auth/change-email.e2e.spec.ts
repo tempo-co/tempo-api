@@ -5,6 +5,7 @@ import TestAgent from 'supertest/lib/agent';
 
 import {ConfigurationService} from '@core/config/config.service';
 import {EmailChangeDto} from '@modules/auth/api/dtos/email-change.dto';
+import {EmailVerifyDto} from '@modules/auth/api/dtos/email-verify.dto';
 import {SignUpDto} from '@modules/auth/api/dtos/signup.dto';
 import {User} from '@modules/user/user.entity';
 
@@ -386,7 +387,9 @@ describe('AuthController - Change email', () => {
       const signupEmailB = await findEmailByRecipient(userBCredentials.email, mailhogApiUrl);
       const signupCodeB = extractVerificationCode(signupEmailB?.Content?.Body);
       expect(signupCodeB).toBeDefined();
-      await request(httpServer).post('/auth/signup/verify').send({code: signupCodeB}).expect(200);
+
+      const emailVerifyDto: EmailVerifyDto = {code: signupCodeB!, email: userBCredentials.email};
+      await request(httpServer).post('/auth/signup/verify').send(emailVerifyDto).expect(200);
 
       const userBAgent = request.agent(httpServer);
       await userBAgent

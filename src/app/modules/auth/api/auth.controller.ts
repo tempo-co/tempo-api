@@ -24,6 +24,7 @@ import {AuthService} from '../services/auth.service';
 import {EmailVerifierService} from '../services/email-verifier.service';
 import {SessionService} from '../services/session.service';
 import {ChangePasswordDto} from './dtos/change-password.dto';
+import {EmailChangeVerifyDto} from './dtos/email-change-verify.dto';
 import {EmailChangeDto} from './dtos/email-change.dto';
 import {EmailVerifyDto} from './dtos/email-verify.dto';
 import {LogInDto} from './dtos/login.dto';
@@ -43,7 +44,6 @@ export class AuthController {
   @Public()
   @Post('signup')
   @HttpCode(201)
-  @SkipEmailVerification()
   @Throttle({default: {limit: 6, ttl: minutes(1)}})
   @ApiResponse({status: 201, description: 'User created.'})
   @ApiResponse({status: 400, description: 'Validation of the request body failed.'})
@@ -112,14 +112,13 @@ export class AuthController {
   @Public()
   @Post('signup/verify')
   @HttpCode(200)
-  @SkipEmailVerification()
   @Throttle({default: {limit: 6, ttl: minutes(1)}})
   @ApiResponse({status: 200, description: 'Email verified.'})
   @ApiResponse({status: 400, description: 'Invalid or expired verification code.'})
   @ApiResponse({status: 429, description: 'Too many requests. Try again later.'})
   @ApiOperation({summary: "Verifies a user's email using a code"})
   async verifyEmail(@Body() dto: EmailVerifyDto, @Req() request: Request) {
-    const user = await this.emailVerifierService.verify(dto.code);
+    const user = await this.emailVerifierService.verify(dto.code, dto.email);
     if (!request.isAuthenticated()) {
       await this.authService.logIn(user, request);
     }
@@ -148,7 +147,7 @@ export class AuthController {
   @ApiResponse({status: 409, description: 'This email is already in use.'})
   @ApiResponse({status: 429, description: 'Too many requests. Try again later.'})
   @ApiOperation({summary: 'Verifies the new email using a code'})
-  async verifyEmailChange(@CurrentUser() user: User, @Body() dto: EmailVerifyDto) {
+  async verifyEmailChange(@CurrentUser() user: User, @Body() dto: EmailChangeVerifyDto) {
     return this.emailVerifierService.verifyEmailChange(user, dto.code);
   }
 

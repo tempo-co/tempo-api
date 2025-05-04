@@ -31,12 +31,16 @@ export class EmailVerifierService {
     this.EXPIRATION = expirationSeconds;
   }
 
-  async verify(code: string) {
-    const email = await this.getEmailByCode(code);
-
-    const user = await this.userService.findByEmail(email).catch(() => {
+  async verify(code: string, email: User['email']) {
+    const expectedEmail = await this.getEmailByCode(code);
+    if (expectedEmail !== email) {
       throw new BadRequestException('Invalid or expired verification code.');
-    });
+    }
+
+    const user = await this.userService.findByEmail(email);
+    if (!user) {
+      throw new BadRequestException('Invalid or expired verification code.');
+    }
 
     if (user.isEmailVerified) {
       throw new BadRequestException('Email is already verified.');
@@ -48,36 +52,42 @@ export class EmailVerifierService {
   }
 
   async sendWelcomeEmail(user: User) {
-    const code = await this.createCode(user.email);
-    const verificationUrl = await this.createUrl(code);
+    const {email, username} = user;
+
+    const code = await this.createCode(email);
+    const verificationUrl = await this.createUrl(code, email);
 
     await this.emailService.send({
-      to: user.email,
+      to: email,
       subject: `Welcome to Flair - ${code} is your verification code`,
       template: 'welcome',
-      context: {username: user.username, verificationUrl, code},
+      context: {username, verificationUrl, code},
     });
   }
 
   async sendVerifyEmail(user: User) {
-    if (user.isEmailVerified) {
+    const {email, username, isEmailVerified} = user;
+
+    if (isEmailVerified) {
       throw new BadRequestException('Email is already verified.');
     }
 
-    const code = await this.createCode(user.email);
-    const verificationUrl = await this.createUrl(code);
+    const code = await this.createCode(email);
+    const verificationUrl = await this.createUrl(code, email);
 
     await this.emailService.send({
-      to: user.email,
+      to: email,
       subject: `${code} is your verification code`,
       template: 'verify-email',
-      context: {username: user.username, verificationUrl, code},
+      context: {username, verificationUrl, code},
     });
 
     return {message: 'Verification email sent.'};
   }
 
-  async requestEmailChange(user: User, {newEmail, password}: EmailChangeDto) {
+  async requestEmailChange(user: User, dto: EmailChangeDto) {
+    const {newEmail, password} = dto;
+
     await this.userService.verifyPassword(user.password, password);
     await this.userService.validateEmailIsUnique(newEmail);
 
@@ -102,9 +112,9 @@ export class EmailVerifierService {
     return updatedUser;
   }
 
-  async createUrl(code: string) {
+  async createUrl(code: string, email: User['email']) {
     const url = new URL('/verify', this.WEB_BASE_URL);
-    url.search = new URLSearchParams({code}).toString();
+    url.search = new URLSearchParams({email, code}).toString();
     return url.toString();
   }
 
