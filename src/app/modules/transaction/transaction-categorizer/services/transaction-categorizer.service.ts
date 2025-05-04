@@ -10,31 +10,29 @@ type CategorizedTransactionPartial = TransactionPartial & {category: Transaction
 
 @Injectable()
 export class TransactionCategorizerService {
-  constructor(private readonly model: GenerativeModel) {}
+	constructor(private readonly model: GenerativeModel) {}
 
-  async categorize(transactions: TransactionPartial[]): Promise<CategorizedTransactionPartial[]> {
-    try {
-      const serializedTransactions = JSON.stringify(
-        transactions.map(({description, amount, currency}) => ({description, amount, currency})),
-      );
-      const result = await this.model.generateContent(serializedTransactions);
-      const categories: string[] = JSON.parse(result.response.text());
+	async categorize(transactions: TransactionPartial[]): Promise<CategorizedTransactionPartial[]> {
+		try {
+			const serializedTransactions = JSON.stringify(
+				transactions.map(({description, amount, currency}) => ({description, amount, currency})),
+			);
+			const result = await this.model.generateContent(serializedTransactions);
+			const categories: string[] = JSON.parse(result.response.text());
 
-      return transactions.map((transaction, index) => ({
-        ...transaction,
-        category: this.mapCategory(categories[index]),
-      }));
-    } catch (error) {
-      return transactions.map((transaction) => ({
-        ...transaction,
-        category: Category.OTHER,
-      }));
-    }
-  }
+			return transactions.map((transaction, index) => ({
+				...transaction,
+				category: this.mapCategory(categories[index]),
+			}));
+		} catch (error) {
+			return transactions.map((transaction) => ({
+				...transaction,
+				category: Category.OTHER,
+			}));
+		}
+	}
 
-  private mapCategory(category: string): Category {
-    return Object.values(Category).includes(category as Category)
-      ? (category as Category)
-      : Category.OTHER;
-  }
+	private mapCategory(category: string): Category {
+		return Object.values(Category).includes(category as Category) ? (category as Category) : Category.OTHER;
+	}
 }

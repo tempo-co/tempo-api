@@ -7,18 +7,18 @@ import {currencyCodes} from '@modules/transaction/transaction-mapper/constants/c
 import {BankAccount} from '../bank-account.entity';
 
 export class BankAccountCreateDto {
-  @IsOptional()
-  @IsString()
-  @MaxLength(255)
-  alias: BankAccount['alias'];
+	@IsOptional()
+	@IsString()
+	@MaxLength(255)
+	alias: BankAccount['alias'];
 
-  @IsEnum(Bank)
-  bank: BankAccount['bank'];
+	@IsEnum(Bank)
+	bank: BankAccount['bank'];
 
-  @IsNotEmpty()
-  @IsString()
-  @Length(3, 3)
-  @IsIn(currencyCodes)
-  @Expose()
-  currency: BankAccount['currency'];
+	@IsNotEmpty()
+	@IsString()
+	@Length(3, 3)
+	@IsIn(currencyCodes)
+	@Expose()
+	currency: BankAccount['currency'];
 }

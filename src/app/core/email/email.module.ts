@@ -11,27 +11,27 @@ import {EmailProcessor} from './email.processor';
 import {EmailService} from './email.service';
 
 @Module({
-  imports: [
-    MailerModule.forRootAsync({
-      inject: [ConfigurationService],
-      useFactory: (config: ConfigurationService) => ({
-        transport: {
-          host: config.get('EMAIL_HOST'),
-          port: config.get('EMAIL_PORT'),
-          secure: config.get('NODE_ENV') === 'production',
-        },
-        defaults: {from: '"Flair" <no-reply@flair.com>'},
-        preview: config.get('NODE_ENV') === 'development',
-        template: {
-          dir: join(__dirname, 'templates'),
-          adapter: new HandlebarsAdapter(),
-          options: {strict: true},
-        },
-      }),
-    }),
-    BullModule.registerQueue({name: EMAIL_QUEUE}),
-  ],
-  providers: [EmailService, EmailProcessor],
-  exports: [EmailService, BullModule],
+	imports: [
+		MailerModule.forRootAsync({
+			inject: [ConfigurationService],
+			useFactory: (config: ConfigurationService) => ({
+				transport: {
+					host: config.get('EMAIL_HOST'),
+					port: config.get('EMAIL_PORT'),
+					secure: config.get('NODE_ENV') === 'production',
+				},
+				defaults: {from: '"Flair" <no-reply@flair.com>'},
+				preview: config.get('NODE_ENV') === 'development',
+				template: {
+					dir: join(__dirname, 'templates'),
+					adapter: new HandlebarsAdapter(),
+					options: {strict: true},
+				},
+			}),
+		}),
+		BullModule.registerQueue({name: EMAIL_QUEUE}),
+	],
+	providers: [EmailService, EmailProcessor],
+	exports: [EmailService, BullModule],
 })
 export class EmailModule {}

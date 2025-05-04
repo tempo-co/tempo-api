@@ -9,23 +9,23 @@ import {REDIS} from '@core/redis/redis.constants';
 import {RedisModule} from '@core/redis/redis.module';
 
 @Module({
-  imports: [
-    ThrottlerModule.forRootAsync({
-      imports: [RedisModule],
-      inject: [ConfigurationService, REDIS],
-      useFactory: (config: ConfigurationService, redisClient: Redis) => {
-        if (config.get('NODE_ENV') === 'test') return [];
-        return {
-          throttlers: [
-            {
-              ttl: ms(config.get('THROTTLE_TTL')),
-              limit: config.get('THROTTLE_LIMIT'),
-            },
-          ],
-          storage: new ThrottlerStorageRedisService(redisClient),
-        };
-      },
-    }),
-  ],
+	imports: [
+		ThrottlerModule.forRootAsync({
+			imports: [RedisModule],
+			inject: [ConfigurationService, REDIS],
+			useFactory: (config: ConfigurationService, redisClient: Redis) => {
+				if (config.get('NODE_ENV') === 'test') return [];
+				return {
+					throttlers: [
+						{
+							ttl: ms(config.get('THROTTLE_TTL')),
+							limit: config.get('THROTTLE_LIMIT'),
+						},
+					],
+					storage: new ThrottlerStorageRedisService(redisClient),
+				};
+			},
+		}),
+	],
 })
 export class RateLimitModule {}

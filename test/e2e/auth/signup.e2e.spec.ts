@@ -8,430 +8,429 @@ import {EmailVerifyDto} from '@modules/auth/api/dtos/email-verify.dto';
 import {SignUpDto} from '@modules/auth/api/dtos/signup.dto';
 
 import {
-  UNVERIFIED_USER_EMAIL,
-  UNVERIFIED_USER_PASSWORD,
-  VERIFIED_USER_EMAIL,
-  VERIFIED_USER_PASSWORD,
+	UNVERIFIED_ACCOUNT_EMAIL,
+	UNVERIFIED_ACCOUNT_PASSWORD,
+	VERIFIED_ACCOUNT_EMAIL,
+	VERIFIED_ACCOUNT_PASSWORD,
 } from '../../setup/constants';
 import {getApp} from '../../setup/e2e.setup';
 import {clearEmails, extractVerificationCode, findEmailByRecipient} from '../../utils/email.util';
 
 describe('AuthController - Signup', () => {
-  let mailhogApiUrl: string;
-  let httpServer: Server;
+	let mailhogApiUrl: string;
+	let httpServer: Server;
 
-  beforeAll(async () => {
-    const app = getApp();
-    mailhogApiUrl = app.get(ConfigurationService).get('EMAIL_UI_URL');
-    httpServer = app.getHttpServer();
-  });
+	beforeAll(async () => {
+		const app = getApp();
+		mailhogApiUrl = app.get(ConfigurationService).get('EMAIL_UI_URL');
+		httpServer = app.getHttpServer();
+	});
 
-  beforeEach(async () => {
-    await clearEmails(mailhogApiUrl);
-  });
+	beforeEach(async () => {
+		await clearEmails(mailhogApiUrl);
+	});
 
-  describe('/auth/signup (POST)', () => {
-    it('should sign up a new user and send welcome email', async () => {
-      const signUpDto: SignUpDto = {
-        username: faker.person.fullName(),
-        email: faker.internet.email(),
-        password: faker.internet.password({length: 10}),
-      };
+	describe('/auth/signup (POST)', () => {
+		it('should sign up a new account and send welcome email', async () => {
+			const signUpDto: SignUpDto = {
+				name: faker.person.fullName(),
+				email: faker.internet.email(),
+				password: faker.internet.password({length: 10}),
+			};
 
-      const response = await request(httpServer).post('/auth/signup').send(signUpDto).expect(201);
+			const response = await request(httpServer).post('/auth/signup').send(signUpDto).expect(201);
 
-      expect(response.body?.email).toEqual(signUpDto.email);
-      expect(response.body?.username).toEqual(signUpDto.username);
-      expect(response.body?.id).toBeDefined();
-      expect(response.body?.isEmailVerified).toBe(false);
-      expect(response.body?.createdAt).toBeDefined();
+			expect(response.body?.email).toEqual(signUpDto.email);
+			expect(response.body?.name).toEqual(signUpDto.name);
+			expect(response.body?.id).toBeDefined();
+			expect(response.body?.isEmailVerified).toBe(false);
+			expect(response.body?.createdAt).toBeDefined();
 
-      const welcomeEmail = await findEmailByRecipient(signUpDto.email, mailhogApiUrl);
-      expect(welcomeEmail).toBeDefined();
+			const welcomeEmail = await findEmailByRecipient(signUpDto.email, mailhogApiUrl);
+			expect(welcomeEmail).toBeDefined();
 
-      const recipientEmail = welcomeEmail?.To?.[0]?.Mailbox + '@' + welcomeEmail?.To?.[0]?.Domain;
-      const subject = welcomeEmail?.Content?.Headers?.Subject?.[0];
-      const body = welcomeEmail?.Content?.Body;
+			const recipientEmail = welcomeEmail?.To?.[0]?.Mailbox + '@' + welcomeEmail?.To?.[0]?.Domain;
+			const subject = welcomeEmail?.Content?.Headers?.Subject?.[0];
+			const body = welcomeEmail?.Content?.Body;
 
-      expect(recipientEmail).toEqual(signUpDto.email);
-      expect(subject).toContain('Welcome to Flair');
-      expect(subject).toContain('is your verification code');
-      expect(body).toContain(signUpDto.username);
-      expect(body).toMatch(/Or use the[\s\S]*?following code:\s*(\d{6})/i);
-    });
+			expect(recipientEmail).toEqual(signUpDto.email);
+			expect(subject).toContain('Welcome to Flair');
+			expect(subject).toContain('is your verification code');
+			expect(body).toContain(signUpDto.name);
+			expect(body).toMatch(/Or use the[\s\S]*?following code:\s*(\d{6})/i);
+		});
 
-    it('should fail with 409 Conflict if email is already in use', async () => {
-      const email = faker.internet.email();
-      const existingUserDto: SignUpDto = {
-        username: faker.person.fullName(),
-        email: email,
-        password: faker.internet.password({length: 10}),
-      };
-      await request(httpServer).post('/auth/signup').send(existingUserDto).expect(201);
+		it('should fail with 409 Conflict if email is already in use', async () => {
+			const email = faker.internet.email();
+			const existingAccountDto: SignUpDto = {
+				name: faker.person.fullName(),
+				email: email,
+				password: faker.internet.password({length: 10}),
+			};
+			await request(httpServer).post('/auth/signup').send(existingAccountDto).expect(201);
 
-      const duplicateSignUpDto: SignUpDto = {
-        username: faker.person.fullName(),
-        email: email,
-        password: faker.internet.password({length: 11}),
-      };
+			const duplicateSignUpDto: SignUpDto = {
+				name: faker.person.fullName(),
+				email: email,
+				password: faker.internet.password({length: 11}),
+			};
 
-      return request(httpServer)
-        .post('/auth/signup')
-        .send(duplicateSignUpDto)
-        .expect(409)
-        .expect((res) => {
-          expect(res.body.message).toMatch(/email.*already in use/i);
-        });
-    });
+			return request(httpServer)
+				.post('/auth/signup')
+				.send(duplicateSignUpDto)
+				.expect(409)
+				.expect((res) => {
+					expect(res.body.message).toMatch(/email.*already in use/i);
+				});
+		});
 
-    it('should fail with 400 Bad Request if password is too short', async () => {
-      const signUpDto: SignUpDto = {
-        username: faker.person.fullName(),
-        email: faker.internet.email(),
-        password: '123',
-      };
+		it('should fail with 400 Bad Request if password is too short', async () => {
+			const signUpDto: SignUpDto = {
+				name: faker.person.fullName(),
+				email: faker.internet.email(),
+				password: '123',
+			};
 
-      return request(httpServer)
-        .post('/auth/signup')
-        .send(signUpDto)
-        .expect(400)
-        .expect((res) => {
-          expect(res.body.message).toEqual(
-            expect.arrayContaining([
-              expect.stringMatching(/password must be longer than or equal to 8 characters/i),
-            ]),
-          );
-        });
-    });
+			return request(httpServer)
+				.post('/auth/signup')
+				.send(signUpDto)
+				.expect(400)
+				.expect((res) => {
+					expect(res.body.message).toEqual(
+						expect.arrayContaining([
+							expect.stringMatching(/password must be longer than or equal to 8 characters/i),
+						]),
+					);
+				});
+		});
 
-    it('should fail with 400 Bad Request if username is missing', async () => {
-      const signUpDto: Partial<SignUpDto> = {
-        email: faker.internet.email(),
-        password: faker.internet.password({length: 10}),
-      };
-      await request(httpServer)
-        .post('/auth/signup')
-        .send(signUpDto)
-        .expect(400)
-        .expect((res) => {
-          expect(res.body.message).toEqual(
-            expect.arrayContaining([expect.stringMatching(/username should not be empty/i)]),
-          );
-        });
-    });
+		it('should fail with 400 Bad Request if name is missing', async () => {
+			const signUpDto: Pick<SignUpDto, 'email' | 'password'> = {
+				email: faker.internet.email(),
+				password: faker.internet.password({length: 10}),
+			};
+			await request(httpServer)
+				.post('/auth/signup')
+				.send(signUpDto)
+				.expect(400)
+				.expect((res) => {
+					expect(res.body.message).toEqual(
+						expect.arrayContaining([expect.stringMatching(/name should not be empty/i)]),
+					);
+				});
+		});
 
-    it('should fail with 400 Bad Request if email is missing', async () => {
-      const signUpDto: Partial<SignUpDto> = {
-        username: faker.person.fullName(),
-        password: faker.internet.password({length: 10}),
-      };
-      await request(httpServer)
-        .post('/auth/signup')
-        .send(signUpDto)
-        .expect(400)
-        .expect((res) => {
-          expect(res.body.message).toEqual(
-            expect.arrayContaining([expect.stringMatching(/email should not be empty/i)]),
-          );
-        });
-    });
+		it('should fail with 400 Bad Request if email is missing', async () => {
+			const signUpDto: Partial<SignUpDto> = {
+				name: faker.person.fullName(),
+				password: faker.internet.password({length: 10}),
+			};
+			await request(httpServer)
+				.post('/auth/signup')
+				.send(signUpDto)
+				.expect(400)
+				.expect((res) => {
+					expect(res.body.message).toEqual(
+						expect.arrayContaining([expect.stringMatching(/email should not be empty/i)]),
+					);
+				});
+		});
 
-    it('should fail with 400 Bad Request if username is empty', async () => {
-      const signUpDto: SignUpDto = {
-        username: '',
-        email: faker.internet.email(),
-        password: faker.internet.password({length: 10}),
-      };
-      await request(httpServer)
-        .post('/auth/signup')
-        .send(signUpDto)
-        .expect(400)
-        .expect((res) => {
-          expect(res.body.message).toEqual(
-            expect.arrayContaining([expect.stringMatching(/username should not be empty/i)]),
-          );
-        });
-    });
+		it('should fail with 400 Bad Request if name is empty', async () => {
+			const signUpDto: SignUpDto = {
+				name: '',
+				email: faker.internet.email(),
+				password: faker.internet.password({length: 10}),
+			};
+			await request(httpServer)
+				.post('/auth/signup')
+				.send(signUpDto)
+				.expect(400)
+				.expect((res) => {
+					expect(res.body.message).toEqual(
+						expect.arrayContaining([expect.stringMatching(/name should not be empty/i)]),
+					);
+				});
+		});
 
-    it('should fail with 400 Bad Request if email is empty', async () => {
-      const signUpDto: SignUpDto = {
-        username: faker.person.fullName(),
-        email: '',
-        password: faker.internet.password({length: 10}),
-      };
-      await request(httpServer)
-        .post('/auth/signup')
-        .send(signUpDto)
-        .expect(400)
-        .expect((res) => {
-          expect(res.body.message).toEqual(
-            expect.arrayContaining([expect.stringMatching(/email should not be empty/i)]),
-          );
-        });
-    });
+		it('should fail with 400 Bad Request if email is empty', async () => {
+			const signUpDto: SignUpDto = {
+				name: faker.person.fullName(),
+				email: '',
+				password: faker.internet.password({length: 10}),
+			};
+			await request(httpServer)
+				.post('/auth/signup')
+				.send(signUpDto)
+				.expect(400)
+				.expect((res) => {
+					expect(res.body.message).toEqual(
+						expect.arrayContaining([expect.stringMatching(/email should not be empty/i)]),
+					);
+				});
+		});
 
-    it('should fail with 400 Bad Request if email is not a valid email format', async () => {
-      const signUpDto: SignUpDto = {
-        username: faker.person.fullName(),
-        email: 'not-a-valid-email',
-        password: faker.internet.password({length: 10}),
-      };
-      await request(httpServer)
-        .post('/auth/signup')
-        .send(signUpDto)
-        .expect(400)
-        .expect((res) => {
-          expect(res.body.message).toEqual(
-            expect.arrayContaining([expect.stringMatching(/email must be an email/i)]),
-          );
-        });
-    });
-  });
+		it('should fail with 400 Bad Request if email is not a valid email format', async () => {
+			const signUpDto: SignUpDto = {
+				name: faker.person.fullName(),
+				email: 'not-a-valid-email',
+				password: faker.internet.password({length: 10}),
+			};
+			await request(httpServer)
+				.post('/auth/signup')
+				.send(signUpDto)
+				.expect(400)
+				.expect((res) => {
+					expect(res.body.message).toEqual(
+						expect.arrayContaining([expect.stringMatching(/email must be an email/i)]),
+					);
+				});
+		});
+	});
 
-  describe('/auth/signup/resend (POST)', () => {
-    let unverifiedAgent: TestAgent;
-    let verifiedAgent: TestAgent;
+	describe('/auth/signup/resend (POST)', () => {
+		let unverifiedAgent: TestAgent;
+		let verifiedAgent: TestAgent;
 
-    beforeEach(async () => {
-      unverifiedAgent = request.agent(httpServer);
-      await unverifiedAgent
-        .post('/auth/login')
-        .send({email: UNVERIFIED_USER_EMAIL, password: UNVERIFIED_USER_PASSWORD})
-        .expect(200);
+		beforeEach(async () => {
+			unverifiedAgent = request.agent(httpServer);
+			await unverifiedAgent
+				.post('/auth/login')
+				.send({email: UNVERIFIED_ACCOUNT_EMAIL, password: UNVERIFIED_ACCOUNT_PASSWORD})
+				.expect(200);
 
-      verifiedAgent = request.agent(httpServer);
-      await verifiedAgent
-        .post('/auth/login')
-        .send({email: VERIFIED_USER_EMAIL, password: VERIFIED_USER_PASSWORD})
-        .expect(200);
+			verifiedAgent = request.agent(httpServer);
+			await verifiedAgent
+				.post('/auth/login')
+				.send({email: VERIFIED_ACCOUNT_EMAIL, password: VERIFIED_ACCOUNT_PASSWORD})
+				.expect(200);
 
-      await clearEmails(mailhogApiUrl);
-    });
+			await clearEmails(mailhogApiUrl);
+		});
 
-    it('should send a new verification email for an unverified user', async () => {
-      await unverifiedAgent
-        .post('/auth/signup/resend')
-        .send()
-        .expect(200)
-        .expect((res) => {
-          expect(res.body.message).toEqual('Verification email sent.');
-        });
+		it('should send a new verification email for an unverified account', async () => {
+			await unverifiedAgent
+				.post('/auth/signup/resend')
+				.send()
+				.expect(200)
+				.expect((res) => {
+					expect(res.body.message).toEqual('Verification email sent.');
+				});
 
-      const verificationEmail = await findEmailByRecipient(UNVERIFIED_USER_EMAIL, mailhogApiUrl);
-      expect(verificationEmail).toBeDefined();
+			const verificationEmail = await findEmailByRecipient(UNVERIFIED_ACCOUNT_EMAIL, mailhogApiUrl);
+			expect(verificationEmail).toBeDefined();
 
-      const recipientEmail =
-        verificationEmail?.To?.[0]?.Mailbox + '@' + verificationEmail?.To?.[0]?.Domain;
-      const subject = verificationEmail?.Content?.Headers?.Subject?.[0];
-      const body = verificationEmail?.Content?.Body;
+			const recipientEmail = verificationEmail?.To?.[0]?.Mailbox + '@' + verificationEmail?.To?.[0]?.Domain;
+			const subject = verificationEmail?.Content?.Headers?.Subject?.[0];
+			const body = verificationEmail?.Content?.Body;
 
-      expect(recipientEmail).toEqual(UNVERIFIED_USER_EMAIL);
-      expect(subject).toContain('is your verification code');
-      expect(body).toMatch(/Or use the[\s\S]*?following code:\s*(\d{6})/i);
-    });
+			expect(recipientEmail).toEqual(UNVERIFIED_ACCOUNT_EMAIL);
+			expect(subject).toContain('is your verification code');
+			expect(body).toMatch(/Or use the[\s\S]*?following code:\s*(\d{6})/i);
+		});
 
-    it('should fail with 400 Bad Request if the user is already verified', async () => {
-      await verifiedAgent
-        .post('/auth/signup/resend')
-        .send()
-        .expect(400)
-        .expect((res) => {
-          expect(res.body.message).toMatch(/Email is already verified/i);
-        });
+		it('should fail with 400 Bad Request if the email is already verified', async () => {
+			await verifiedAgent
+				.post('/auth/signup/resend')
+				.send()
+				.expect(400)
+				.expect((res) => {
+					expect(res.body.message).toMatch(/Email is already verified/i);
+				});
 
-      const email = await findEmailByRecipient(VERIFIED_USER_EMAIL, mailhogApiUrl);
-      expect(email).toBeUndefined();
-    });
+			const email = await findEmailByRecipient(VERIFIED_ACCOUNT_EMAIL, mailhogApiUrl);
+			expect(email).toBeUndefined();
+		});
 
-    it('should fail with 401 Unauthorized if the user is not logged in', async () => {
-      await request(httpServer)
-        .post('/auth/signup/resend')
-        .send()
-        .expect(401)
-        .expect((res) => {
-          expect(res.body.message).toMatch(/Unauthorized/i);
-        });
-    });
-  });
+		it('should fail with 401 Unauthorized if the user is not logged in', async () => {
+			await request(httpServer)
+				.post('/auth/signup/resend')
+				.send()
+				.expect(401)
+				.expect((res) => {
+					expect(res.body.message).toMatch(/Unauthorized/i);
+				});
+		});
+	});
 
-  describe('/auth/signup/verify (POST)', () => {
-    let verificationCode: string | null;
-    let userCredentials: SignUpDto;
-    let agent: TestAgent;
+	describe('/auth/signup/verify (POST)', () => {
+		let verificationCode: string | null;
+		let accountCredentials: SignUpDto;
+		let agent: TestAgent;
 
-    beforeEach(async () => {
-      userCredentials = {
-        username: faker.person.fullName(),
-        email: faker.internet.email(),
-        password: faker.internet.password({length: 10}),
-      };
-      await request(httpServer).post('/auth/signup').send(userCredentials).expect(201);
+		beforeEach(async () => {
+			accountCredentials = {
+				name: faker.person.fullName(),
+				email: faker.internet.email(),
+				password: faker.internet.password({length: 10}),
+			};
+			await request(httpServer).post('/auth/signup').send(accountCredentials).expect(201);
 
-      const welcomeEmail = await findEmailByRecipient(userCredentials.email, mailhogApiUrl);
-      verificationCode = extractVerificationCode(welcomeEmail?.Content?.Body);
-      expect(verificationCode).toBeDefined();
-      expect(verificationCode).toMatch(/^\d{6}$/);
+			const welcomeEmail = await findEmailByRecipient(accountCredentials.email, mailhogApiUrl);
+			verificationCode = extractVerificationCode(welcomeEmail?.Content?.Body);
+			expect(verificationCode).toBeDefined();
+			expect(verificationCode).toMatch(/^\d{6}$/);
 
-      agent = request.agent(httpServer);
-      await agent.post('/auth/login').send(userCredentials).expect(200);
+			agent = request.agent(httpServer);
+			await agent.post('/auth/login').send(accountCredentials).expect(200);
 
-      await clearEmails(mailhogApiUrl);
-    });
+			await clearEmails(mailhogApiUrl);
+		});
 
-    it('should verify email with correct code and email (unauthenticated)', async () => {
-      const payload: EmailVerifyDto = {code: verificationCode!, email: userCredentials.email};
+		it('should verify email with correct code and email (unauthenticated)', async () => {
+			const payload: EmailVerifyDto = {code: verificationCode!, email: accountCredentials.email};
 
-      const response = await request(httpServer)
-        .post('/auth/signup/verify')
-        .send(payload)
-        .expect(200)
-        .expect((res) => {
-          expect(res.body.message).toEqual('Email verified.');
-        });
+			const response = await request(httpServer)
+				.post('/auth/signup/verify')
+				.send(payload)
+				.expect(200)
+				.expect((res) => {
+					expect(res.body.message).toEqual('Email verified.');
+				});
 
-      const cookiesHeader = response.headers['set-cookie'];
-      expect(cookiesHeader).toBeDefined();
-      const sessionCookie = ([] as string[])
-        .concat(cookiesHeader || [])
-        .find((cookie: string) => cookie.startsWith('session='));
-      expect(sessionCookie).toBeDefined();
+			const cookiesHeader = response.headers['set-cookie'];
+			expect(cookiesHeader).toBeDefined();
+			const sessionCookie = ([] as string[])
+				.concat(cookiesHeader || [])
+				.find((cookie: string) => cookie.startsWith('session='));
+			expect(sessionCookie).toBeDefined();
 
-      const agent = request.agent(httpServer);
-      await agent.post('/auth/login').send(userCredentials).expect(200);
+			const agent = request.agent(httpServer);
+			await agent.post('/auth/login').send(accountCredentials).expect(200);
 
-      const meResponse = await agent.get('/users/me').expect(200);
-      expect(meResponse.body.isEmailVerified).toBe(true);
-    });
+			const meResponse = await agent.get('/accounts/me').expect(200);
+			expect(meResponse.body.isEmailVerified).toBe(true);
+		});
 
-    it('should verify email with correct code and email (authenticated)', async () => {
-      const payload: EmailVerifyDto = {code: verificationCode!, email: userCredentials.email};
+		it('should verify email with correct code and email (authenticated)', async () => {
+			const payload: EmailVerifyDto = {code: verificationCode!, email: accountCredentials.email};
 
-      await agent
-        .post('/auth/signup/verify')
-        .send(payload)
-        .expect(200)
-        .expect((res) => {
-          expect(res.body.message).toEqual('Email verified.');
-        });
+			await agent
+				.post('/auth/signup/verify')
+				.send(payload)
+				.expect(200)
+				.expect((res) => {
+					expect(res.body.message).toEqual('Email verified.');
+				});
 
-      const userRes = await agent.get('/users/me').expect(200);
-      expect(userRes.body.isEmailVerified).toBe(true);
-    });
+			const accountResponse = await agent.get('/accounts/me').expect(200);
+			expect(accountResponse.body.isEmailVerified).toBe(true);
+		});
 
-    it('should verify email with resend code (authenticated)', async () => {
-      await agent.post('/auth/signup/resend').send().expect(200);
+		it('should verify email with resend code (authenticated)', async () => {
+			await agent.post('/auth/signup/resend').send().expect(200);
 
-      const resendEmail = await findEmailByRecipient(userCredentials.email, mailhogApiUrl);
-      const resendCode = extractVerificationCode(resendEmail?.Content?.Body);
-      expect(resendCode).toBeDefined();
-      expect(resendCode).toMatch(/^\d{6}$/);
-      expect(resendCode).not.toEqual(verificationCode);
+			const resendEmail = await findEmailByRecipient(accountCredentials.email, mailhogApiUrl);
+			const resendCode = extractVerificationCode(resendEmail?.Content?.Body);
+			expect(resendCode).toBeDefined();
+			expect(resendCode).toMatch(/^\d{6}$/);
+			expect(resendCode).not.toEqual(verificationCode);
 
-      const payload: EmailVerifyDto = {
-        code: resendCode!,
-        email: userCredentials.email,
-      };
+			const payload: EmailVerifyDto = {
+				code: resendCode!,
+				email: accountCredentials.email,
+			};
 
-      await agent
-        .post('/auth/signup/verify')
-        .send(payload)
-        .expect(200)
-        .expect((res) => {
-          expect(res.body.message).toEqual('Email verified.');
-        });
+			await agent
+				.post('/auth/signup/verify')
+				.send(payload)
+				.expect(200)
+				.expect((res) => {
+					expect(res.body.message).toEqual('Email verified.');
+				});
 
-      const meResponse = await agent.get('/users/me').expect(200);
-      expect(meResponse.body.isEmailVerified).toBe(true);
-    });
+			const meResponse = await agent.get('/accounts/me').expect(200);
+			expect(meResponse.body.isEmailVerified).toBe(true);
+		});
 
-    it('should fail with 400 Bad Request for invalid code', async () => {
-      const payload: EmailVerifyDto = {code: '000000', email: userCredentials.email};
+		it('should fail with 400 Bad Request for invalid code', async () => {
+			const payload: EmailVerifyDto = {code: '000000', email: accountCredentials.email};
 
-      await request(httpServer)
-        .post('/auth/signup/verify')
-        .send(payload)
-        .expect(400)
-        .expect((res) => {
-          expect(res.body.message).toMatch(/Invalid or expired verification code/i);
-        });
-    });
+			await request(httpServer)
+				.post('/auth/signup/verify')
+				.send(payload)
+				.expect(400)
+				.expect((res) => {
+					expect(res.body.message).toMatch(/Invalid or expired verification code/i);
+				});
+		});
 
-    it('should fail with 400 Bad Request if email is already verified', async () => {
-      const payload: EmailVerifyDto = {code: verificationCode!, email: userCredentials.email};
+		it('should fail with 400 Bad Request if email is already verified', async () => {
+			const payload: EmailVerifyDto = {code: verificationCode!, email: accountCredentials.email};
 
-      await request(httpServer).post('/auth/signup/verify').send(payload).expect(200);
+			await request(httpServer).post('/auth/signup/verify').send(payload).expect(200);
 
-      await request(httpServer)
-        .post('/auth/signup/verify')
-        .send(payload)
-        .expect(400)
-        .expect((res) => {
-          expect(res.body.message).toMatch(/Invalid or expired verification code/i);
-        });
-    });
+			await request(httpServer)
+				.post('/auth/signup/verify')
+				.send(payload)
+				.expect(400)
+				.expect((res) => {
+					expect(res.body.message).toMatch(/Invalid or expired verification code/i);
+				});
+		});
 
-    it('should fail with 400 Bad Request for malformed code (too short)', async () => {
-      await request(httpServer)
-        .post('/auth/signup/verify')
-        .send({code: '12345'})
-        .expect(400)
-        .expect((res) => {
-          expect(res.body.message).toEqual(
-            expect.arrayContaining([expect.stringMatching(/Verification code must be 6 digits/i)]),
-          );
-        });
-    });
+		it('should fail with 400 Bad Request for malformed code (too short)', async () => {
+			await request(httpServer)
+				.post('/auth/signup/verify')
+				.send({code: '12345'})
+				.expect(400)
+				.expect((res) => {
+					expect(res.body.message).toEqual(
+						expect.arrayContaining([expect.stringMatching(/Verification code must be 6 digits/i)]),
+					);
+				});
+		});
 
-    it('should fail with 400 Bad Request for malformed code (non-digit)', async () => {
-      await request(httpServer)
-        .post('/auth/signup/verify')
-        .send({code: 'abcdef'})
-        .expect(400)
-        .expect((res) => {
-          expect(res.body.message).toEqual(
-            expect.arrayContaining([expect.stringMatching(/Verification code must be 6 digits/i)]),
-          );
-        });
-    });
+		it('should fail with 400 Bad Request for malformed code (non-digit)', async () => {
+			await request(httpServer)
+				.post('/auth/signup/verify')
+				.send({code: 'abcdef'})
+				.expect(400)
+				.expect((res) => {
+					expect(res.body.message).toEqual(
+						expect.arrayContaining([expect.stringMatching(/Verification code must be 6 digits/i)]),
+					);
+				});
+		});
 
-    it('should fail with 400 Bad Request for missing code', async () => {
-      await request(httpServer)
-        .post('/auth/signup/verify')
-        .send({})
-        .expect(400)
-        .expect((res) => {
-          expect(res.body.message).toEqual(
-            expect.arrayContaining([expect.stringMatching(/code should not be empty/i)]),
-          );
-        });
-    });
+		it('should fail with 400 Bad Request for missing code', async () => {
+			await request(httpServer)
+				.post('/auth/signup/verify')
+				.send({})
+				.expect(400)
+				.expect((res) => {
+					expect(res.body.message).toEqual(
+						expect.arrayContaining([expect.stringMatching(/code should not be empty/i)]),
+					);
+				});
+		});
 
-    it('should fail with 400 Bad Request for missing email', async () => {
-      const payload: Partial<EmailVerifyDto> = {code: verificationCode!};
+		it('should fail with 400 Bad Request for missing email', async () => {
+			const payload: Partial<EmailVerifyDto> = {code: verificationCode!};
 
-      await request(httpServer)
-        .post('/auth/signup/verify')
-        .send(payload)
-        .expect(400)
-        .expect((res) => {
-          expect(res.body.message).toEqual(
-            expect.arrayContaining([expect.stringMatching(/email should not be empty/i)]),
-          );
-        });
-    });
+			await request(httpServer)
+				.post('/auth/signup/verify')
+				.send(payload)
+				.expect(400)
+				.expect((res) => {
+					expect(res.body.message).toEqual(
+						expect.arrayContaining([expect.stringMatching(/email should not be empty/i)]),
+					);
+				});
+		});
 
-    it('should fail with 400 Bad Request for invalid email format', async () => {
-      const payload: EmailVerifyDto = {code: verificationCode!, email: 'not-an-email'};
+		it('should fail with 400 Bad Request for invalid email format', async () => {
+			const payload: EmailVerifyDto = {code: verificationCode!, email: 'not-an-email'};
 
-      await request(httpServer)
-        .post('/auth/signup/verify')
-        .send(payload)
-        .expect(400)
-        .expect((res) => {
-          expect(res.body.message).toEqual(
-            expect.arrayContaining([expect.stringMatching(/email must be an email/i)]),
-          );
-        });
-    });
-  });
+			await request(httpServer)
+				.post('/auth/signup/verify')
+				.send(payload)
+				.expect(400)
+				.expect((res) => {
+					expect(res.body.message).toEqual(
+						expect.arrayContaining([expect.stringMatching(/email must be an email/i)]),
+					);
+				});
+		});
+	});
 });

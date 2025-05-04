@@ -1,4 +1,4 @@
 export enum Bank {
-  ABN_AMRO = 'ABN AMRO',
-  REVOLUT = 'Revolut',
+	ABN_AMRO = 'ABN AMRO',
+	REVOLUT = 'Revolut',
 }

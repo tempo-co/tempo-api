@@ -4,7 +4,7 @@ import {PassportModule} from '@nestjs/passport';
 
 import {EmailModule} from '@core/email/email.module';
 import {EmailService} from '@core/email/email.service';
-import {UserModule} from '@modules/user/user.module';
+import {AccountModule} from '@modules/account/account.module';
 
 import {AuthController} from './api/auth.controller';
 import {AuthGuard} from './guards/auth.guard';
@@ -15,17 +15,17 @@ import {SessionService} from './services/session.service';
 import {LocalStrategy} from './strategies/local.strategy';
 
 @Module({
-  imports: [UserModule, EmailModule, PassportModule.register({session: true})],
-  providers: [
-    AuthService,
-    SessionService,
-    EmailVerifierService,
-    SessionSerializer,
-    LocalStrategy,
-    EmailService,
-    {provide: APP_GUARD, useClass: AuthGuard},
-  ],
-  controllers: [AuthController],
-  exports: [SessionService],
+	imports: [AccountModule, EmailModule, PassportModule.register({session: true})],
+	providers: [
+		AuthService,
+		SessionService,
+		EmailVerifierService,
+		SessionSerializer,
+		LocalStrategy,
+		EmailService,
+		{provide: APP_GUARD, useClass: AuthGuard},
+	],
+	controllers: [AuthController],
+	exports: [SessionService],
 })
 export class AuthModule {}

@@ -7,19 +7,19 @@ import {TransactionMapper} from './transaction-mapper.interface';
 
 @Injectable()
 export class TransactionMapperFactory {
-  constructor(
-    private readonly abnAmroMapper: AbnAmroTransactionMapper,
-    private readonly revolutMapper: RevolutTransactionMapper,
-  ) {}
+	constructor(
+		private readonly abnAmroMapper: AbnAmroTransactionMapper,
+		private readonly revolutMapper: RevolutTransactionMapper,
+	) {}
 
-  create(bank: Bank): TransactionMapper {
-    switch (bank) {
-      case Bank.ABN_AMRO:
-        return this.abnAmroMapper;
-      case Bank.REVOLUT:
-        return this.revolutMapper;
-      default:
-        throw new BadRequestException(`Unsupported bank: ${bank}`);
-    }
-  }
+	create(bank: Bank): TransactionMapper {
+		switch (bank) {
+			case Bank.ABN_AMRO:
+				return this.abnAmroMapper;
+			case Bank.REVOLUT:
+				return this.revolutMapper;
+			default:
+				throw new BadRequestException(`Unsupported bank: ${bank}`);
+		}
+	}
 }

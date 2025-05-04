@@ -6,27 +6,27 @@ import {Category} from '@modules/transaction/transaction-categorizer/constants/c
 import {Bank} from '../transaction-mapper/constants/bank.enum';
 
 export class DateRangeDto {
-  @IsDateString()
-  from: Date;
+	@IsDateString()
+	from: Date;
 
-  @IsDateString()
-  @IsOptional()
-  to?: Date;
+	@IsDateString()
+	@IsOptional()
+	to?: Date;
 }
 
 export class TransactionQueryFilterDto {
-  @IsOptional()
-  @IsArray()
-  @IsEnum(Category, {each: true})
-  categories?: Category[];
+	@IsOptional()
+	@IsArray()
+	@IsEnum(Category, {each: true})
+	categories?: Category[];
 
-  @IsOptional()
-  @ValidateNested()
-  @Type(() => DateRangeDto)
-  startedAt?: DateRangeDto;
+	@IsOptional()
+	@ValidateNested()
+	@Type(() => DateRangeDto)
+	startedAt?: DateRangeDto;
 
-  @IsOptional()
-  @IsArray()
-  @IsEnum(Bank, {each: true})
-  banks?: Bank[];
+	@IsOptional()
+	@IsArray()
+	@IsEnum(Bank, {each: true})
+	banks?: Bank[];
 }

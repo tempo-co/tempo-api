@@ -6,18 +6,18 @@ import {TransactionQueryPaginationDto} from './transaction-query-pagination.dto'
 import {TransactionQuerySortDto} from './transaction-query-sort.dto';
 
 export class TransactionQueryDto {
-  @IsOptional()
-  @ValidateNested()
-  @Type(() => TransactionQueryPaginationDto)
-  pagination?: TransactionQueryPaginationDto;
+	@IsOptional()
+	@ValidateNested()
+	@Type(() => TransactionQueryPaginationDto)
+	pagination?: TransactionQueryPaginationDto;
 
-  @IsOptional()
-  @ValidateNested()
-  @Type(() => TransactionQuerySortDto)
-  sort?: TransactionQuerySortDto;
+	@IsOptional()
+	@ValidateNested()
+	@Type(() => TransactionQuerySortDto)
+	sort?: TransactionQuerySortDto;
 
-  @IsOptional()
-  @ValidateNested()
-  @Type(() => TransactionQueryFilterDto)
-  filter?: TransactionQueryFilterDto;
+	@IsOptional()
+	@ValidateNested()
+	@Type(() => TransactionQueryFilterDto)
+	filter?: TransactionQueryFilterDto;
 }
