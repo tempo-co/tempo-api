@@ -4,6 +4,7 @@ import request from 'supertest';
 import TestAgent from 'supertest/lib/agent';
 
 import {ConfigurationService} from '@core/config/config.service';
+import {EmailVerifyDto} from '@modules/auth/api/dtos/email-verify.dto';
 import {SignUpDto} from '@modules/auth/api/dtos/signup.dto';
 
 import {
@@ -277,10 +278,12 @@ describe('AuthController - Signup', () => {
       await clearEmails(mailhogApiUrl);
     });
 
-    it('should verify email with correct code (unauthenticated)', async () => {
+    it('should verify email with correct code and email (unauthenticated)', async () => {
+      const payload: EmailVerifyDto = {code: verificationCode!, email: userCredentials.email};
+
       const response = await request(httpServer)
         .post('/auth/signup/verify')
-        .send({code: verificationCode})
+        .send(payload)
         .expect(200)
         .expect((res) => {
           expect(res.body.message).toEqual('Email verified.');
@@ -300,10 +303,12 @@ describe('AuthController - Signup', () => {
       expect(meResponse.body.isEmailVerified).toBe(true);
     });
 
-    it('should verify email with correct code (authenticated)', async () => {
+    it('should verify email with correct code and email (authenticated)', async () => {
+      const payload: EmailVerifyDto = {code: verificationCode!, email: userCredentials.email};
+
       await agent
         .post('/auth/signup/verify')
-        .send({code: verificationCode})
+        .send(payload)
         .expect(200)
         .expect((res) => {
           expect(res.body.message).toEqual('Email verified.');
@@ -322,9 +327,14 @@ describe('AuthController - Signup', () => {
       expect(resendCode).toMatch(/^\d{6}$/);
       expect(resendCode).not.toEqual(verificationCode);
 
+      const payload: EmailVerifyDto = {
+        code: resendCode!,
+        email: userCredentials.email,
+      };
+
       await agent
         .post('/auth/signup/verify')
-        .send({code: resendCode})
+        .send(payload)
         .expect(200)
         .expect((res) => {
           expect(res.body.message).toEqual('Email verified.');
@@ -335,32 +345,25 @@ describe('AuthController - Signup', () => {
     });
 
     it('should fail with 400 Bad Request for invalid code', async () => {
+      const payload: EmailVerifyDto = {code: '000000', email: userCredentials.email};
+
       await request(httpServer)
         .post('/auth/signup/verify')
-        .send({code: '000000'})
+        .send(payload)
         .expect(400)
         .expect((res) => {
           expect(res.body.message).toMatch(/Invalid or expired verification code/i);
         });
     });
 
-    it('should fail with 400 Bad Request if trying to verify an already verified email', async () => {
-      await request(httpServer)
-        .post('/auth/signup/verify')
-        .send({code: verificationCode})
-        .expect(200);
+    it('should fail with 400 Bad Request if email is already verified', async () => {
+      const payload: EmailVerifyDto = {code: verificationCode!, email: userCredentials.email};
+
+      await request(httpServer).post('/auth/signup/verify').send(payload).expect(200);
 
       await request(httpServer)
         .post('/auth/signup/verify')
-        .send({code: verificationCode})
-        .expect(400)
-        .expect((res) => {
-          expect(res.body.message).toMatch(/Invalid or expired verification code/i);
-        });
-
-      await request(httpServer)
-        .post('/auth/signup/verify')
-        .send({code: '654321'})
+        .send(payload)
         .expect(400)
         .expect((res) => {
           expect(res.body.message).toMatch(/Invalid or expired verification code/i);
@@ -399,6 +402,34 @@ describe('AuthController - Signup', () => {
         .expect((res) => {
           expect(res.body.message).toEqual(
             expect.arrayContaining([expect.stringMatching(/code should not be empty/i)]),
+          );
+        });
+    });
+
+    it('should fail with 400 Bad Request for missing email', async () => {
+      const payload: Partial<EmailVerifyDto> = {code: verificationCode!};
+
+      await request(httpServer)
+        .post('/auth/signup/verify')
+        .send(payload)
+        .expect(400)
+        .expect((res) => {
+          expect(res.body.message).toEqual(
+            expect.arrayContaining([expect.stringMatching(/email should not be empty/i)]),
+          );
+        });
+    });
+
+    it('should fail with 400 Bad Request for invalid email format', async () => {
+      const payload: EmailVerifyDto = {code: verificationCode!, email: 'not-an-email'};
+
+      await request(httpServer)
+        .post('/auth/signup/verify')
+        .send(payload)
+        .expect(400)
+        .expect((res) => {
+          expect(res.body.message).toEqual(
+            expect.arrayContaining([expect.stringMatching(/email must be an email/i)]),
           );
         });
     });

@@ -24,9 +24,10 @@ export class LocalStrategy extends PassportStrategy(Strategy) {
       throw new BadRequestException(formattedErrors);
     }
 
-    const user = await this.userService.findByEmail(credentials.email).catch(() => {
+    const user = await this.userService.findByEmail(credentials.email);
+    if (!user) {
       throw new UnauthorizedException();
-    });
+    }
 
     await this.userService.verifyPassword(user.password, credentials.password);
     return user;
