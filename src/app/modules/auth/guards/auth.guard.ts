@@ -4,6 +4,7 @@ import {Request} from 'express';
 
 import {Account} from '@modules/account/account.entity';
 
+import {EMAIL_NOT_VERIFIED} from '../api/constants/api-messages.constants';
 import {IS_PUBLIC_KEY} from '../decorators/public.decorator';
 import {SKIP_EMAIL_VERIFICATION_KEY} from '../decorators/skip-email-verification.decorator';
 
@@ -32,7 +33,7 @@ export class AuthGuard implements CanActivate {
 			context.getClass(),
 		]);
 		if (!isSkipEmailVerification && user && !user.isEmailVerified) {
-			throw new ForbiddenException('Email not verified.');
+			throw new ForbiddenException(EMAIL_NOT_VERIFIED);
 		}
 
 		return true;

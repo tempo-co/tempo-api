@@ -3,6 +3,7 @@ import {Server} from 'node:net';
 import request from 'supertest';
 import TestAgent from 'supertest/lib/agent';
 
+import {LOGOUT_SUCCESS} from '@modules/auth/api/constants/api-messages.constants';
 import {SignUpDto} from '@modules/auth/api/dtos/signup.dto';
 
 import {getApp} from '../../setup/e2e.setup';
@@ -42,7 +43,7 @@ describe('AuthController - Logout', () => {
 				.send()
 				.expect(200)
 				.expect((res) => {
-					expect(res.body.message).toEqual('User logged out.');
+					expect(res.body.message).toEqual(LOGOUT_SUCCESS);
 				});
 
 			const cookiesHeader = response.headers['set-cookie'];

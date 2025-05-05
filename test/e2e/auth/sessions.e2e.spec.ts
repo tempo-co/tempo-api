@@ -2,6 +2,14 @@ import {Server} from 'net';
 import request from 'supertest';
 import TestAgent from 'supertest/lib/agent';
 
+import {
+	ALL_OTHER_SESSIONS_REVOKED,
+	CANNOT_REVOKE_CURRENT_SESSION,
+	EMAIL_NOT_VERIFIED,
+	INVALID_SESSION,
+	NO_OTHER_SESSIONS_TO_REVOKE,
+	SESSION_REVOKE_SUCCESS,
+} from '@modules/auth/api/constants/api-messages.constants';
 import {SessionResponseDto} from '@modules/auth/api/dtos/session-response.dto';
 
 import {
@@ -100,7 +108,7 @@ describe('AuthController - Sessions', () => {
 				.get('/auth/sessions')
 				.expect(403)
 				.expect((res) => {
-					expect(res.body.message).toMatch(/Email not verified/i);
+					expect(res.body.message).toBe(EMAIL_NOT_VERIFIED);
 				});
 		});
 
@@ -109,7 +117,7 @@ describe('AuthController - Sessions', () => {
 				.get('/auth/sessions')
 				.expect(401)
 				.expect((res) => {
-					expect(res.body.message).toMatch(/Unauthorized/i);
+					expect(res.body.message).toBe('Unauthorized');
 				});
 		});
 	});
@@ -163,10 +171,7 @@ describe('AuthController - Sessions', () => {
 				.delete('/auth/sessions')
 				.expect(200)
 				.expect((res) => {
-					expect(res.body.message).toMatch(/Successfully revoked \d+ session\(s\)/);
-					const match = res.body.message.match(/revoked (\d+) session/);
-					expect(match).toBeTruthy();
-					expect(parseInt(match[1], 10)).toBeGreaterThanOrEqual(2);
+					expect(res.body.message).toBe(ALL_OTHER_SESSIONS_REVOKED);
 				});
 
 			// Verify only agent 1's session remains
@@ -196,7 +201,7 @@ describe('AuthController - Sessions', () => {
 				.delete('/auth/sessions')
 				.expect(200)
 				.expect((res) => {
-					expect(res.body.message).toMatch(/No other sessions to revoke/i);
+					expect(res.body.message).toBe(NO_OTHER_SESSIONS_TO_REVOKE);
 				});
 
 			const finalResponse = await agent.get('/auth/sessions').expect(200);
@@ -209,7 +214,7 @@ describe('AuthController - Sessions', () => {
 				.delete('/auth/sessions')
 				.expect(403)
 				.expect((res) => {
-					expect(res.body.message).toMatch(/Email not verified/i);
+					expect(res.body.message).toBe(EMAIL_NOT_VERIFIED);
 				});
 		});
 
@@ -268,7 +273,7 @@ describe('AuthController - Sessions', () => {
 				.delete(`/auth/sessions/${sessionToRevokeId}`)
 				.expect(200)
 				.expect((res) => {
-					expect(res.body.message).toEqual('Session revoked.');
+					expect(res.body.message).toEqual(SESSION_REVOKE_SUCCESS);
 				});
 
 			// Verify the session is gone
@@ -287,7 +292,7 @@ describe('AuthController - Sessions', () => {
 				.delete(`/auth/sessions/${currentSessionId}`)
 				.expect(409)
 				.expect((res) => {
-					expect(res.body.message).toMatch(/Cannot revoke the current session/i);
+					expect(res.body.message).toBe(CANNOT_REVOKE_CURRENT_SESSION);
 				});
 		});
 
@@ -298,7 +303,7 @@ describe('AuthController - Sessions', () => {
 				.delete(`/auth/sessions/${nonExistentId}`)
 				.expect(404)
 				.expect((res) => {
-					expect(res.body.message).toMatch(/Session not found or expired/i);
+					expect(res.body.message).toBe(INVALID_SESSION);
 				});
 		});
 
@@ -337,7 +342,7 @@ describe('AuthController - Sessions', () => {
 				.delete(`/auth/sessions/${sessionToRevokeId}`)
 				.expect(403)
 				.expect((res) => {
-					expect(res.body.message).toMatch(/Email not verified/i);
+					expect(res.body.message).toBe(EMAIL_NOT_VERIFIED);
 				});
 		});
 
@@ -348,7 +353,7 @@ describe('AuthController - Sessions', () => {
 				.delete(`/auth/sessions/${sessionToRevokeId}`)
 				.expect(401)
 				.expect((res) => {
-					expect(res.body.message).toMatch(/Unauthorized/i);
+					expect(res.body.message).toBe('Unauthorized');
 				});
 		});
 	});

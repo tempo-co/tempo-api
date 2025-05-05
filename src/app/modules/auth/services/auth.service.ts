@@ -6,7 +6,8 @@ import {Request} from 'express';
 import {Account} from '@modules/account/account.entity';
 import {AccountService} from '@modules/account/account.service';
 
-import {ChangePasswordDto} from '../api/dtos/change-password.dto';
+import {LOGIN_SUCCESS, LOGOUT_SUCCESS, PASSWORD_CHANGE_SUCCESS} from '../api/constants/api-messages.constants';
+import {PasswordChangeDto} from '../api/dtos/password-change.dto';
 import {SignUpDto} from '../api/dtos/signup.dto';
 import {EmailVerifierService} from './email-verifier.service';
 import {SessionService} from './session.service';
@@ -39,7 +40,7 @@ export class AuthService {
 				resolve();
 			});
 		});
-		return {message: 'User logged out.'};
+		return {message: LOGOUT_SUCCESS};
 	}
 
 	async logIn(account: Account, request: Request) {
@@ -49,14 +50,14 @@ export class AuthService {
 			});
 		});
 		await this.sessionService.initializeSessionMetadata(request);
-		return {message: 'User logged in.'};
+		return {message: LOGIN_SUCCESS};
 	}
 
-	async changePassword(account: Account, dto: ChangePasswordDto) {
+	async changePassword(account: Account, dto: PasswordChangeDto) {
 		await this.accountService.verifyPassword(account.password, dto.currentPassword);
 
 		const hash = await argon2.hash(dto.newPassword);
 		await this.accountService.update(account.id, {password: hash});
-		return {message: 'Password changed.'};
+		return {message: PASSWORD_CHANGE_SUCCESS};
 	}
 }

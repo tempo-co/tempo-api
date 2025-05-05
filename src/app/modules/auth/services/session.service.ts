@@ -8,6 +8,13 @@ import {ConfigurationService} from '@core/config/config.service';
 import {REDIS} from '@core/redis/redis.constants';
 import {Account} from '@modules/account/account.entity';
 
+import {
+	ALL_OTHER_SESSIONS_REVOKED,
+	CANNOT_REVOKE_CURRENT_SESSION,
+	INVALID_SESSION,
+	NO_OTHER_SESSIONS_TO_REVOKE,
+	SESSION_REVOKE_SUCCESS,
+} from '../api/constants/api-messages.constants';
 import {SessionResponseDto} from '../api/dtos/session-response.dto';
 import {AuthenticatedSession} from './authenticated-session.interface';
 
@@ -28,7 +35,7 @@ export class SessionService {
 	 *
 	 * NOTE: This implementation does not scale well.
 	 */
-	async getSessions(accountId: Account['id'], currentSessionId: string) {
+	async getSessions(accountId: Account['id'], currentSessionId: string | null) {
 		const sessions: SessionResponseDto[] = [];
 
 		const scanBatchSize = '250';
@@ -85,31 +92,31 @@ export class SessionService {
 	/** Revokes an account's active session. */
 	async revokeSession(accountId: Account['id'], currentSessionId: string, sessionIdToRevoke: string) {
 		if (sessionIdToRevoke === currentSessionId) {
-			throw new ConflictException('Cannot revoke the current session. Log out instead.');
+			throw new ConflictException(CANNOT_REVOKE_CURRENT_SESSION);
 		}
 
 		const sessionKey = `${this.REDIS_KEY}:${sessionIdToRevoke}`;
 		const sessionDataString = await this.redisClient.get(sessionKey);
 		if (!sessionDataString) {
-			throw new NotFoundException('Session not found or expired.');
+			throw new NotFoundException(INVALID_SESSION);
 		}
 
 		const sessionData: AuthenticatedSession = JSON.parse(sessionDataString);
 		if (sessionData?.passport?.user !== accountId) {
-			throw new NotFoundException('Session not found or expired.');
+			throw new NotFoundException(INVALID_SESSION);
 		}
 
 		await this.redisClient.del(sessionKey);
-		return {message: 'Session revoked.'};
+		return {message: SESSION_REVOKE_SUCCESS};
 	}
 
 	/** Revokes all sessions except the current one. */
-	async revokeAllOtherSessions(accountId: Account['id'], currentSessionId: string) {
+	async revokeAllOtherSessions(accountId: Account['id'], currentSessionId: string | null) {
 		const allSessions = await this.getSessions(accountId, currentSessionId);
 
 		const sessionsToRevoke = allSessions.filter((session) => !session.isCurrent);
 		if (sessionsToRevoke.length === 0) {
-			return {message: 'No other sessions to revoke.'};
+			return {message: NO_OTHER_SESSIONS_TO_REVOKE};
 		}
 
 		const pipeline = this.redisClient.pipeline();
@@ -119,7 +126,7 @@ export class SessionService {
 		}
 		await pipeline.exec();
 
-		return {message: `Successfully revoked ${sessionsToRevoke.length} session(s).`};
+		return {message: ALL_OTHER_SESSIONS_REVOKED};
 	}
 
 	/** Initializes the metadata (ip, user agent, timestamps) on a session. */

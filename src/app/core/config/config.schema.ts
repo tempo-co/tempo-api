@@ -45,6 +45,10 @@ export const configSchema = z.object({
 	EMAIL_VERIFICATION_EXPIRATION: durationSchema,
 	EMAIL_VERIFICATION_REDIS_KEY: z.string().min(1),
 
+	// --- Password reset ---
+	PASSWORD_RESET_EXPIRATION: durationSchema,
+	PASSWORD_RESET_REDIS_KEY: z.string().min(1),
+
 	// --- Rate limiting
 	THROTTLE_TTL: durationSchema,
 	THROTTLE_LIMIT: z.coerce.number().int().positive(),

@@ -33,14 +33,8 @@ import {TransactionModule} from '@modules/transaction/transaction.module';
 		BankStatementModule,
 	],
 	providers: [
-		{
-			provide: APP_GUARD,
-			useClass: ThrottlerGuard,
-		},
-		{
-			provide: APP_INTERCEPTOR,
-			useClass: ClassSerializerInterceptor,
-		},
+		{provide: APP_GUARD, useClass: ThrottlerGuard},
+		{provide: APP_INTERCEPTOR, useClass: ClassSerializerInterceptor},
 	],
 })
 export class AppModule {}

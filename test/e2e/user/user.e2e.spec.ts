@@ -6,6 +6,7 @@ import TestAgent from 'supertest/lib/agent';
 
 import {Account} from '@modules/account/account.entity';
 import {AccountUpdateDto} from '@modules/account/api/account-update.dto';
+import {EMAIL_NOT_VERIFIED} from '@modules/auth/api/constants/api-messages.constants';
 
 import {
 	UNVERIFIED_ACCOUNT_EMAIL,
@@ -140,7 +141,7 @@ describe('Account controller - /me', () => {
 				.send(updateDto)
 				.expect(403)
 				.expect((res) => {
-					expect(res.body.message).toMatch(/email not verified/i);
+					expect(res.body.message).toBe(EMAIL_NOT_VERIFIED);
 				});
 		});
 
