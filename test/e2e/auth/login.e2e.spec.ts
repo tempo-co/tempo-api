@@ -4,6 +4,7 @@ import request from 'supertest';
 import TestAgent from 'supertest/lib/agent';
 
 import {Account} from '@modules/account/account.entity';
+import {EMAIL_NOT_VERIFIED} from '@modules/auth/api/constants/api-messages.constants';
 import {SignUpDto} from '@modules/auth/api/dtos/signup.dto';
 
 import {getApp} from '../../setup/e2e.setup';
@@ -63,7 +64,7 @@ describe('AuthController - Login', () => {
 				.get('/auth/sessions')
 				.expect(403)
 				.expect((res) => {
-					expect(res.body.message).toMatch(/email not verified/i);
+					expect(res.body.message).toBe(EMAIL_NOT_VERIFIED);
 				});
 		});
 

@@ -2,7 +2,7 @@ import {IsEmail, IsNotEmpty, IsString, Length, MaxLength, MinLength} from 'class
 
 import {Account} from '@modules/account/account.entity';
 
-export class EmailChangeDto {
+export class EmailChangeRequestDto {
 	@IsNotEmpty()
 	@IsEmail()
 	@Length(1, 255)

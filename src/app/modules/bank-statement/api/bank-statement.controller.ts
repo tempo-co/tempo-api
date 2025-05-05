@@ -17,6 +17,7 @@ import {ApiResponse, ApiTags} from '@nestjs/swagger';
 import {Response} from 'express';
 
 import {Account} from '@modules/account/account.entity';
+import {UNAUTHORIZED} from '@modules/auth/api/constants/api-messages.constants';
 import {CurrentUser} from '@modules/auth/decorators/current-user.decorator';
 import {BankAccount} from '@modules/bank-account/bank-account.entity';
 import {PaginationDto} from '@modules/bank-statement/api/pagination.dto';
@@ -36,7 +37,7 @@ export class BankStatementController {
 	@HttpCode(200)
 	@ApiResponse({status: 200, description: 'Bank statement created.'})
 	@ApiResponse({status: 400, description: 'Failed to parse file.'})
-	@ApiResponse({status: 401, description: 'Invalid credentials.'})
+	@ApiResponse({status: 401, description: UNAUTHORIZED})
 	@ApiResponse({status: 409, description: 'A bank statement already exists for this period.'})
 	@ApiResponse({status: 422, description: 'File is not a valid bank statement.'})
 	async upload(

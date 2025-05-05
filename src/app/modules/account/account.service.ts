@@ -3,6 +3,8 @@ import {InjectRepository} from '@nestjs/typeorm';
 import argon2 from 'argon2';
 import {Repository} from 'typeorm';
 
+import {EMAIL_ALREADY_IN_USE} from '@modules/auth/api/constants/api-messages.constants';
+
 import {Account} from './account.entity';
 
 @Injectable()
@@ -29,7 +31,7 @@ export class AccountService {
 		const emailExists = await this.accountRepository.existsBy({email});
 
 		if (emailExists) {
-			throw new ConflictException(`This email is already in use.`);
+			throw new ConflictException(EMAIL_ALREADY_IN_USE);
 		}
 	}
 

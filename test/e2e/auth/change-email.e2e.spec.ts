@@ -4,8 +4,14 @@ import request from 'supertest';
 import TestAgent from 'supertest/lib/agent';
 
 import {ConfigurationService} from '@core/config/config.service';
-import {Account} from '@modules/account/account.entity';
-import {EmailChangeDto} from '@modules/auth/api/dtos/email-change.dto';
+import {
+	EMAIL_ALREADY_IN_USE,
+	EMAIL_CHANGE_SUCCESS,
+	EMAIL_INVALID_TOKEN,
+	EMAIL_NOT_VERIFIED,
+	EMAIL_VERIFICATION_SENT,
+} from '@modules/auth/api/constants/api-messages.constants';
+import {EmailChangeRequestDto} from '@modules/auth/api/dtos/email-change.dto';
 import {EmailVerifyDto} from '@modules/auth/api/dtos/email-verify.dto';
 import {SignUpDto} from '@modules/auth/api/dtos/signup.dto';
 
@@ -31,6 +37,84 @@ describe('AuthController - Change email', () => {
 
 	beforeEach(async () => {
 		await clearEmails(mailhogApiUrl);
+	});
+
+	describe('/auth/change-email/check (HEAD)', () => {
+		let verifiedAgent: TestAgent;
+		let unverifiedAgent: TestAgent;
+		let existingEmail: string;
+
+		beforeAll(async () => {
+			// Create an account to test conflict
+			const conflictAccountDto: SignUpDto = {
+				name: faker.person.fullName(),
+				email: faker.internet.email(),
+				password: faker.internet.password({length: 10}),
+			};
+			await request(httpServer).post('/auth/signup').send(conflictAccountDto).expect(201);
+			existingEmail = conflictAccountDto.email;
+
+			// Setup authenticated agents
+			verifiedAgent = request.agent(httpServer);
+			await verifiedAgent
+				.post('/auth/login')
+				.send({email: VERIFIED_ACCOUNT_EMAIL, password: VERIFIED_ACCOUNT_PASSWORD})
+				.expect(200);
+
+			unverifiedAgent = request.agent(httpServer);
+			await unverifiedAgent
+				.post('/auth/login')
+				.send({email: UNVERIFIED_ACCOUNT_EMAIL, password: UNVERIFIED_ACCOUNT_PASSWORD})
+				.expect(200);
+		});
+
+		it('should return 204 No Content for an available email (Verified User)', async () => {
+			const availableEmail = faker.internet.email();
+			await verifiedAgent
+				.head(`/auth/change-email/check?email=${encodeURIComponent(availableEmail)}`)
+				.expect(204);
+		});
+
+		it('should fail with 403 Forbidden if the account email is not verified', async () => {
+			const availableEmail = faker.internet.email();
+			await unverifiedAgent
+				.head(`/auth/change-email/check?email=${encodeURIComponent(availableEmail)}`)
+				.expect(403);
+		});
+
+		it('should return 409 Conflict if the email is already in use by another account', async () => {
+			await verifiedAgent
+				.head(`/auth/change-email/check?email=${encodeURIComponent(existingEmail)}`)
+				.expect(409)
+				.expect((res) => {
+					expect(res.status).toBe(409);
+				});
+		});
+
+		it("should return 409 Conflict if the email is the account's own email", async () => {
+			await verifiedAgent
+				.head(`/auth/change-email/check?email=${encodeURIComponent(VERIFIED_ACCOUNT_EMAIL)}`)
+				.expect(409);
+		});
+
+		it('should return 401 Unauthorized if the user is not authenticated', async () => {
+			const emailToCheck = faker.internet.email();
+			await request(httpServer)
+				.head(`/auth/change-email/check?email=${encodeURIComponent(emailToCheck)}`)
+				.expect(401);
+		});
+
+		it('should return 400 Bad Request if email query parameter is missing', async () => {
+			await verifiedAgent.head('/auth/change-email/check').expect(400);
+		});
+
+		it('should return 400 Bad Request if email query parameter is empty', async () => {
+			await verifiedAgent.head('/auth/change-email/check?email=').expect(400);
+		});
+
+		it('should return 400 Bad Request if email format is invalid', async () => {
+			await verifiedAgent.head('/auth/change-email/check?email=not-a-valid-email').expect(400);
+		});
 	});
 
 	describe('/auth/change-email/request (POST)', () => {
@@ -69,7 +153,7 @@ describe('AuthController - Change email', () => {
 
 		it('should send a verification email to the new email address for a verified account', async () => {
 			const newEmail = faker.internet.email();
-			const emailChangeDto: EmailChangeDto = {
+			const emailChangeDto: EmailChangeRequestDto = {
 				newEmail: newEmail,
 				password: VERIFIED_ACCOUNT_PASSWORD,
 			};
@@ -79,7 +163,7 @@ describe('AuthController - Change email', () => {
 				.send(emailChangeDto)
 				.expect(200)
 				.expect((res) => {
-					expect(res.body.message).toEqual('Verification email sent.');
+					expect(res.body.message).toBe(EMAIL_VERIFICATION_SENT);
 				});
 
 			const verificationEmail = await findEmailByRecipient(newEmail, mailhogApiUrl);
@@ -97,7 +181,7 @@ describe('AuthController - Change email', () => {
 		});
 
 		it('should fail with 401 Unauthorized if the user is not logged in', async () => {
-			const emailChangeDto: EmailChangeDto = {
+			const emailChangeDto: EmailChangeRequestDto = {
 				newEmail: faker.internet.email(),
 				password: VERIFIED_ACCOUNT_PASSWORD,
 			};
@@ -107,12 +191,12 @@ describe('AuthController - Change email', () => {
 				.send(emailChangeDto)
 				.expect(401)
 				.expect((res) => {
-					expect(res.body.message).toMatch(/Unauthorized/i);
+					expect(res.body.message).toBe('Unauthorized');
 				});
 		});
 
 		it('should fail with 403 Forbidden if the account email is not verified', async () => {
-			const emailChangeDto: EmailChangeDto = {
+			const emailChangeDto: EmailChangeRequestDto = {
 				newEmail: faker.internet.email(),
 				password: UNVERIFIED_ACCOUNT_PASSWORD,
 			};
@@ -122,12 +206,12 @@ describe('AuthController - Change email', () => {
 				.send(emailChangeDto)
 				.expect(403)
 				.expect((res) => {
-					expect(res.body.message).toMatch(/Email not verified/i);
+					expect(res.body.message).toBe(EMAIL_NOT_VERIFIED);
 				});
 		});
 
 		it('should fail with 401 Unauthorized if the provided password is incorrect', async () => {
-			const emailChangeDto: EmailChangeDto = {
+			const emailChangeDto: EmailChangeRequestDto = {
 				newEmail: faker.internet.email(),
 				password: 'wrong-password',
 			};
@@ -137,12 +221,12 @@ describe('AuthController - Change email', () => {
 				.send(emailChangeDto)
 				.expect(401)
 				.expect((res) => {
-					expect(res.body.message).toMatch(/Unauthorized/i);
+					expect(res.body.message).toBe('Unauthorized');
 				});
 		});
 
 		it('should fail with 409 Conflict if the new email is already in use', async () => {
-			const emailChangeDto: EmailChangeDto = {
+			const emailChangeDto: EmailChangeRequestDto = {
 				newEmail: conflictAccountEmail,
 				password: VERIFIED_ACCOUNT_PASSWORD,
 			};
@@ -152,7 +236,7 @@ describe('AuthController - Change email', () => {
 				.send(emailChangeDto)
 				.expect(409)
 				.expect((res) => {
-					expect(res.body.message).toMatch(/email is already in use/i);
+					expect(res.body.message).toBe(EMAIL_ALREADY_IN_USE);
 				});
 		});
 
@@ -206,7 +290,7 @@ describe('AuthController - Change email', () => {
 		});
 
 		it('should fail with 400 Bad Request if password is too short', async () => {
-			const emailChangeDto: EmailChangeDto = {
+			const emailChangeDto: EmailChangeRequestDto = {
 				newEmail: faker.internet.email(),
 				password: '123',
 			};
@@ -231,16 +315,6 @@ describe('AuthController - Change email', () => {
 		let newEmailAddress: string;
 		let initialAccountEmail: string = VERIFIED_ACCOUNT_EMAIL;
 
-		const requestChangeAndGetCode = async (agent: TestAgent, password: string) => {
-			const requestedNewEmail = faker.internet.email();
-			const changeDto: EmailChangeDto = {newEmail: requestedNewEmail, password};
-			await agent.post('/auth/change-email/request').send(changeDto).expect(200);
-
-			const emailContent = await findEmailByRecipient(requestedNewEmail, mailhogApiUrl);
-			const code = extractVerificationCode(emailContent?.Content?.Body);
-			return {code, newEmail: requestedNewEmail};
-		};
-
 		beforeEach(async () => {
 			verifiedAgent = request.agent(httpServer);
 			await verifiedAgent
@@ -248,9 +322,16 @@ describe('AuthController - Change email', () => {
 				.send({email: initialAccountEmail, password: VERIFIED_ACCOUNT_PASSWORD})
 				.expect(200);
 
-			const result = await requestChangeAndGetCode(verifiedAgent, VERIFIED_ACCOUNT_PASSWORD);
-			verificationCode = result.code;
-			newEmailAddress = result.newEmail;
+			// Request email change and get the code
+			const requestedNewEmail = faker.internet.email();
+			const changeDto: EmailChangeRequestDto = {newEmail: requestedNewEmail, password: VERIFIED_ACCOUNT_PASSWORD};
+			await verifiedAgent.post('/auth/change-email/request').send(changeDto).expect(200);
+
+			const emailContent = await findEmailByRecipient(requestedNewEmail, mailhogApiUrl);
+			const code = extractVerificationCode(emailContent?.Content?.Body);
+
+			verificationCode = code;
+			newEmailAddress = requestedNewEmail;
 			expect(verificationCode).toBeDefined();
 			expect(verificationCode).toMatch(/^\d{6}$/);
 
@@ -258,19 +339,16 @@ describe('AuthController - Change email', () => {
 		});
 
 		it('should change the email with a valid code for an authenticated, verified account', async () => {
-			const response = await verifiedAgent
+			await verifiedAgent
 				.post('/auth/change-email/verify')
 				.send({code: verificationCode})
-				.expect(200);
-
-			const updatedAccount: Account = response.body;
-			expect(updatedAccount).toBeDefined();
-			expect(updatedAccount.email).toEqual(newEmailAddress);
-			expect(updatedAccount.isEmailVerified).toBe(true);
+				.expect(200)
+				.expect((res) => {
+					expect(res.body.message).toBe(EMAIL_CHANGE_SUCCESS);
+				});
 
 			const meResponse = await verifiedAgent.get('/accounts/me').expect(200);
 			expect(meResponse.body.email).toEqual(newEmailAddress);
-
 			initialAccountEmail = newEmailAddress;
 		});
 
@@ -280,7 +358,7 @@ describe('AuthController - Change email', () => {
 				.send({code: verificationCode})
 				.expect(401)
 				.expect((res) => {
-					expect(res.body.message).toMatch(/Unauthorized/i);
+					expect(res.body.message).toBe('Unauthorized');
 				});
 		});
 
@@ -296,7 +374,7 @@ describe('AuthController - Change email', () => {
 				.send({code: verificationCode ?? '123456'})
 				.expect(403)
 				.expect((res) => {
-					expect(res.body.message).toMatch(/Email not verified/i);
+					expect(res.body.message).toBe(EMAIL_NOT_VERIFIED);
 				});
 		});
 
@@ -306,7 +384,7 @@ describe('AuthController - Change email', () => {
 				.send({code: '000000'})
 				.expect(400)
 				.expect((res) => {
-					expect(res.body.message).toMatch(/Invalid or expired verification code/i);
+					expect(res.body.message).toBe(EMAIL_INVALID_TOKEN);
 				});
 		});
 
@@ -326,7 +404,7 @@ describe('AuthController - Change email', () => {
 				.send({code: verificationCode})
 				.expect(400)
 				.expect((res) => {
-					expect(res.body.message).toMatch(/Invalid or expired verification code/i);
+					expect(res.body.message).toBe(EMAIL_INVALID_TOKEN);
 				});
 		});
 
@@ -397,7 +475,7 @@ describe('AuthController - Change email', () => {
 				.expect(200);
 
 			// 3. Account B requests change to the same targetEmail and gets their own code
-			const changeDtoForB: EmailChangeDto = {
+			const changeDtoForB: EmailChangeRequestDto = {
 				newEmail: targetEmail,
 				password: accountBCredentials.password,
 			};
@@ -417,7 +495,7 @@ describe('AuthController - Change email', () => {
 				.send({code: codeForA})
 				.expect(409)
 				.expect((res) => {
-					expect(res.body.message).toMatch(/email is already in use/i);
+					expect(res.body.message).toBe(EMAIL_ALREADY_IN_USE);
 				});
 
 			initialAccountEmail = VERIFIED_ACCOUNT_EMAIL;

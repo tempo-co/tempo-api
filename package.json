@@ -15,7 +15,7 @@
 		"start:prod": "docker compose -f docker-compose.dev.yml --env-file .env.development up -d && rimraf dist && node -r tsconfig-paths/register dist/main",
 		"lint": "eslint \"{src,test}/**/*.ts\" --fix",
 		"lint:check": "eslint \"{src,test}/**/*.ts\"",
-		"test": "jest",
+		"test": "jest --passWithNoTests",
 		"test:watch": "jest --watch",
 		"test:cov": "jest --coverage",
 		"test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest",

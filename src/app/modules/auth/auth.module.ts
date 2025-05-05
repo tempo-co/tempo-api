@@ -10,6 +10,7 @@ import {AuthController} from './api/auth.controller';
 import {AuthGuard} from './guards/auth.guard';
 import {AuthService} from './services/auth.service';
 import {EmailVerifierService} from './services/email-verifier.service';
+import {PasswordResetService} from './services/password-reset.service';
 import {SessionSerializer} from './services/session.serializer';
 import {SessionService} from './services/session.service';
 import {LocalStrategy} from './strategies/local.strategy';
@@ -20,6 +21,7 @@ import {LocalStrategy} from './strategies/local.strategy';
 		AuthService,
 		SessionService,
 		EmailVerifierService,
+		PasswordResetService,
 		SessionSerializer,
 		LocalStrategy,
 		EmailService,

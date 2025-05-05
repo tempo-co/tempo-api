@@ -4,6 +4,13 @@ import request from 'supertest';
 import TestAgent from 'supertest/lib/agent';
 
 import {ConfigurationService} from '@core/config/config.service';
+import {
+	EMAIL_ALREADY_IN_USE,
+	EMAIL_ALREADY_VERIFIED,
+	EMAIL_INVALID_TOKEN,
+	EMAIL_VERIFICATION_SENT,
+	EMAIL_VERIFICATION_SUCCESS,
+} from '@modules/auth/api/constants/api-messages.constants';
 import {EmailVerifyDto} from '@modules/auth/api/dtos/email-verify.dto';
 import {SignUpDto} from '@modules/auth/api/dtos/signup.dto';
 
@@ -31,7 +38,7 @@ describe('AuthController - Signup', () => {
 	});
 
 	describe('/auth/signup (POST)', () => {
-		it('should sign up a new account and send welcome email', async () => {
+		it('should create a new account and send welcome email', async () => {
 			const signUpDto: SignUpDto = {
 				name: faker.person.fullName(),
 				email: faker.internet.email(),
@@ -80,7 +87,7 @@ describe('AuthController - Signup', () => {
 				.send(duplicateSignUpDto)
 				.expect(409)
 				.expect((res) => {
-					expect(res.body.message).toMatch(/email.*already in use/i);
+					expect(res.body.message).toBe(EMAIL_ALREADY_IN_USE);
 				});
 		});
 
@@ -214,7 +221,7 @@ describe('AuthController - Signup', () => {
 				.send()
 				.expect(200)
 				.expect((res) => {
-					expect(res.body.message).toEqual('Verification email sent.');
+					expect(res.body.message).toBe(EMAIL_VERIFICATION_SENT);
 				});
 
 			const verificationEmail = await findEmailByRecipient(UNVERIFIED_ACCOUNT_EMAIL, mailhogApiUrl);
@@ -235,7 +242,7 @@ describe('AuthController - Signup', () => {
 				.send()
 				.expect(400)
 				.expect((res) => {
-					expect(res.body.message).toMatch(/Email is already verified/i);
+					expect(res.body.message).toBe(EMAIL_ALREADY_VERIFIED);
 				});
 
 			const email = await findEmailByRecipient(VERIFIED_ACCOUNT_EMAIL, mailhogApiUrl);
@@ -248,7 +255,7 @@ describe('AuthController - Signup', () => {
 				.send()
 				.expect(401)
 				.expect((res) => {
-					expect(res.body.message).toMatch(/Unauthorized/i);
+					expect(res.body.message).toBe('Unauthorized');
 				});
 		});
 	});
@@ -285,7 +292,7 @@ describe('AuthController - Signup', () => {
 				.send(payload)
 				.expect(200)
 				.expect((res) => {
-					expect(res.body.message).toEqual('Email verified.');
+					expect(res.body.message).toBe(EMAIL_VERIFICATION_SUCCESS);
 				});
 
 			const cookiesHeader = response.headers['set-cookie'];
@@ -310,7 +317,7 @@ describe('AuthController - Signup', () => {
 				.send(payload)
 				.expect(200)
 				.expect((res) => {
-					expect(res.body.message).toEqual('Email verified.');
+					expect(res.body.message).toBe(EMAIL_VERIFICATION_SUCCESS);
 				});
 
 			const accountResponse = await agent.get('/accounts/me').expect(200);
@@ -336,7 +343,7 @@ describe('AuthController - Signup', () => {
 				.send(payload)
 				.expect(200)
 				.expect((res) => {
-					expect(res.body.message).toEqual('Email verified.');
+					expect(res.body.message).toBe(EMAIL_VERIFICATION_SUCCESS);
 				});
 
 			const meResponse = await agent.get('/accounts/me').expect(200);
@@ -351,7 +358,7 @@ describe('AuthController - Signup', () => {
 				.send(payload)
 				.expect(400)
 				.expect((res) => {
-					expect(res.body.message).toMatch(/Invalid or expired verification code/i);
+					expect(res.body.message).toBe(EMAIL_INVALID_TOKEN);
 				});
 		});
 
@@ -365,7 +372,7 @@ describe('AuthController - Signup', () => {
 				.send(payload)
 				.expect(400)
 				.expect((res) => {
-					expect(res.body.message).toMatch(/Invalid or expired verification code/i);
+					expect(res.body.message).toBe(EMAIL_INVALID_TOKEN);
 				});
 		});
 

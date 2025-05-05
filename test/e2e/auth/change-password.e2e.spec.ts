@@ -2,7 +2,8 @@ import {faker} from '@faker-js/faker';
 import {Server} from 'node:net';
 import request from 'supertest';
 
-import {ChangePasswordDto} from '@modules/auth/api/dtos/change-password.dto';
+import {EMAIL_NOT_VERIFIED, PASSWORD_CHANGE_SUCCESS} from '@modules/auth/api/constants/api-messages.constants';
+import {PasswordChangeDto} from '@modules/auth/api/dtos/password-change.dto';
 
 import {
 	PW_CHANGE_ACCOUNT_EMAIL,
@@ -33,7 +34,7 @@ describe('AuthController - Change password', () => {
 				.expect(200);
 
 			const newPassword = faker.internet.password({length: 12});
-			const changePasswordDto: ChangePasswordDto = {
+			const changePasswordDto: PasswordChangeDto = {
 				currentPassword: PW_CHANGE_ACCOUNT_PASSWORD,
 				newPassword: newPassword,
 			};
@@ -43,7 +44,7 @@ describe('AuthController - Change password', () => {
 				.send(changePasswordDto)
 				.expect(200)
 				.expect((res) => {
-					expect(res.body.message).toEqual('Password changed.');
+					expect(res.body.message).toEqual(PASSWORD_CHANGE_SUCCESS);
 				});
 
 			await agent.post('/auth/logout').expect(200);
@@ -71,7 +72,7 @@ describe('AuthController - Change password', () => {
 				})
 				.expect(200);
 
-			const changePasswordDto: ChangePasswordDto = {
+			const changePasswordDto: PasswordChangeDto = {
 				currentPassword: 'wrong-current-password',
 				newPassword: faker.internet.password({length: 12}),
 			};
@@ -87,7 +88,7 @@ describe('AuthController - Change password', () => {
 				.expect(200);
 
 			const newPassword = faker.internet.password({length: 12});
-			const changePasswordDto: ChangePasswordDto = {
+			const changePasswordDto: PasswordChangeDto = {
 				currentPassword: UNVERIFIED_ACCOUNT_PASSWORD,
 				newPassword: newPassword,
 			};
@@ -97,7 +98,7 @@ describe('AuthController - Change password', () => {
 				.send(changePasswordDto)
 				.expect(403)
 				.expect((res) => {
-					expect(res.body.message).toMatch(/Email not verified/i);
+					expect(res.body.message).toBe(EMAIL_NOT_VERIFIED);
 				});
 		});
 
@@ -111,7 +112,7 @@ describe('AuthController - Change password', () => {
 				})
 				.expect(200);
 
-			const changePasswordDto: ChangePasswordDto = {
+			const changePasswordDto: PasswordChangeDto = {
 				currentPassword: VERIFIED_ACCOUNT_PASSWORD,
 				newPassword: 'short',
 			};
@@ -139,7 +140,7 @@ describe('AuthController - Change password', () => {
 				})
 				.expect(200);
 
-			const changePasswordDto: Partial<ChangePasswordDto> = {
+			const changePasswordDto: Partial<PasswordChangeDto> = {
 				newPassword: faker.internet.password({length: 12}),
 			};
 
@@ -164,7 +165,7 @@ describe('AuthController - Change password', () => {
 				})
 				.expect(200);
 
-			const changePasswordDto: Partial<ChangePasswordDto> = {
+			const changePasswordDto: Partial<PasswordChangeDto> = {
 				currentPassword: VERIFIED_ACCOUNT_PASSWORD,
 			};
 
@@ -181,7 +182,7 @@ describe('AuthController - Change password', () => {
 
 		it('should fail with 401 Unauthorized if user is not logged in', async () => {
 			const newPassword = faker.internet.password({length: 12});
-			const changePasswordDto: ChangePasswordDto = {
+			const changePasswordDto: PasswordChangeDto = {
 				currentPassword: VERIFIED_ACCOUNT_PASSWORD,
 				newPassword: newPassword,
 			};

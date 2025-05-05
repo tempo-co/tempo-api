@@ -2,7 +2,7 @@ import {IsNotEmpty, IsString, Length} from 'class-validator';
 
 import {Account} from '@modules/account/account.entity';
 
-export class ChangePasswordDto {
+export class PasswordChangeDto {
 	@IsNotEmpty()
 	@IsString()
 	@Length(8, 255)

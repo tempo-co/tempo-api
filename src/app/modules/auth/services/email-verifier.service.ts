@@ -1,4 +1,4 @@
-import {BadRequestException, Injectable} from '@nestjs/common';
+import {BadRequestException, ConflictException, Injectable} from '@nestjs/common';
 import {Inject} from '@nestjs/common';
 import Redis from 'ioredis';
 import ms from 'ms';
@@ -9,13 +9,20 @@ import {REDIS} from '@core/redis/redis.constants';
 import {Account} from '@modules/account/account.entity';
 import {AccountService} from '@modules/account/account.service';
 
-import {EmailChangeDto} from '../api/dtos/email-change.dto';
+import {
+	EMAIL_ALREADY_IN_USE,
+	EMAIL_ALREADY_VERIFIED,
+	EMAIL_CHANGE_SUCCESS,
+	EMAIL_INVALID_TOKEN,
+	EMAIL_VERIFICATION_SENT,
+} from '../api/constants/api-messages.constants';
+import {EmailChangeRequestDto} from '../api/dtos/email-change.dto';
 
 @Injectable()
 export class EmailVerifierService {
-	private readonly EXPIRATION: number;
-	private readonly REDIS_KEY: string;
-	private readonly WEB_BASE_URL: string;
+	private readonly EXPIRATION;
+	private readonly REDIS_KEY;
+	private readonly WEB_BASE_URL;
 
 	constructor(
 		@Inject(REDIS) private readonly redisClient: Redis,
@@ -31,31 +38,38 @@ export class EmailVerifierService {
 		this.EXPIRATION = expirationSeconds;
 	}
 
+	async checkEmailAvailability(email: Account['email']) {
+		const existingAccount = await this.accountService.findByEmail(email);
+		if (existingAccount) {
+			throw new ConflictException(EMAIL_ALREADY_IN_USE);
+		}
+	}
+
 	async verify(code: string, email: Account['email']) {
-		const expectedEmail = await this.getEmailByCode(code);
+		const expectedEmail = await this._getEmailByCode(code);
 		if (expectedEmail !== email) {
-			throw new BadRequestException('Invalid or expired verification code.');
+			throw new BadRequestException(EMAIL_INVALID_TOKEN);
 		}
 
 		const account = await this.accountService.findByEmail(email);
 		if (!account) {
-			throw new BadRequestException('Invalid or expired verification code.');
+			throw new BadRequestException(EMAIL_INVALID_TOKEN);
 		}
 
 		if (account.isEmailVerified) {
-			throw new BadRequestException('Email is already verified.');
+			throw new BadRequestException(EMAIL_ALREADY_VERIFIED);
 		}
 
 		const updatedAccount = await this.accountService.update(account.id, {isEmailVerified: true});
-		await this.removeCode(code);
+		await this._removeCode(code);
 		return updatedAccount;
 	}
 
 	async sendWelcomeEmail(account: Account) {
 		const {email, name} = account;
 
-		const code = await this.createCode(email);
-		const verificationUrl = await this.createUrl(code, email);
+		const code = await this._createCode(email);
+		const verificationUrl = await this._createUrl(code, email);
 
 		await this.emailService.send({
 			to: email,
@@ -69,11 +83,11 @@ export class EmailVerifierService {
 		const {email, name, isEmailVerified} = account;
 
 		if (isEmailVerified) {
-			throw new BadRequestException('Email is already verified.');
+			throw new BadRequestException(EMAIL_ALREADY_VERIFIED);
 		}
 
-		const code = await this.createCode(email);
-		const verificationUrl = await this.createUrl(code, email);
+		const code = await this._createCode(email);
+		const verificationUrl = await this._createUrl(code, email);
 
 		await this.emailService.send({
 			to: email,
@@ -82,16 +96,16 @@ export class EmailVerifierService {
 			context: {name, verificationUrl, code},
 		});
 
-		return {message: 'Verification email sent.'};
+		return {message: EMAIL_VERIFICATION_SENT};
 	}
 
-	async requestEmailChange(account: Account, dto: EmailChangeDto) {
+	async requestEmailChange(account: Account, dto: EmailChangeRequestDto) {
 		const {newEmail, password} = dto;
 
 		await this.accountService.verifyPassword(account.password, password);
 		await this.accountService.validateEmailIsUnique(newEmail);
 
-		const code = await this.createCode(newEmail);
+		const code = await this._createCode(newEmail);
 
 		await this.emailService.send({
 			to: newEmail,
@@ -99,32 +113,32 @@ export class EmailVerifierService {
 			template: 'verify-new-email',
 			context: {name: account.name, code},
 		});
-		return {message: 'Verification email sent.'};
+		return {message: EMAIL_VERIFICATION_SENT};
 	}
 
 	async verifyEmailChange(account: Account, code: string) {
-		const newEmail = await this.getEmailByCode(code);
+		const newEmail = await this._getEmailByCode(code);
 
 		await this.accountService.validateEmailIsUnique(newEmail);
-		const updatedAccount = await this.accountService.update(account.id, {email: newEmail});
+		await this.accountService.update(account.id, {email: newEmail});
 
-		await this.removeCode(code);
-		return updatedAccount;
+		await this._removeCode(code);
+		return {message: EMAIL_CHANGE_SUCCESS};
 	}
 
-	async createUrl(code: string, email: Account['email']) {
-		const url = new URL('/verify', this.WEB_BASE_URL);
+	private async _createUrl(code: string, email: Account['email']) {
+		const url = new URL('/verify-email', this.WEB_BASE_URL);
 		url.search = new URLSearchParams({email, code}).toString();
 		return url.toString();
 	}
 
-	async createCode(email: Account['email']) {
+	private async _createCode(email: Account['email']) {
 		while (true) {
 			const code = Array.from({length: 6}, () => Math.floor(Math.random() * 10)).join('');
 			const key = `${this.REDIS_KEY}:${code}`;
 
 			try {
-				await this.getEmailByCode(code);
+				await this._getEmailByCode(code);
 			} catch {
 				await this.redisClient.set(key, email, 'EX', this.EXPIRATION);
 				return code;
@@ -132,17 +146,17 @@ export class EmailVerifierService {
 		}
 	}
 
-	async getEmailByCode(code: string) {
+	private async _getEmailByCode(code: string) {
 		const key = `${this.REDIS_KEY}:${code}`;
 		const email = await this.redisClient.get(key);
 
 		if (!email) {
-			throw new BadRequestException('Invalid or expired verification code.');
+			throw new BadRequestException(EMAIL_INVALID_TOKEN);
 		}
 		return email;
 	}
 
-	async removeCode(code: string) {
+	private async _removeCode(code: string) {
 		const key = `${this.REDIS_KEY}:${code}`;
 		await this.redisClient.del(key);
 	}
