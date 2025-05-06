@@ -145,7 +145,7 @@ export class AuthController {
 	@ApiResponse({status: 429, description: TOO_MANY_REQUESTS})
 	@ApiOperation({summary: "Requests a change to the account's email."})
 	async requestEmailChange(@CurrentUser() user: Account, @Body() dto: EmailChangeRequestDto) {
-		return await this.emailVerifierService.requestEmailChange(user, dto);
+		return await this.emailVerifierService.requestEmailChange(user, dto.newEmail);
 	}
 
 	@Post('change-email/verify')

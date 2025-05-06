@@ -76,10 +76,10 @@ describe('AuthController - Sessions', () => {
 			const expectedSessionStructure = {
 				id: expect.any(String),
 				ip: expect.any(String),
-				userAgent: expect.any(String),
 				deviceType: expect.any(String),
-				clientDescription: expect.any(String),
-				clientLocation: expect.any(String),
+				browserType: expect.any(String),
+				name: expect.any(String),
+				location: expect.any(String),
 				createdAt: expect.any(String),
 				lastSeenAt: expect.any(String),
 				isCurrent: expect.any(Boolean),

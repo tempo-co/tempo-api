@@ -153,10 +153,7 @@ describe('AuthController - Change email', () => {
 
 		it('should send a verification email to the new email address for a verified account', async () => {
 			const newEmail = faker.internet.email();
-			const emailChangeDto: EmailChangeRequestDto = {
-				newEmail: newEmail,
-				password: VERIFIED_ACCOUNT_PASSWORD,
-			};
+			const emailChangeDto: EmailChangeRequestDto = {newEmail};
 
 			await verifiedAgent
 				.post('/auth/change-email/request')
@@ -181,10 +178,7 @@ describe('AuthController - Change email', () => {
 		});
 
 		it('should fail with 401 Unauthorized if the user is not logged in', async () => {
-			const emailChangeDto: EmailChangeRequestDto = {
-				newEmail: faker.internet.email(),
-				password: VERIFIED_ACCOUNT_PASSWORD,
-			};
+			const emailChangeDto: EmailChangeRequestDto = {newEmail: faker.internet.email()};
 
 			await request(httpServer)
 				.post('/auth/change-email/request')
@@ -196,10 +190,7 @@ describe('AuthController - Change email', () => {
 		});
 
 		it('should fail with 403 Forbidden if the account email is not verified', async () => {
-			const emailChangeDto: EmailChangeRequestDto = {
-				newEmail: faker.internet.email(),
-				password: UNVERIFIED_ACCOUNT_PASSWORD,
-			};
+			const emailChangeDto: EmailChangeRequestDto = {newEmail: faker.internet.email()};
 
 			await unverifiedAgent
 				.post('/auth/change-email/request')
@@ -210,26 +201,8 @@ describe('AuthController - Change email', () => {
 				});
 		});
 
-		it('should fail with 401 Unauthorized if the provided password is incorrect', async () => {
-			const emailChangeDto: EmailChangeRequestDto = {
-				newEmail: faker.internet.email(),
-				password: 'wrong-password',
-			};
-
-			await verifiedAgent
-				.post('/auth/change-email/request')
-				.send(emailChangeDto)
-				.expect(401)
-				.expect((res) => {
-					expect(res.body.message).toBe('Unauthorized');
-				});
-		});
-
 		it('should fail with 409 Conflict if the new email is already in use', async () => {
-			const emailChangeDto: EmailChangeRequestDto = {
-				newEmail: conflictAccountEmail,
-				password: VERIFIED_ACCOUNT_PASSWORD,
-			};
+			const emailChangeDto: EmailChangeRequestDto = {newEmail: conflictAccountEmail};
 
 			await verifiedAgent
 				.post('/auth/change-email/request')
@@ -241,10 +214,7 @@ describe('AuthController - Change email', () => {
 		});
 
 		it('should fail with 400 Bad Request if newEmail is not a valid email format', async () => {
-			const emailChangeDto = {
-				newEmail: 'not-an-email',
-				password: VERIFIED_ACCOUNT_PASSWORD,
-			};
+			const emailChangeDto: EmailChangeRequestDto = {newEmail: 'not-an-email'};
 
 			await verifiedAgent
 				.post('/auth/change-email/request')
@@ -258,52 +228,13 @@ describe('AuthController - Change email', () => {
 		});
 
 		it('should fail with 400 Bad Request if newEmail is missing', async () => {
-			const emailChangeDto = {
-				password: VERIFIED_ACCOUNT_PASSWORD,
-			};
-
 			await verifiedAgent
 				.post('/auth/change-email/request')
-				.send(emailChangeDto)
+				.send({})
 				.expect(400)
 				.expect((res) => {
 					expect(res.body.message).toEqual(
 						expect.arrayContaining([expect.stringMatching(/newEmail should not be empty/i)]),
-					);
-				});
-		});
-
-		it('should fail with 400 Bad Request if password is missing', async () => {
-			const emailChangeDto = {
-				newEmail: faker.internet.email(),
-			};
-
-			await verifiedAgent
-				.post('/auth/change-email/request')
-				.send(emailChangeDto)
-				.expect(400)
-				.expect((res) => {
-					expect(res.body.message).toEqual(
-						expect.arrayContaining([expect.stringMatching(/password should not be empty/i)]),
-					);
-				});
-		});
-
-		it('should fail with 400 Bad Request if password is too short', async () => {
-			const emailChangeDto: EmailChangeRequestDto = {
-				newEmail: faker.internet.email(),
-				password: '123',
-			};
-
-			await verifiedAgent
-				.post('/auth/change-email/request')
-				.send(emailChangeDto)
-				.expect(400)
-				.expect((res) => {
-					expect(res.body.message).toEqual(
-						expect.arrayContaining([
-							expect.stringMatching(/password must be longer than or equal to 8 characters/i),
-						]),
 					);
 				});
 		});
@@ -324,7 +255,7 @@ describe('AuthController - Change email', () => {
 
 			// Request email change and get the code
 			const requestedNewEmail = faker.internet.email();
-			const changeDto: EmailChangeRequestDto = {newEmail: requestedNewEmail, password: VERIFIED_ACCOUNT_PASSWORD};
+			const changeDto: EmailChangeRequestDto = {newEmail: requestedNewEmail};
 			await verifiedAgent.post('/auth/change-email/request').send(changeDto).expect(200);
 
 			const emailContent = await findEmailByRecipient(requestedNewEmail, mailhogApiUrl);
@@ -475,10 +406,7 @@ describe('AuthController - Change email', () => {
 				.expect(200);
 
 			// 3. Account B requests change to the same targetEmail and gets their own code
-			const changeDtoForB: EmailChangeRequestDto = {
-				newEmail: targetEmail,
-				password: accountBCredentials.password,
-			};
+			const changeDtoForB: EmailChangeRequestDto = {newEmail: targetEmail};
 			await accountBAgent.post('/auth/change-email/request').send(changeDtoForB).expect(200);
 
 			const emailForB = await findEmailByRecipient(targetEmail, mailhogApiUrl);
