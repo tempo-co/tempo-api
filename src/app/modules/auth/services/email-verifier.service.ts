@@ -16,7 +16,6 @@ import {
 	EMAIL_INVALID_TOKEN,
 	EMAIL_VERIFICATION_SENT,
 } from '../api/constants/api-messages.constants';
-import {EmailChangeRequestDto} from '../api/dtos/email-change.dto';
 
 @Injectable()
 export class EmailVerifierService {
@@ -99,10 +98,7 @@ export class EmailVerifierService {
 		return {message: EMAIL_VERIFICATION_SENT};
 	}
 
-	async requestEmailChange(account: Account, dto: EmailChangeRequestDto) {
-		const {newEmail, password} = dto;
-
-		await this.accountService.verifyPassword(account.password, password);
+	async requestEmailChange(account: Account, newEmail: Account['email']) {
 		await this.accountService.validateEmailIsUnique(newEmail);
 
 		const code = await this._createCode(newEmail);

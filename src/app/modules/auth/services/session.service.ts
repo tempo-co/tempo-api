@@ -15,7 +15,7 @@ import {
 	NO_OTHER_SESSIONS_TO_REVOKE,
 	SESSION_REVOKE_SUCCESS,
 } from '../api/constants/api-messages.constants';
-import {SessionResponseDto} from '../api/dtos/session-response.dto';
+import {SessionResponseDto, UNKNOWN} from '../api/dtos/session-response.dto';
 import {AuthenticatedSession} from './authenticated-session.interface';
 
 @Injectable()
@@ -62,30 +62,18 @@ export class SessionService {
 					if (sessionData?.passport?.user !== accountId) continue;
 					const sessionId = key.substring(prefix.length);
 
-					sessions.push({
-						id: sessionId,
-						ip: sessionData.metadata?.ip ?? 'Unknown',
-						userAgent: sessionData.metadata?.userAgent ?? 'Unknown',
-						clientDescription: sessionData.metadata?.clientDescription ?? 'Unknown device',
-						clientLocation: sessionData.metadata?.clientLocation ?? 'Unknown',
-						deviceType: sessionData.metadata?.deviceType ?? 'Unknown',
-						createdAt: sessionData.metadata?.createdAt ?? new Date(0).toISOString(),
-						lastSeenAt: sessionData.metadata?.lastSeenAt ?? new Date(0).toISOString(),
-						isCurrent: sessionId === currentSessionId,
-					});
+					sessions.push(
+						new SessionResponseDto({
+							id: sessionId,
+							...sessionData.metadata,
+							isCurrent: sessionId === currentSessionId,
+						}),
+					);
 				}
 			}
 
 			if (cursor === '0') break;
 		}
-
-		sessions.sort((a, b) => {
-			const isCurrentSortOrder = Number(b.isCurrent) - Number(a.isCurrent);
-			if (isCurrentSortOrder !== 0) return isCurrentSortOrder;
-
-			return new Date(b.lastSeenAt).getTime() - new Date(a.lastSeenAt).getTime();
-		});
-
 		return sessions;
 	}
 
@@ -110,7 +98,7 @@ export class SessionService {
 		return {message: SESSION_REVOKE_SUCCESS};
 	}
 
-	/** Revokes all sessions except the current one. */
+	/** Revokes all sessions of an account except the current one. */
 	async revokeAllOtherSessions(accountId: Account['id'], currentSessionId: string | null) {
 		const allSessions = await this.getSessions(accountId, currentSessionId);
 
@@ -136,64 +124,36 @@ export class SessionService {
 		const session: AuthenticatedSession = request.session;
 		if (!session.passport?.user || session.metadata) return;
 
-		const ip = request.ip ?? 'Unknown';
-		const userAgent = request.headers['user-agent'] ?? 'Unknown';
+		const userAgent = request.headers['user-agent'];
 		const now = new Date().toISOString();
 
-		const {clientDescription, deviceType} = this.getClientDescription(userAgent);
-		const clientLocation = await this.getClientLocation(ip);
+		const {name, deviceType, browserType} = this._parseUserAgent(userAgent);
+		const location = await this._getLocationByIp(request.ip);
 
 		session.metadata = {
-			ip,
-			userAgent,
+			ip: request.ip ?? UNKNOWN,
 			deviceType,
-			clientDescription,
+			browserType,
+			name,
 			createdAt: now,
 			lastSeenAt: now,
-			clientLocation,
+			location,
 		};
 	}
 
-	/** Updates the `lastSeenAt` timestamp in the session metadata */
+	/** Updates the `lastSeenAt` timestamp in the session metadata. */
 	updateLastSeen(session: AuthenticatedSession) {
 		if (!session.passport?.user || !session.metadata) return;
 		session.metadata.lastSeenAt = new Date().toISOString();
 	}
 
-	/** Attempts to look up the geolocation for a given IP address. */
-	async getClientLocation(ip: string) {
-		//  • IPv4 loopback:       127.x.x.x
-		//  • IPv6 loopback:       ::1
-		//  • full IPv6 loopback:  0:0:0:0:0:0:0:1
-		//  • IPv4‑mapped IPv6:    ::ffff:127.x.x.x
-		const localhostRegex = /^(?:127(?:\.\d{1,3}){3}|::1|0:0:0:0:0:0:0:1|::ffff:127(?:\.\d{1,3}){3})$/;
-
-		if (ip === 'Unknown' || localhostRegex.test(ip)) {
-			return 'Unknown';
-		}
-
-		try {
-			const geoData = await geoip.lookup(ip);
-			if (!geoData) return 'Unknown';
-
-			const parts = [geoData.city, geoData.region, geoData.country].filter(Boolean);
-
-			if (parts.length === 0) return 'Unknown';
-			if (geoData.city && geoData.country) return `${geoData.city}, ${geoData.country}`;
-			if (geoData.region && geoData.country) return `${geoData.region}, ${geoData.country}`;
-
-			return geoData.country ?? 'Unknown';
-		} catch {
-			return 'Unknown';
-		}
-	}
-
-	/** Formats a session's user agent into a readable description and device type. */
-	getClientDescription(userAgent: string) {
-		if (userAgent === 'Unknown') {
+	/** Parses a user agent to summarize the client environment (OS, browser, device type). */
+	private _parseUserAgent(userAgent?: string) {
+		if (!userAgent) {
 			return {
-				clientDescription: 'Unknown device',
-				deviceType: 'Unknown',
+				name: UNKNOWN,
+				deviceType: UNKNOWN,
+				browserType: UNKNOWN,
 			};
 		}
 
@@ -203,24 +163,59 @@ export class SessionService {
 		const browserName = result.browser?.name;
 		const osName = result.os?.name;
 		const osVersion = result.os?.version;
+
 		const deviceType = result.device?.type ?? 'desktop';
+		const browserType = browserName ?? UNKNOWN;
 
-		let osPart = '';
-		if (osName) {
-			osPart = osVersion ? `${osName} ${osVersion}` : osName;
+		const osPart = osName ? `${osName}${osVersion ? ` ${osVersion}` : ''}` : '';
+		const nameParts = [browserName, osPart].filter(Boolean);
+		let name: string;
+
+		switch (nameParts.length) {
+			case 2:
+				name = `${nameParts[0]} on ${nameParts[1]}`;
+				break;
+			case 1:
+				name = nameParts[0]!;
+				break;
+			default:
+				name = deviceType.charAt(0).toUpperCase() + deviceType.slice(1);
+				if (!name) name = UNKNOWN;
+				break;
 		}
 
-		let clientDescription = 'Unknown device';
-		if (browserName && osPart) {
-			clientDescription = `${browserName} on ${osPart}`;
-		} else if (browserName) {
-			clientDescription = browserName;
-		} else if (osPart) {
-			clientDescription = osPart;
-		} else {
-			clientDescription = deviceType.charAt(0).toUpperCase() + deviceType.slice(1);
-		}
+		return {name, deviceType, browserType};
+	}
 
-		return {clientDescription, deviceType};
+	/** Attempts to look up the geolocation for a given IP address. */
+	private async _getLocationByIp(ip?: string) {
+		if (!ip) return UNKNOWN;
+		if (this._isLocalhostIp(ip)) return 'Localhost';
+
+		try {
+			const geoData = await geoip.lookup(ip);
+			return this._formatGeoData(geoData);
+		} catch {
+			return UNKNOWN;
+		}
+	}
+
+	/** Formats geolocation data into a readable string. */
+	private _formatGeoData(geoData: Awaited<ReturnType<typeof geoip.lookup>>) {
+		if (!geoData) return UNKNOWN;
+
+		const {city, region, country} = geoData;
+
+		if (city && country) return `${city}, ${country}`;
+		if (region && country) return `${region}, ${country}`;
+
+		const parts = [city, region, country].filter(Boolean);
+		return parts.length > 0 ? parts.join(', ') : UNKNOWN;
+	}
+
+	/** Checks if an IP is a localhost address. */
+	private _isLocalhostIp(ip: string) {
+		const LOCALHOST_REGEX = /^(?:127(?:\.\d{1,3}){3}|::1|0:0:0:0:0:0:0:1|::ffff:127(?:\.\d{1,3}){3})$/;
+		return LOCALHOST_REGEX.test(ip);
 	}
 }

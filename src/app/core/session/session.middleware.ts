@@ -8,9 +8,7 @@ export class SessionMiddleware implements NestMiddleware {
 	constructor(private readonly sessionService: SessionService) {}
 
 	use(req: Request, _res: Response, next: NextFunction): void {
-		if (!req.session) {
-			return next();
-		}
+		if (!req.session) return next();
 		this.sessionService.updateLastSeen(req.session);
 		next();
 	}
