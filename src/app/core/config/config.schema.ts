@@ -49,9 +49,17 @@ export const configSchema = z.object({
 	PASSWORD_RESET_EXPIRATION: durationSchema,
 	PASSWORD_RESET_REDIS_KEY: z.string().min(1),
 
-	// --- Rate limiting
+	// --- Rate limiting ---
 	THROTTLE_TTL: durationSchema,
 	THROTTLE_LIMIT: z.coerce.number().int().positive(),
+
+	// --- S3 Object storage ---
+	MINIO_ROOT_USER: z.string().min(1),
+	MINIO_ROOT_PASSWORD: z.string().min(1),
+	S3_ENDPOINT: z.string().url(),
+	S3_REGION: z.string().min(1),
+	S3_BUCKET: z.string().min(1),
+	S3_URL_EXPIRATION: durationSchema,
 });
 
 export type Config = z.infer<typeof configSchema>;
