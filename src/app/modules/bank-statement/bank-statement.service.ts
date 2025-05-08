@@ -78,16 +78,16 @@ export class BankStatementService {
 		return {bankStatements, total};
 	}
 
-	async findFileByIdAndAccountId(id: BankStatement['id'], accountId: Account['id']) {
+	async findByIdAndAccountId(id: BankStatement['id'], accountId: Account['id']) {
 		const bankStatement = await this.bankStatementRepository.findOne({
 			where: {id: id, bankAccount: {account: {id: accountId}}},
-			relations: ['file', 'transactions'],
+			relations: ['file'],
 		});
 
 		if (!bankStatement) {
-			throw new NotFoundException(`Bank statement not found.`);
+			throw new NotFoundException('Bank statement not found.');
 		}
-		return this.fileService.findById(bankStatement.file.id);
+		return bankStatement;
 	}
 
 	async deleteByIdAndAccountId(id: BankStatement['id'], accountId: Account['id']) {
@@ -109,7 +109,7 @@ export class BankStatementService {
 		await this.fileService.deleteById(bankStatement.file.id);
 	}
 
-	async assertNoPeriodOverlap(transactions: TransactionPartial[], bankAccountId: BankAccount['id']) {
+	private async assertNoPeriodOverlap(transactions: TransactionPartial[], bankAccountId: BankAccount['id']) {
 		let periodStart = transactions[0].startedAt;
 		let periodEnd = transactions[0].startedAt;
 

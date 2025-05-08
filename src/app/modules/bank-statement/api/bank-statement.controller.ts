@@ -7,14 +7,11 @@ import {
 	ParseUUIDPipe,
 	Post,
 	Query,
-	Res,
-	StreamableFile,
 	UploadedFile,
 	UseInterceptors,
 } from '@nestjs/common';
 import {FileInterceptor} from '@nestjs/platform-express';
 import {ApiResponse, ApiTags} from '@nestjs/swagger';
-import {Response} from 'express';
 
 import {Account} from '@modules/account/account.entity';
 import {UNAUTHORIZED} from '@modules/auth/api/constants/api-messages.constants';
@@ -67,24 +64,5 @@ export class BankStatementController {
 		bankStatementId: BankStatement['id'],
 	): Promise<void> {
 		return this.bankStatementService.deleteByIdAndAccountId(bankStatementId, user.id);
-	}
-
-	@Get(':bankStatementId/file')
-	async getFile(
-		@CurrentUser() user: Account,
-		@Param('bankStatementId', new ParseUUIDPipe({version: '4'}))
-		bankStatementId: BankStatement['id'],
-		@Res({passthrough: true}) res: Response,
-	): Promise<StreamableFile> {
-		const file = await this.bankStatementService.findFileByIdAndAccountId(bankStatementId, user.id);
-
-		res.set({
-			'Content-Type': file.type,
-			'Access-Control-Expose-Headers': 'Content-Disposition',
-			'Content-Disposition': `attachment; filename="${file.name}"`,
-			'Content-Length': file.size.toString(),
-			'X-File-Id': file.id,
-		});
-		return new StreamableFile(file.buffer);
 	}
 }
