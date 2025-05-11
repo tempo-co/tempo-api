@@ -1,13 +1,14 @@
-import {Global, Module} from '@nestjs/common';
+import {Module} from '@nestjs/common';
 import Redis from 'ioredis';
 
 import {ConfigurationService} from '@core/config/config.service';
 
 import {REDIS} from './redis.constants';
+import {RedisService} from './redis.service';
 
-@Global()
 @Module({
 	providers: [
+		RedisService,
 		{
 			provide: REDIS,
 			inject: [ConfigurationService],

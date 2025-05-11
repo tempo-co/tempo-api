@@ -9,6 +9,7 @@ import {
 import {getSignedUrl} from '@aws-sdk/s3-request-presigner';
 import {Injectable} from '@nestjs/common';
 import ms from 'ms';
+import crypto from 'node:crypto';
 
 import {ConfigurationService} from '@core/config/config.service';
 import {File} from '@modules/file/file.entity';
@@ -30,26 +31,26 @@ export class S3Service {
 	}
 
 	async uploadFile(file: Express.Multer.File) {
-		const key = `${Date.now()}-${file.originalname}`;
+		const key = `${crypto.randomUUID()}-${file.originalname}`;
 
-		const inputCommand: PutObjectCommandInput = {
+		const command: PutObjectCommandInput = {
 			Bucket: this.BUCKET,
 			Key: key,
 			Body: file.buffer,
 			ContentType: file.mimetype,
 		};
-		await this.s3.send(new PutObjectCommand(inputCommand));
+		await this.s3.send(new PutObjectCommand(command));
 		return key;
 	}
 
 	async getSignedUrl(file: File) {
-		const inputCommand: GetObjectCommandInput = {
+		const command: GetObjectCommandInput = {
 			Bucket: this.BUCKET,
 			Key: file.key,
 			ResponseContentDisposition: `attachment; filename=${file.name}`,
 			ResponseContentType: file.mimeType,
 		};
-		return await getSignedUrl(this.s3, new GetObjectCommand(inputCommand), {expiresIn: this.URL_EXPIRATION});
+		return await getSignedUrl(this.s3, new GetObjectCommand(command), {expiresIn: this.URL_EXPIRATION});
 	}
 
 	async deleteFile(key: File['key']) {

@@ -9,22 +9,18 @@ import {ConfigurationService} from '@core/config/config.service';
 import {AppModule} from './app.module';
 
 async function bootstrap() {
-	const app = await NestFactory.create<NestExpressApplication>(AppModule);
+	const app = await NestFactory.create<NestExpressApplication>(AppModule, {forceCloseConnections: true});
 	const config = app.get(ConfigurationService);
 
-	app.enableCors({
-		origin: config.get('WEB_BASE_URL'),
-		credentials: true,
-	});
+	app.enableShutdownHooks();
+	app.enableCors({origin: config.get('WEB_BASE_URL'), credentials: true});
 	app.use(helmet());
 	app.disable('x-powered-by');
-
 	app.useGlobalPipes(new ValidationPipe({whitelist: true, transform: true}));
 
 	if (config.get('NODE_ENV') == 'development') {
 		setupSwagger(app);
 	}
-
 	await app.listen(config.get('PORT'));
 }
 bootstrap();

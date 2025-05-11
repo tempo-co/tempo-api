@@ -22,7 +22,7 @@
 		"docker:test:up": "docker compose -f docker-compose.test.yml --env-file .env.test up --wait",
 		"docker:test:down": "docker compose -f docker-compose.test.yml --env-file .env.test down -v --remove-orphans",
 		"test:e2e": "npm run docker:test:down && npm run docker:test:up && rimraf dist && jest --config ./test/jest-e2e.json --verbose --runInBand",
-		"test:e2e:cov": "npm run docker:test:down && npm run docker:test:up && rimraf dist && jest --config ./test/jest-e2e.json --verbose --coverage --forceExit --runInBand",
+		"test:e2e:cov": "npm run docker:test:down && npm run docker:test:up && rimraf dist && jest --config ./test/jest-e2e.json --verbose --coverage --runInBand",
 		"db:drop": "ts-node -r tsconfig-paths/register scripts/drop-schema.ts"
 	},
 	"dependencies": {
@@ -39,6 +39,7 @@
 		"@nestjs/passport": "^10.0.3",
 		"@nestjs/platform-express": "^10.0.0",
 		"@nestjs/swagger": "^7.3.1",
+		"@nestjs/terminus": "^11.0.0",
 		"@nestjs/throttler": "^6.4.0",
 		"@nestjs/typeorm": "^10.0.2",
 		"argon2": "^0.40.3",

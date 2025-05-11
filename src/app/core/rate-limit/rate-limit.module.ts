@@ -10,6 +10,7 @@ import {RedisModule} from '@core/redis/redis.module';
 
 @Module({
 	imports: [
+		RedisModule,
 		ThrottlerModule.forRootAsync({
 			imports: [RedisModule],
 			inject: [ConfigurationService, REDIS],

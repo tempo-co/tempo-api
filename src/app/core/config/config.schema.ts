@@ -13,6 +13,7 @@ export const configSchema = z.object({
 	WEB_BASE_URL: z.string().url(),
 	NODE_ENV: z.enum(ENV_VALUES),
 	PORT: portSchema,
+	API_URL: z.string().min(1),
 
 	// --- Database ---
 	DB_HOST: z.string().min(1),
