@@ -4,6 +4,7 @@ import {PassportModule} from '@nestjs/passport';
 
 import {EmailModule} from '@core/email/email.module';
 import {EmailService} from '@core/email/email.service';
+import {RedisModule} from '@core/redis/redis.module';
 import {AccountModule} from '@modules/account/account.module';
 
 import {AuthController} from './api/auth.controller';
@@ -16,7 +17,7 @@ import {SessionService} from './services/session.service';
 import {LocalStrategy} from './strategies/local.strategy';
 
 @Module({
-	imports: [AccountModule, EmailModule, PassportModule.register({session: true})],
+	imports: [RedisModule, AccountModule, EmailModule, PassportModule.register({session: true})],
 	providers: [
 		AuthService,
 		SessionService,

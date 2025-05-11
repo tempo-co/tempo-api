@@ -5,6 +5,7 @@ import {ThrottlerGuard} from '@nestjs/throttler';
 import {ConfigurationModule} from '@core/config/config.module';
 import {DatabaseModule} from '@core/database/database.module';
 import {EmailModule} from '@core/email/email.module';
+import {HealthModule} from '@core/health/health.module';
 import {QueueModule} from '@core/queue/queue.module';
 import {RateLimitModule} from '@core/rate-limit/rate-limit.module';
 import {RedisModule} from '@core/redis/redis.module';
@@ -25,6 +26,7 @@ import {TransactionModule} from '@modules/transaction/transaction.module';
 		SessionModule,
 		RateLimitModule,
 		EmailModule,
+		HealthModule,
 		AuthModule,
 		FileParserModule,
 		TransactionModule,

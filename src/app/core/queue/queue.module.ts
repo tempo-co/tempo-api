@@ -3,11 +3,14 @@ import {Global, Module} from '@nestjs/common';
 import Redis from 'ioredis';
 
 import {REDIS} from '@core/redis/redis.constants';
+import {RedisModule} from '@core/redis/redis.module';
 
 @Global()
 @Module({
 	imports: [
+		RedisModule,
 		BullModule.forRootAsync({
+			imports: [RedisModule],
 			inject: [REDIS],
 			useFactory: async (redisClient: Redis) => {
 				return {
