@@ -22,8 +22,7 @@
 		"docker:test:up": "docker compose -f docker-compose.test.yml --env-file .env.test up --wait",
 		"docker:test:down": "docker compose -f docker-compose.test.yml --env-file .env.test down -v --remove-orphans",
 		"test:e2e": "npm run docker:test:down && npm run docker:test:up && rimraf dist && jest --config ./test/jest-e2e.json --verbose --runInBand",
-		"test:e2e:cov": "npm run docker:test:down && npm run docker:test:up && rimraf dist && jest --config ./test/jest-e2e.json --verbose --coverage --runInBand",
-		"db:drop": "ts-node -r tsconfig-paths/register scripts/drop-schema.ts"
+		"test:e2e:cov": "npm run docker:test:down && npm run docker:test:up && rimraf dist && jest --config ./test/jest-e2e.json --verbose --coverage --runInBand"
 	},
 	"dependencies": {
 		"@aws-sdk/client-s3": "^3.803.0",
