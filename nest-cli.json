@@ -16,7 +16,7 @@
 		"assets": [
 			{
 				"include": "app/core/email/templates/**/*",
-				"outDir": "dist/app/core/email/templates",
+				"outDir": "app/core/email/templates",
 				"watchAssets": true
 			}
 		]
