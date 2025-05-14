@@ -15,8 +15,7 @@
 		],
 		"assets": [
 			{
-				"include": "app/core/email/templates/**/*",
-				"outDir": "app/core/email/templates",
+				"include": "**/*.hbs",
 				"watchAssets": true
 			}
 		]

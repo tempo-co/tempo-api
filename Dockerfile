@@ -6,6 +6,7 @@ RUN npm ci
 
 COPY tsconfig*.json ./
 COPY src/ ./src/
+COPY nest-cli.json ./
 RUN npm run build
 
 FROM node:20-alpine AS runtime
