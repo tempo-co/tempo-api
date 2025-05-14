@@ -3,6 +3,7 @@
 	"collection": "@nestjs/schematics",
 	"sourceRoot": "src",
 	"compilerOptions": {
+		"deleteOutDir": true,
 		"plugins": [
 			{
 				"name": "@nestjs/swagger",
@@ -12,12 +13,12 @@
 				}
 			}
 		],
-		"deleteOutDir": true
-	},
-	"assets": [
-		{
-			"include": "app/core/email/templates/**/*",
-			"outDir": "dist/app/core/email/templates"
-		}
-	]
+		"assets": [
+			{
+				"include": "app/core/email/templates/**/*",
+				"outDir": "dist/app/core/email/templates",
+				"watchAssets": true
+			}
+		]
+	}
 }
