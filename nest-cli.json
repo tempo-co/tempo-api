@@ -12,12 +12,12 @@
 				}
 			}
 		],
-		"assets": [
-			{
-				"include": "app/core/email/templates/**/*",
-				"outDir": "dist/app/core/email/templates"
-			}
-		],
 		"deleteOutDir": true
-	}
+	},
+	"assets": [
+		{
+			"include": "app/core/email/templates/**/*",
+			"outDir": "dist/app/core/email/templates"
+		}
+	]
 }
