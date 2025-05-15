@@ -65,9 +65,9 @@ describe('AuthController - Reset Password', () => {
 			const resetEmail = await findEmailByRecipient(accountToResetEmail, mailhogApiUrl);
 			expect(resetEmail).toBeDefined();
 
-			const recipientEmail = resetEmail?.To?.[0]?.Mailbox + '@' + resetEmail?.To?.[0]?.Domain;
-			const subject = resetEmail?.Content?.Headers?.Subject?.[0];
-			const body = resetEmail?.Content?.Body;
+			const recipientEmail = resetEmail?.To[0].Mailbox + '@' + resetEmail?.To[0].Domain;
+			const subject = resetEmail?.Content.Headers.Subject[0];
+			const body = resetEmail?.Content.Body;
 			const token = extractPasswordResetToken(body);
 
 			expect(recipientEmail).toEqual(accountToResetEmail);
@@ -137,7 +137,7 @@ describe('AuthController - Reset Password', () => {
 			// 2. Extract token from email
 			const resetEmail = await findEmailByRecipient(accountToResetEmail, mailhogApiUrl);
 			expect(resetEmail).toBeDefined();
-			resetToken = extractPasswordResetToken(resetEmail?.Content?.Body);
+			resetToken = extractPasswordResetToken(resetEmail?.Content.Body);
 			expect(resetToken).toBeDefined();
 			expect(resetToken).toMatch(UUID_VALIDATION_REGEX);
 		});

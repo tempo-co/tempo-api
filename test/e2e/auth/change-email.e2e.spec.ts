@@ -166,9 +166,9 @@ describe('AuthController - Change email', () => {
 			const verificationEmail = await findEmailByRecipient(newEmail, mailhogApiUrl);
 			expect(verificationEmail).toBeDefined();
 
-			const recipientEmail = verificationEmail?.To?.[0]?.Mailbox + '@' + verificationEmail?.To?.[0]?.Domain;
-			const subject = verificationEmail?.Content?.Headers?.Subject?.[0];
-			const body = verificationEmail?.Content?.Body;
+			const recipientEmail = verificationEmail?.To[0].Mailbox + '@' + verificationEmail?.To[0].Domain;
+			const subject = verificationEmail?.Content.Headers.Subject[0];
+			const body = verificationEmail?.Content.Body;
 			const code = extractVerificationCode(body);
 
 			expect(recipientEmail).toEqual(newEmail);
@@ -259,7 +259,7 @@ describe('AuthController - Change email', () => {
 			await verifiedAgent.post('/auth/change-email/request').send(changeDto).expect(200);
 
 			const emailContent = await findEmailByRecipient(requestedNewEmail, mailhogApiUrl);
-			const code = extractVerificationCode(emailContent?.Content?.Body);
+			const code = extractVerificationCode(emailContent?.Content.Body);
 
 			verificationCode = code;
 			newEmailAddress = requestedNewEmail;
@@ -390,7 +390,7 @@ describe('AuthController - Change email', () => {
 			await request(httpServer).post('/auth/signup').send(accountBCredentials).expect(201);
 
 			const signupEmailB = await findEmailByRecipient(accountBCredentials.email, mailhogApiUrl);
-			const signupCodeB = extractVerificationCode(signupEmailB?.Content?.Body);
+			const signupCodeB = extractVerificationCode(signupEmailB?.Content.Body);
 			expect(signupCodeB).toBeDefined();
 
 			const emailVerifyDto: EmailVerifyDto = {
@@ -410,7 +410,7 @@ describe('AuthController - Change email', () => {
 			await accountBAgent.post('/auth/change-email/request').send(changeDtoForB).expect(200);
 
 			const emailForB = await findEmailByRecipient(targetEmail, mailhogApiUrl);
-			const codeForB = extractVerificationCode(emailForB?.Content?.Body);
+			const codeForB = extractVerificationCode(emailForB?.Content.Body);
 			expect(codeForB).toBeDefined();
 			expect(codeForB).not.toEqual(codeForA);
 

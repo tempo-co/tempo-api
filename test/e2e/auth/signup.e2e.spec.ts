@@ -56,9 +56,9 @@ describe('AuthController - Signup', () => {
 			const welcomeEmail = await findEmailByRecipient(signUpDto.email, mailhogApiUrl);
 			expect(welcomeEmail).toBeDefined();
 
-			const recipientEmail = welcomeEmail?.To?.[0]?.Mailbox + '@' + welcomeEmail?.To?.[0]?.Domain;
-			const subject = welcomeEmail?.Content?.Headers?.Subject?.[0];
-			const body = welcomeEmail?.Content?.Body;
+			const recipientEmail = welcomeEmail?.To[0].Mailbox + '@' + welcomeEmail?.To[0].Domain;
+			const subject = welcomeEmail?.Content.Headers.Subject[0];
+			const body = welcomeEmail?.Content.Body;
 
 			expect(recipientEmail).toEqual(signUpDto.email);
 			expect(subject).toContain('Welcome to Flair');
@@ -227,9 +227,9 @@ describe('AuthController - Signup', () => {
 			const verificationEmail = await findEmailByRecipient(UNVERIFIED_ACCOUNT_EMAIL, mailhogApiUrl);
 			expect(verificationEmail).toBeDefined();
 
-			const recipientEmail = verificationEmail?.To?.[0]?.Mailbox + '@' + verificationEmail?.To?.[0]?.Domain;
-			const subject = verificationEmail?.Content?.Headers?.Subject?.[0];
-			const body = verificationEmail?.Content?.Body;
+			const recipientEmail = verificationEmail?.To[0].Mailbox + '@' + verificationEmail?.To[0].Domain;
+			const subject = verificationEmail?.Content.Headers.Subject[0];
+			const body = verificationEmail?.Content.Body;
 
 			expect(recipientEmail).toEqual(UNVERIFIED_ACCOUNT_EMAIL);
 			expect(subject).toContain('is your verification code');
@@ -274,7 +274,7 @@ describe('AuthController - Signup', () => {
 			await request(httpServer).post('/auth/signup').send(accountCredentials).expect(201);
 
 			const welcomeEmail = await findEmailByRecipient(accountCredentials.email, mailhogApiUrl);
-			verificationCode = extractVerificationCode(welcomeEmail?.Content?.Body);
+			verificationCode = extractVerificationCode(welcomeEmail?.Content.Body);
 			expect(verificationCode).toBeDefined();
 			expect(verificationCode).toMatch(/^\d{6}$/);
 
@@ -328,7 +328,7 @@ describe('AuthController - Signup', () => {
 			await agent.post('/auth/signup/resend').send().expect(200);
 
 			const resendEmail = await findEmailByRecipient(accountCredentials.email, mailhogApiUrl);
-			const resendCode = extractVerificationCode(resendEmail?.Content?.Body);
+			const resendCode = extractVerificationCode(resendEmail?.Content.Body);
 			expect(resendCode).toBeDefined();
 			expect(resendCode).toMatch(/^\d{6}$/);
 			expect(resendCode).not.toEqual(verificationCode);

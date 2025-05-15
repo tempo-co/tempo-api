@@ -25,14 +25,14 @@ export async function findEmailByRecipient(recipientEmail: string, apiUrl: strin
 	}
 }
 
-export function extractVerificationCode(body: string | undefined) {
+export function extractVerificationCode(body?: string) {
 	if (!body) return null;
 	const pattern = new RegExp(`following code:\\s*${SIX_DIGIT_REGEX.source}`, 'i');
 	const match = body.match(pattern);
 	return match ? match[1] : null;
 }
 
-export function extractPasswordResetToken(body: string | undefined) {
+export function extractPasswordResetToken(body?: string) {
 	if (!body) return null;
 
 	// First, decode the quoted-printable encoding. Replaces =3D with =
