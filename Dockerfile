@@ -16,11 +16,11 @@ USER node
 WORKDIR /usr/src/app
 
 COPY --chown=node:node package*.json ./
-RUN npm ci --only=production
+RUN npm ci
 
 COPY --from=builder --chown=node:node /usr/src/app/dist ./dist
 
-ARG NODE_ENV=production
+ARG NODE_ENV=test
 ENV NODE_ENV=${NODE_ENV}
 
 EXPOSE ${PORT}
