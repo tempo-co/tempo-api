@@ -1,24 +1,27 @@
-import axios from 'axios';
-
-import {MailHogResponse} from '../types/mailhog-response';
+import {MailpitMessageSummaryResponse, MailpitResponse} from '../types/mailpit-response';
 import {SIX_DIGIT_REGEX, UUID_REGEX} from '../types/regex.constants';
 
 export async function clearEmails(apiUrl: string) {
-	await axios.delete(`${apiUrl}/api/v1/messages`);
+	await fetch(`${apiUrl}/api/v1/messages`, {method: 'DELETE'});
 }
 
 export async function findEmailByRecipient(recipientEmail: string, apiUrl: string) {
-	let retries = 5;
-	const delayMs = 50;
+	let retries = 10;
+	const delayMs = 200;
 
-	// Retry briefly to allow BullMQ to process the job and send email to MailHog
+	// Retry briefly to allow BullMQ to process the job and send email to Mailpit
 	while (retries > 0) {
-		const response = await axios.get<MailHogResponse>(`${apiUrl}/api/v2/messages`);
-		const email = response.data?.items?.find((msg) =>
-			msg.To?.some((recipient) => recipient.Mailbox + '@' + recipient.Domain === recipientEmail),
+		const res = await fetch(`${apiUrl}/api/v1/messages`);
+		const data: MailpitResponse = await res.json();
+		const email = data.messages.find((msg) =>
+			msg.To.some((r) => r.Address.toLowerCase() === recipientEmail.toLowerCase()),
 		);
 
-		if (email) return email;
+		if (email) {
+			const res = await fetch(`${apiUrl}/api/v1/message/${email.ID}`);
+			const fullEmail: MailpitMessageSummaryResponse = await res.json();
+			return fullEmail;
+		}
 
 		retries--;
 		if (retries > 0) await sleep(delayMs);

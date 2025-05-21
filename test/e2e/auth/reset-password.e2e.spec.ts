@@ -23,17 +23,17 @@ import {UUID_VALIDATION_REGEX} from '../../types/regex.constants';
 import {clearEmails, extractPasswordResetToken, findEmailByRecipient} from '../../utils/email.util';
 
 describe('AuthController - Reset Password', () => {
-	let mailhogApiUrl: string;
+	let mailpitApiUrl: string;
 	let httpServer: Server;
 
 	beforeAll(async () => {
 		const app = getApp();
-		mailhogApiUrl = app.get(ConfigurationService).get('EMAIL_UI_URL');
+		mailpitApiUrl = app.get(ConfigurationService).get('EMAIL_UI_URL');
 		httpServer = app.getHttpServer();
 	});
 
 	beforeEach(async () => {
-		await clearEmails(mailhogApiUrl);
+		await clearEmails(mailpitApiUrl);
 	});
 
 	describe('/auth/reset-password/request (POST)', () => {
@@ -62,12 +62,12 @@ describe('AuthController - Reset Password', () => {
 					expect(res.body.message).toBe(PASSWORD_RESET_CONFIRMATION);
 				});
 
-			const resetEmail = await findEmailByRecipient(accountToResetEmail, mailhogApiUrl);
+			const resetEmail = await findEmailByRecipient(accountToResetEmail, mailpitApiUrl);
 			expect(resetEmail).toBeDefined();
 
-			const recipientEmail = resetEmail?.To[0].Mailbox + '@' + resetEmail?.To[0].Domain;
-			const subject = resetEmail?.Content.Headers.Subject[0];
-			const body = resetEmail?.Content.Body;
+			const recipientEmail = resetEmail?.To[0].Address;
+			const subject = resetEmail?.Subject;
+			const body = resetEmail?.Text;
 			const token = extractPasswordResetToken(body);
 
 			expect(recipientEmail).toEqual(accountToResetEmail);
@@ -90,7 +90,7 @@ describe('AuthController - Reset Password', () => {
 				});
 
 			// Verify no email was sent
-			const resetEmail = await findEmailByRecipient(nonExistentEmail, mailhogApiUrl);
+			const resetEmail = await findEmailByRecipient(nonExistentEmail, mailpitApiUrl);
 			expect(resetEmail).toBeUndefined();
 		});
 
@@ -135,9 +135,9 @@ describe('AuthController - Reset Password', () => {
 			await request(httpServer).post('/auth/reset-password/request').send(requestDto).expect(200);
 
 			// 2. Extract token from email
-			const resetEmail = await findEmailByRecipient(accountToResetEmail, mailhogApiUrl);
+			const resetEmail = await findEmailByRecipient(accountToResetEmail, mailpitApiUrl);
 			expect(resetEmail).toBeDefined();
-			resetToken = extractPasswordResetToken(resetEmail?.Content.Body);
+			resetToken = extractPasswordResetToken(resetEmail?.Text);
 			expect(resetToken).toBeDefined();
 			expect(resetToken).toMatch(UUID_VALIDATION_REGEX);
 		});
