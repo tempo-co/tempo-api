@@ -25,18 +25,18 @@ import {getApp} from '../../setup/e2e.setup';
 import {clearEmails, extractVerificationCode, findEmailByRecipient} from '../../utils/email.util';
 
 describe('AuthController - Change email', () => {
-	let mailhogApiUrl: string;
+	let mailpitApiUrl: string;
 	let httpServer: Server;
 
 	beforeAll(async () => {
 		const app = getApp();
 
-		mailhogApiUrl = app.get(ConfigurationService).get('EMAIL_UI_URL');
+		mailpitApiUrl = app.get(ConfigurationService).get('EMAIL_UI_URL');
 		httpServer = app.getHttpServer();
 	});
 
 	beforeEach(async () => {
-		await clearEmails(mailhogApiUrl);
+		await clearEmails(mailpitApiUrl);
 	});
 
 	describe('/auth/change-email/check (HEAD)', () => {
@@ -148,7 +148,7 @@ describe('AuthController - Change email', () => {
 				.send({email: UNVERIFIED_ACCOUNT_EMAIL, password: UNVERIFIED_ACCOUNT_PASSWORD})
 				.expect(200);
 
-			await clearEmails(mailhogApiUrl);
+			await clearEmails(mailpitApiUrl);
 		});
 
 		it('should send a verification email to the new email address for a verified account', async () => {
@@ -163,12 +163,12 @@ describe('AuthController - Change email', () => {
 					expect(res.body.message).toBe(EMAIL_VERIFICATION_SENT);
 				});
 
-			const verificationEmail = await findEmailByRecipient(newEmail, mailhogApiUrl);
+			const verificationEmail = await findEmailByRecipient(newEmail, mailpitApiUrl);
 			expect(verificationEmail).toBeDefined();
 
-			const recipientEmail = verificationEmail?.To[0].Mailbox + '@' + verificationEmail?.To[0].Domain;
-			const subject = verificationEmail?.Content.Headers.Subject[0];
-			const body = verificationEmail?.Content.Body;
+			const recipientEmail = verificationEmail?.To[0].Address;
+			const subject = verificationEmail?.Subject;
+			const body = verificationEmail?.Text;
 			const code = extractVerificationCode(body);
 
 			expect(recipientEmail).toEqual(newEmail);
@@ -258,15 +258,15 @@ describe('AuthController - Change email', () => {
 			const changeDto: EmailChangeRequestDto = {newEmail: requestedNewEmail};
 			await verifiedAgent.post('/auth/change-email/request').send(changeDto).expect(200);
 
-			const emailContent = await findEmailByRecipient(requestedNewEmail, mailhogApiUrl);
-			const code = extractVerificationCode(emailContent?.Content.Body);
+			const emailContent = await findEmailByRecipient(requestedNewEmail, mailpitApiUrl);
+			const code = extractVerificationCode(emailContent?.Text);
 
 			verificationCode = code;
 			newEmailAddress = requestedNewEmail;
 			expect(verificationCode).toBeDefined();
 			expect(verificationCode).toMatch(/^\d{6}$/);
 
-			await clearEmails(mailhogApiUrl);
+			await clearEmails(mailpitApiUrl);
 		});
 
 		it('should change the email with a valid code for an authenticated, verified account', async () => {
@@ -389,8 +389,8 @@ describe('AuthController - Change email', () => {
 			};
 			await request(httpServer).post('/auth/signup').send(accountBCredentials).expect(201);
 
-			const signupEmailB = await findEmailByRecipient(accountBCredentials.email, mailhogApiUrl);
-			const signupCodeB = extractVerificationCode(signupEmailB?.Content.Body);
+			const signupEmailB = await findEmailByRecipient(accountBCredentials.email, mailpitApiUrl);
+			const signupCodeB = extractVerificationCode(signupEmailB?.Text);
 			expect(signupCodeB).toBeDefined();
 
 			const emailVerifyDto: EmailVerifyDto = {
@@ -409,8 +409,8 @@ describe('AuthController - Change email', () => {
 			const changeDtoForB: EmailChangeRequestDto = {newEmail: targetEmail};
 			await accountBAgent.post('/auth/change-email/request').send(changeDtoForB).expect(200);
 
-			const emailForB = await findEmailByRecipient(targetEmail, mailhogApiUrl);
-			const codeForB = extractVerificationCode(emailForB?.Content.Body);
+			const emailForB = await findEmailByRecipient(targetEmail, mailpitApiUrl);
+			const codeForB = extractVerificationCode(emailForB?.Text);
 			expect(codeForB).toBeDefined();
 			expect(codeForB).not.toEqual(codeForA);
 

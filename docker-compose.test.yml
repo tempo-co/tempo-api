@@ -1,7 +1,7 @@
 services:
-  mailhog:
-    image: mailhog/mailhog
-    container_name: mailhog_test
+  mailpit:
+    image: axllent/mailpit
+    container_name: mailpit_test
     ports:
       - "${EMAIL_PORT}:${EMAIL_PORT}"
       - "${EMAIL_UI_PORT}:${EMAIL_UI_PORT}"
