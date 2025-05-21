@@ -20,11 +20,11 @@ RUN npm ci
 
 COPY --from=builder --chown=node:node /usr/src/app/dist ./dist
 
-ARG NODE_ENV=test
-ENV NODE_ENV=${NODE_ENV}
+COPY --chown=node:node .env.test .env.test
+COPY --chown=node:node .env.development .env.development
 
-EXPOSE ${PORT}
+EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
-    CMD curl -f "$APP_URL/health" || exit 1
+    CMD curl -f "http://localhost:3000/health" || exit 1
 
 CMD ["node", "dist/main.js"]
