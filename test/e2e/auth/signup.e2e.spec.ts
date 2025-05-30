@@ -16,25 +16,32 @@ import {SignUpDto} from '@modules/auth/api/dtos/signup.dto';
 
 import {
 	UNVERIFIED_ACCOUNT_EMAIL,
+	UNVERIFIED_ACCOUNT_NAME,
 	UNVERIFIED_ACCOUNT_PASSWORD,
 	VERIFIED_ACCOUNT_EMAIL,
 	VERIFIED_ACCOUNT_PASSWORD,
 } from '../../setup/constants';
 import {getApp} from '../../setup/e2e.setup';
-import {clearEmails, extractVerificationCode, findEmailByRecipient} from '../../utils/email.util';
+import {EmailUtils} from '../../utils/email-utils';
 
 describe('AuthController - Signup', () => {
 	let mailpitApiUrl: string;
+	let webUrl: string;
+	let emailVerificationExpiration: string;
 	let httpServer: Server;
 
 	beforeAll(async () => {
 		const app = getApp();
-		mailpitApiUrl = app.get(ConfigurationService).get('EMAIL_UI_URL');
+		const config = app.get(ConfigurationService);
+		mailpitApiUrl = config.get('EMAIL_UI_URL');
+		webUrl = config.get('WEB_BASE_URL');
+		emailVerificationExpiration = config.get('EMAIL_VERIFICATION_EXPIRATION');
+
 		httpServer = app.getHttpServer();
 	});
 
 	beforeEach(async () => {
-		await clearEmails(mailpitApiUrl);
+		await EmailUtils.clearEmails(mailpitApiUrl);
 	});
 
 	describe('/auth/signup (POST)', () => {
@@ -53,18 +60,25 @@ describe('AuthController - Signup', () => {
 			expect(response.body?.isEmailVerified).toBe(false);
 			expect(response.body?.createdAt).toBeDefined();
 
-			const welcomeEmail = await findEmailByRecipient(signUpDto.email, mailpitApiUrl);
+			const welcomeEmail = await EmailUtils.findEmailByRecipient(signUpDto.email, mailpitApiUrl);
 			expect(welcomeEmail).toBeDefined();
 
 			const recipientEmail = welcomeEmail?.To[0].Address;
 			const subject = welcomeEmail?.Subject;
-			const body = welcomeEmail?.Text;
+			const body = EmailUtils.normalizeEmailText(welcomeEmail?.Text);
+
+			const code = EmailUtils.extractCode(body);
+			const expectedBody = EmailUtils.getWelcomeEmailBody(
+				signUpDto.email,
+				signUpDto.name,
+				webUrl,
+				code,
+				emailVerificationExpiration,
+			);
 
 			expect(recipientEmail).toEqual(signUpDto.email);
-			expect(subject).toContain('Welcome to Flair');
-			expect(subject).toContain('is your verification code');
-			expect(body).toContain(signUpDto.name);
-			expect(body).toMatch(/Or use the[\s\S]*?following code:\s*(\d{6})/i);
+			expect(subject).toBe('Welcome to Flair - Please confirm your email');
+			expect(body).toEqual(expectedBody);
 		});
 
 		it('should fail with 409 Conflict if email is already in use', async () => {
@@ -212,7 +226,7 @@ describe('AuthController - Signup', () => {
 				.send({email: VERIFIED_ACCOUNT_EMAIL, password: VERIFIED_ACCOUNT_PASSWORD})
 				.expect(200);
 
-			await clearEmails(mailpitApiUrl);
+			await EmailUtils.clearEmails(mailpitApiUrl);
 		});
 
 		it('should send a new verification email for an unverified account', async () => {
@@ -224,16 +238,27 @@ describe('AuthController - Signup', () => {
 					expect(res.body.message).toBe(EMAIL_VERIFICATION_SENT);
 				});
 
-			const verificationEmail = await findEmailByRecipient(UNVERIFIED_ACCOUNT_EMAIL, mailpitApiUrl);
+			const verificationEmail = await EmailUtils.findEmailByRecipient(UNVERIFIED_ACCOUNT_EMAIL, mailpitApiUrl);
 			expect(verificationEmail).toBeDefined();
 
 			const recipientEmail = verificationEmail?.To[0].Address;
 			const subject = verificationEmail?.Subject;
-			const body = verificationEmail?.Text;
+			const body = EmailUtils.normalizeEmailText(verificationEmail?.Text);
 
 			expect(recipientEmail).toEqual(UNVERIFIED_ACCOUNT_EMAIL);
-			expect(subject).toContain('is your verification code');
-			expect(body).toMatch(/Or use the[\s\S]*?following code:\s*(\d{6})/i);
+
+			const code = EmailUtils.extractCode(body);
+			const expectedBody = EmailUtils.getWelcomeEmailBody(
+				UNVERIFIED_ACCOUNT_EMAIL,
+				UNVERIFIED_ACCOUNT_NAME,
+				webUrl,
+				code,
+				emailVerificationExpiration,
+			);
+
+			expect(recipientEmail).toEqual(UNVERIFIED_ACCOUNT_EMAIL);
+			expect(subject).toBe('Welcome to Flair - Please confirm your email');
+			expect(body).toEqual(expectedBody);
 		});
 
 		it('should fail with 400 Bad Request if the email is already verified', async () => {
@@ -245,7 +270,7 @@ describe('AuthController - Signup', () => {
 					expect(res.body.message).toBe(EMAIL_ALREADY_VERIFIED);
 				});
 
-			const email = await findEmailByRecipient(VERIFIED_ACCOUNT_EMAIL, mailpitApiUrl);
+			const email = await EmailUtils.findEmailByRecipient(VERIFIED_ACCOUNT_EMAIL, mailpitApiUrl);
 			expect(email).toBeUndefined();
 		});
 
@@ -273,15 +298,15 @@ describe('AuthController - Signup', () => {
 			};
 			await request(httpServer).post('/auth/signup').send(accountCredentials).expect(201);
 
-			const welcomeEmail = await findEmailByRecipient(accountCredentials.email, mailpitApiUrl);
-			verificationCode = extractVerificationCode(welcomeEmail?.Text);
+			const welcomeEmail = await EmailUtils.findEmailByRecipient(accountCredentials.email, mailpitApiUrl);
+			verificationCode = EmailUtils.extractCode(welcomeEmail?.Text);
 			expect(verificationCode).toBeDefined();
 			expect(verificationCode).toMatch(/^\d{6}$/);
 
 			agent = request.agent(httpServer);
 			await agent.post('/auth/login').send(accountCredentials).expect(200);
 
-			await clearEmails(mailpitApiUrl);
+			await EmailUtils.clearEmails(mailpitApiUrl);
 		});
 
 		it('should verify email with correct code and email (unauthenticated)', async () => {
@@ -327,8 +352,8 @@ describe('AuthController - Signup', () => {
 		it('should verify email with resend code (authenticated)', async () => {
 			await agent.post('/auth/signup/resend').send().expect(200);
 
-			const resendEmail = await findEmailByRecipient(accountCredentials.email, mailpitApiUrl);
-			const resendCode = extractVerificationCode(resendEmail?.Text);
+			const resendEmail = await EmailUtils.findEmailByRecipient(accountCredentials.email, mailpitApiUrl);
+			const resendCode = EmailUtils.extractCode(resendEmail?.Text);
 			expect(resendCode).toBeDefined();
 			expect(resendCode).toMatch(/^\d{6}$/);
 			expect(resendCode).not.toEqual(verificationCode);

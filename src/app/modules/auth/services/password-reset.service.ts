@@ -21,8 +21,8 @@ import {SessionService} from './session.service';
 @Injectable()
 export class PasswordResetService {
 	private readonly REDIS_KEY;
-	private readonly EXPIRATION;
 	private readonly WEB_BASE_URL;
+	private readonly EXPIRATION;
 
 	constructor(
 		private readonly accountService: AccountService,
@@ -33,10 +33,7 @@ export class PasswordResetService {
 	) {
 		this.REDIS_KEY = this.configService.get('PASSWORD_RESET_REDIS_KEY');
 		this.WEB_BASE_URL = this.configService.get('WEB_BASE_URL');
-
-		const expirationMs = ms(this.configService.get('PASSWORD_RESET_EXPIRATION'));
-		const expirationSeconds = Math.floor(expirationMs / 1000);
-		this.EXPIRATION = expirationSeconds;
+		this.EXPIRATION = this.configService.get('PASSWORD_RESET_EXPIRATION');
 	}
 
 	async requestPasswordReset(email: Account['email']) {
@@ -45,14 +42,15 @@ export class PasswordResetService {
 			return {message: PASSWORD_RESET_CONFIRMATION};
 		}
 
-		const token = await this._createResetToken(account.id);
-		const resetUrl = this._createUrl(token, account.email);
+		const token = await this._createToken(account.id);
+		const resetUrl = this._createUrl(account.email, token);
+		const expiration = ms(ms(this.EXPIRATION), {long: true});
 
 		await this.emailService.send({
 			to: account.email,
-			subject: 'Reset your password',
+			subject: 'Reset your Flair password',
 			template: 'reset-password',
-			context: {name: account.name, resetUrl},
+			context: {name: account.name, resetUrl, expiration},
 		});
 		return {message: PASSWORD_RESET_CONFIRMATION};
 	}
@@ -71,17 +69,18 @@ export class PasswordResetService {
 		return {message: PASSWORD_RESET_SUCCESS};
 	}
 
-	private async _createResetToken(accountId: Account['id']) {
+	private async _createToken(accountId: Account['id']) {
 		const token: string = crypto.randomUUID();
 		const key = `${this.REDIS_KEY}:${token}`;
 
-		await this.redisClient.set(key, accountId, 'EX', this.EXPIRATION);
+		const expirationSeconds = Math.floor(ms(this.EXPIRATION) / 1000);
+		await this.redisClient.set(key, accountId, 'EX', expirationSeconds);
 		return token;
 	}
 
-	private _createUrl(token: string, email: Account['email']) {
+	private _createUrl(email: Account['email'], token: string) {
 		const url = new URL('/reset-password', this.WEB_BASE_URL);
-		url.search = new URLSearchParams({token, email}).toString();
+		url.search = new URLSearchParams({email, token}).toString();
 		return url.toString();
 	}
 

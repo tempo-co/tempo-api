@@ -7,10 +7,13 @@ import {Account} from '@modules/account/account.entity';
 
 import {
 	PW_CHANGE_ACCOUNT_EMAIL,
+	PW_CHANGE_ACCOUNT_NAME,
 	PW_CHANGE_ACCOUNT_PASSWORD,
 	UNVERIFIED_ACCOUNT_EMAIL,
+	UNVERIFIED_ACCOUNT_NAME,
 	UNVERIFIED_ACCOUNT_PASSWORD,
 	VERIFIED_ACCOUNT_EMAIL,
+	VERIFIED_ACCOUNT_NAME,
 	VERIFIED_ACCOUNT_PASSWORD,
 } from './constants';
 
@@ -21,19 +24,19 @@ export async function seedDatabase(app: INestApplication) {
 
 	const accountsToSeed: AccountSeedData[] = [
 		{
-			name: 'Verified Account',
+			name: VERIFIED_ACCOUNT_NAME,
 			email: VERIFIED_ACCOUNT_EMAIL,
 			password: VERIFIED_ACCOUNT_PASSWORD,
 			isEmailVerified: true,
 		},
 		{
-			name: 'Unverified Account',
+			name: UNVERIFIED_ACCOUNT_NAME,
 			email: UNVERIFIED_ACCOUNT_EMAIL,
 			password: UNVERIFIED_ACCOUNT_PASSWORD,
 			isEmailVerified: false,
 		},
 		{
-			name: 'Password Change Account',
+			name: PW_CHANGE_ACCOUNT_NAME,
 			email: PW_CHANGE_ACCOUNT_EMAIL,
 			password: PW_CHANGE_ACCOUNT_PASSWORD,
 			isEmailVerified: true,

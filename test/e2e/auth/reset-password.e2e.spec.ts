@@ -20,25 +20,29 @@ import {
 } from '../../setup/constants';
 import {getApp} from '../../setup/e2e.setup';
 import {UUID_VALIDATION_REGEX} from '../../types/regex.constants';
-import {clearEmails, extractPasswordResetToken, findEmailByRecipient} from '../../utils/email.util';
+import {EmailUtils} from '../../utils/email-utils';
 
 describe('AuthController - Reset Password', () => {
 	let mailpitApiUrl: string;
+	let passwordResetExpiration: string;
+	let webUrl: string;
 	let httpServer: Server;
 
 	beforeAll(async () => {
 		const app = getApp();
-		mailpitApiUrl = app.get(ConfigurationService).get('EMAIL_UI_URL');
+		const config = app.get(ConfigurationService);
+		mailpitApiUrl = config.get('EMAIL_UI_URL');
+		passwordResetExpiration = config.get('PASSWORD_RESET_EXPIRATION');
+		webUrl = config.get('WEB_BASE_URL');
 		httpServer = app.getHttpServer();
 	});
 
 	beforeEach(async () => {
-		await clearEmails(mailpitApiUrl);
+		await EmailUtils.clearEmails(mailpitApiUrl);
 	});
 
 	describe('/auth/reset-password/request (POST)', () => {
 		let accountToResetEmail: string;
-		let accountName: string;
 
 		beforeAll(async () => {
 			accountToResetEmail = PW_CHANGE_ACCOUNT_EMAIL;
@@ -47,8 +51,6 @@ describe('AuthController - Reset Password', () => {
 				.post('/auth/login')
 				.send({email: accountToResetEmail, password: PW_CHANGE_ACCOUNT_PASSWORD})
 				.expect(200);
-			const meResponse = await agent.get('/accounts/me').expect(200);
-			accountName = meResponse.body.name;
 		});
 
 		it('should send a password reset email for an existing account', async () => {
@@ -62,19 +64,24 @@ describe('AuthController - Reset Password', () => {
 					expect(res.body.message).toBe(PASSWORD_RESET_CONFIRMATION);
 				});
 
-			const resetEmail = await findEmailByRecipient(accountToResetEmail, mailpitApiUrl);
+			const resetEmail = await EmailUtils.findEmailByRecipient(accountToResetEmail, mailpitApiUrl);
 			expect(resetEmail).toBeDefined();
 
 			const recipientEmail = resetEmail?.To[0].Address;
 			const subject = resetEmail?.Subject;
-			const body = resetEmail?.Text;
-			const token = extractPasswordResetToken(body);
+			const body = EmailUtils.normalizeEmailText(resetEmail?.Text);
+			const token = EmailUtils.extractToken(body);
+			const expectedBody = EmailUtils.getPasswordResetEmailBody(
+				requestDto.email,
+				webUrl,
+				token,
+				passwordResetExpiration,
+			);
 
 			expect(recipientEmail).toEqual(accountToResetEmail);
-			expect(subject).toContain('Reset your password');
-			expect(body).toContain(accountName);
-			expect(body).toContain('reset-password?token=');
 			expect(token).toMatch(UUID_VALIDATION_REGEX);
+			expect(subject).toBe('Reset your Flair password');
+			expect(body).toBe(expectedBody);
 		});
 
 		it('should return confirmation even if the email does not exist', async () => {
@@ -90,7 +97,7 @@ describe('AuthController - Reset Password', () => {
 				});
 
 			// Verify no email was sent
-			const resetEmail = await findEmailByRecipient(nonExistentEmail, mailpitApiUrl);
+			const resetEmail = await EmailUtils.findEmailByRecipient(nonExistentEmail, mailpitApiUrl);
 			expect(resetEmail).toBeUndefined();
 		});
 
@@ -135,9 +142,9 @@ describe('AuthController - Reset Password', () => {
 			await request(httpServer).post('/auth/reset-password/request').send(requestDto).expect(200);
 
 			// 2. Extract token from email
-			const resetEmail = await findEmailByRecipient(accountToResetEmail, mailpitApiUrl);
+			const resetEmail = await EmailUtils.findEmailByRecipient(accountToResetEmail, mailpitApiUrl);
 			expect(resetEmail).toBeDefined();
-			resetToken = extractPasswordResetToken(resetEmail?.Text);
+			resetToken = EmailUtils.extractToken(resetEmail?.Text);
 			expect(resetToken).toBeDefined();
 			expect(resetToken).toMatch(UUID_VALIDATION_REGEX);
 		});
@@ -186,7 +193,7 @@ describe('AuthController - Reset Password', () => {
 
 		it('should fail with 400 Bad Request for an invalid token', async () => {
 			const verifyDto: PasswordResetVerifyDto = {
-				token: 'invalid-token',
+				token: faker.string.uuid(),
 				newPassword: faker.internet.password({length: 12}),
 			};
 
