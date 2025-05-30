@@ -2,6 +2,7 @@ import {BadRequestException, ConflictException, Injectable} from '@nestjs/common
 import {Inject} from '@nestjs/common';
 import Redis from 'ioredis';
 import ms from 'ms';
+import crypto from 'node:crypto';
 
 import {ConfigurationService} from '@core/config/config.service';
 import {EmailService} from '@core/email/email.service';
@@ -29,12 +30,9 @@ export class EmailVerifierService {
 		private readonly emailService: EmailService,
 		private readonly accountService: AccountService,
 	) {
+		this.EXPIRATION = this.configService.get('EMAIL_VERIFICATION_EXPIRATION');
 		this.REDIS_KEY = this.configService.get('EMAIL_VERIFICATION_REDIS_KEY');
 		this.WEB_BASE_URL = this.configService.get('WEB_BASE_URL');
-
-		const expirationMs = ms(this.configService.get('EMAIL_VERIFICATION_EXPIRATION'));
-		const expirationSeconds = Math.floor(expirationMs / 1000);
-		this.EXPIRATION = expirationSeconds;
 	}
 
 	async checkEmailAvailability(email: Account['email']) {
@@ -44,8 +42,8 @@ export class EmailVerifierService {
 		}
 	}
 
-	async verify(code: string, email: Account['email']) {
-		const expectedEmail = await this._getEmailByCode(code);
+	async verifySignup(code: string, email: Account['email']) {
+		const expectedEmail = await this._getEmailBySecret(code);
 		if (expectedEmail !== email) {
 			throw new BadRequestException(EMAIL_INVALID_TOKEN);
 		}
@@ -60,25 +58,11 @@ export class EmailVerifierService {
 		}
 
 		const updatedAccount = await this.accountService.update(account.id, {isEmailVerified: true});
-		await this._removeCode(code);
+		await this._removeSecret(code);
 		return updatedAccount;
 	}
 
 	async sendWelcomeEmail(account: Account) {
-		const {email, name} = account;
-
-		const code = await this._createCode(email);
-		const verificationUrl = await this._createUrl(code, email);
-
-		await this.emailService.send({
-			to: email,
-			subject: `Welcome to Flair - ${code} is your verification code`,
-			template: 'welcome',
-			context: {name, verificationUrl, code},
-		});
-	}
-
-	async sendVerifyEmail(account: Account) {
 		const {email, name, isEmailVerified} = account;
 
 		if (isEmailVerified) {
@@ -86,13 +70,14 @@ export class EmailVerifierService {
 		}
 
 		const code = await this._createCode(email);
-		const verificationUrl = await this._createUrl(code, email);
+		const verificationUrl = await this._createUrl(code, email, 'onboarding');
+		const expiration = ms(ms(this.EXPIRATION), {long: true});
 
 		await this.emailService.send({
 			to: email,
-			subject: `${code} is your verification code`,
-			template: 'verify-email',
-			context: {name, verificationUrl, code},
+			subject: 'Welcome to Flair - Please confirm your email',
+			template: 'welcome',
+			context: {name, verificationUrl, code, expiration},
 		});
 
 		return {message: EMAIL_VERIFICATION_SENT};
@@ -101,49 +86,66 @@ export class EmailVerifierService {
 	async requestEmailChange(account: Account, newEmail: Account['email']) {
 		await this.accountService.validateEmailIsUnique(newEmail);
 
-		const code = await this._createCode(newEmail);
+		const token = await this._createToken(newEmail);
+		const verificationUrl = await this._createUrl(token, newEmail, 'email-change');
+		const expiration = ms(ms(this.EXPIRATION), {long: true});
 
 		await this.emailService.send({
 			to: newEmail,
-			subject: `${code} is your verification code`,
+			subject: 'Verify your new email with Flair',
 			template: 'verify-new-email',
-			context: {name: account.name, code},
+			context: {name: account.name, verificationUrl, expiration},
 		});
 		return {message: EMAIL_VERIFICATION_SENT};
 	}
 
-	async verifyEmailChange(account: Account, code: string) {
-		const newEmail = await this._getEmailByCode(code);
+	async verifyEmailChange(account: Account, token: string, newEmail: Account['email']) {
+		const expectedEmail = await this._getEmailBySecret(token);
+		if (expectedEmail !== newEmail) {
+			throw new BadRequestException(EMAIL_INVALID_TOKEN);
+		}
 
 		await this.accountService.validateEmailIsUnique(newEmail);
 		await this.accountService.update(account.id, {email: newEmail});
 
-		await this._removeCode(code);
+		await this._removeSecret(token);
 		return {message: EMAIL_CHANGE_SUCCESS};
 	}
 
-	private async _createUrl(code: string, email: Account['email']) {
+	private async _createUrl(secret: string, email: Account['email'], flow: 'onboarding' | 'email-change') {
 		const url = new URL('/verify-email', this.WEB_BASE_URL);
-		url.search = new URLSearchParams({email, code}).toString();
+
+		const secretKey = flow === 'onboarding' ? 'code' : 'token';
+		url.search = new URLSearchParams({email, [secretKey]: secret, flow}).toString();
 		return url.toString();
 	}
 
 	private async _createCode(email: Account['email']) {
 		while (true) {
-			const code = Array.from({length: 6}, () => Math.floor(Math.random() * 10)).join('');
+			const code = crypto.randomInt(0, 1000000).toString().padStart(6, '0');
 			const key = `${this.REDIS_KEY}:${code}`;
 
 			try {
-				await this._getEmailByCode(code);
+				await this._getEmailBySecret(code);
 			} catch {
-				await this.redisClient.set(key, email, 'EX', this.EXPIRATION);
+				const expirationSeconds = Math.floor(ms(this.EXPIRATION) / 1000);
+				await this.redisClient.set(key, email, 'EX', expirationSeconds);
 				return code;
 			}
 		}
 	}
 
-	private async _getEmailByCode(code: string) {
-		const key = `${this.REDIS_KEY}:${code}`;
+	private async _createToken(email: Account['email']) {
+		const token: string = crypto.randomUUID();
+		const key = `${this.REDIS_KEY}:${token}`;
+
+		const expirationSeconds = Math.floor(ms(this.EXPIRATION) / 1000);
+		await this.redisClient.set(key, email, 'EX', expirationSeconds);
+		return token;
+	}
+
+	private async _getEmailBySecret(secret: string) {
+		const key = `${this.REDIS_KEY}:${secret}`;
 		const email = await this.redisClient.get(key);
 
 		if (!email) {
@@ -152,8 +154,8 @@ export class EmailVerifierService {
 		return email;
 	}
 
-	private async _removeCode(code: string) {
-		const key = `${this.REDIS_KEY}:${code}`;
+	private async _removeSecret(secret: string) {
+		const key = `${this.REDIS_KEY}:${secret}`;
 		await this.redisClient.del(key);
 	}
 }

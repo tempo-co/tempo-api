@@ -21,11 +21,16 @@ import {EmailService} from './email.service';
 					secure: config.get('NODE_ENV') === 'production',
 				},
 				defaults: {from: '"Flair" <no-reply@flair.com>'},
-				preview: config.get('NODE_ENV') === 'development',
 				template: {
 					dir: join(__dirname, 'templates'),
 					adapter: new HandlebarsAdapter(),
 					options: {strict: true},
+				},
+				options: {
+					partials: {
+						dir: join(__dirname, 'templates/partials'),
+						options: {strict: true},
+					},
 				},
 			}),
 		}),

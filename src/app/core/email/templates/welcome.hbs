@@ -1,7 +1,13 @@
-<html>
-	<body>
-		<h1>Welcome, {{name}}!</h1>
-		<p>Click <a href='{{verificationUrl}}'>here</a> to verify your email.</p>
-		<p>Or use the following code: {{code}}</p>
-	</body>
-</html>
+{{#> layout subject="Welcome to Flair" }}
+  <h1>Welcome to Flair, {{name}}.</h1>
+  <p>Please confirm your email address by clicking the button below.</p>
+  {{> button
+      url=verificationUrl
+      text="Verify email"
+      bgColor="#007BFF"
+      textColor="#FFFFFF"
+  }}
+  <p>This link and code expire in {{expiration}}. You can also manually enter the code below:</p>
+  {{> code-block code=code }}
+  <p>If you did not sign up for Flair, please disregard this email.</p>
+{{/layout}}
