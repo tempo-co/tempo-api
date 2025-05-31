@@ -12,13 +12,13 @@ import {
 import {PasswordResetRequestDto} from '@modules/auth/api/dtos/password-reset-request.dto';
 import {PasswordResetVerifyDto} from '@modules/auth/api/dtos/password-reset-verify.dto';
 
+import {getApp} from '../../setup/e2e.setup';
 import {
 	PW_CHANGE_ACCOUNT_EMAIL,
 	PW_CHANGE_ACCOUNT_PASSWORD,
 	VERIFIED_ACCOUNT_EMAIL,
 	VERIFIED_ACCOUNT_PASSWORD,
-} from '../../setup/constants';
-import {getApp} from '../../setup/e2e.setup';
+} from '../../setup/seed.constants';
 import {UUID_VALIDATION_REGEX} from '../../types/regex.constants';
 import {EmailUtils} from '../../utils/email-utils';
 

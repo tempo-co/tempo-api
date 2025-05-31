@@ -12,6 +12,7 @@ import {
 } from '@modules/auth/api/constants/api-messages.constants';
 import {SessionResponseDto} from '@modules/auth/api/dtos/session-response.dto';
 
+import {getApp} from '../../setup/e2e.setup';
 import {
 	PW_CHANGE_ACCOUNT_EMAIL,
 	PW_CHANGE_ACCOUNT_PASSWORD,
@@ -19,8 +20,7 @@ import {
 	UNVERIFIED_ACCOUNT_PASSWORD,
 	VERIFIED_ACCOUNT_EMAIL,
 	VERIFIED_ACCOUNT_PASSWORD,
-} from '../../setup/constants';
-import {getApp} from '../../setup/e2e.setup';
+} from '../../setup/seed.constants';
 
 describe('AuthController - Sessions', () => {
 	let httpServer: Server;

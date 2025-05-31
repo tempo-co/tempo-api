@@ -16,13 +16,13 @@ import {EmailChangeRequestDto} from '@modules/auth/api/dtos/email-change.dto';
 import {EmailVerifyDto} from '@modules/auth/api/dtos/email-verify.dto';
 import {SignUpDto} from '@modules/auth/api/dtos/signup.dto';
 
+import {getApp} from '../../setup/e2e.setup';
 import {
 	UNVERIFIED_ACCOUNT_EMAIL,
 	UNVERIFIED_ACCOUNT_PASSWORD,
 	VERIFIED_ACCOUNT_EMAIL,
 	VERIFIED_ACCOUNT_PASSWORD,
-} from '../../setup/constants';
-import {getApp} from '../../setup/e2e.setup';
+} from '../../setup/seed.constants';
 import {UUID_REGEX} from '../../types/regex.constants';
 import {EmailUtils} from '../../utils/email-utils';
 
