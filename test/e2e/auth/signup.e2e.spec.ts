@@ -14,14 +14,14 @@ import {
 import {EmailVerifyDto} from '@modules/auth/api/dtos/email-verify.dto';
 import {SignUpDto} from '@modules/auth/api/dtos/signup.dto';
 
+import {getApp} from '../../setup/e2e.setup';
 import {
 	UNVERIFIED_ACCOUNT_EMAIL,
 	UNVERIFIED_ACCOUNT_NAME,
 	UNVERIFIED_ACCOUNT_PASSWORD,
 	VERIFIED_ACCOUNT_EMAIL,
 	VERIFIED_ACCOUNT_PASSWORD,
-} from '../../setup/constants';
-import {getApp} from '../../setup/e2e.setup';
+} from '../../setup/seed.constants';
 import {EmailUtils} from '../../utils/email-utils';
 
 describe('AuthController - Signup', () => {

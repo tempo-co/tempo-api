@@ -8,13 +8,13 @@ import {Account} from '@modules/account/account.entity';
 import {AccountUpdateDto} from '@modules/account/api/account-update.dto';
 import {EMAIL_NOT_VERIFIED} from '@modules/auth/api/constants/api-messages.constants';
 
+import {getApp} from '../../setup/e2e.setup';
 import {
 	UNVERIFIED_ACCOUNT_EMAIL,
 	UNVERIFIED_ACCOUNT_PASSWORD,
 	VERIFIED_ACCOUNT_EMAIL,
 	VERIFIED_ACCOUNT_PASSWORD,
-} from '../../setup/constants';
-import {getApp} from '../../setup/e2e.setup';
+} from '../../setup/seed.constants';
 
 describe('Account controller - /me', () => {
 	let httpServer: Server;

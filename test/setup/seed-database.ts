@@ -1,4 +1,4 @@
-import {INestApplication} from '@nestjs/common';
+import {INestApplicationContext} from '@nestjs/common';
 import {getRepositoryToken} from '@nestjs/typeorm';
 import argon2 from 'argon2';
 import {Repository} from 'typeorm';
@@ -15,11 +15,15 @@ import {
 	VERIFIED_ACCOUNT_EMAIL,
 	VERIFIED_ACCOUNT_NAME,
 	VERIFIED_ACCOUNT_PASSWORD,
-} from './constants';
+} from './seed.constants';
+
+export async function seedDatabase(app: INestApplicationContext) {
+	await seedAccounts(app);
+}
 
 type AccountSeedData = Pick<Account, 'name' | 'email' | 'password' | 'isEmailVerified'>;
 
-export async function seedDatabase(app: INestApplication) {
+async function seedAccounts(app: INestApplicationContext) {
 	const accountRepository = app.get<Repository<Account>>(getRepositoryToken(Account));
 
 	const accountsToSeed: AccountSeedData[] = [
