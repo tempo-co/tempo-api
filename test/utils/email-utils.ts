@@ -35,7 +35,7 @@ export class EmailUtils {
 
 	static extractCode(body?: string) {
 		if (!body) return '';
-		const pattern = new RegExp(`You can also manually enter the code below:·?\\s*(${SIX_DIGIT_REGEX.source})`, 'i');
+		const pattern = new RegExp(`You can also manually enter the code below.?\\s*(${SIX_DIGIT_REGEX.source})`, 'i');
 		const match = body.match(pattern);
 		return match ? match[1] : '';
 	}
@@ -72,8 +72,8 @@ export class EmailUtils {
 
 		return `Welcome to Flair, ${name}.
 Please confirm your email address by clicking the button below.
-Verify email ( ${webUrl}/verify-email?email=${encodeURIComponent(email)}&code=${code}&flow=onboarding )
-This link and code expire in ${ex}. You can also manually enter the code below:
+Verify email ( ${webUrl}/verify-email?email=${encodeURIComponent(email)}&code=${code} )
+This link and code expire in ${ex}. You can also manually enter the code below.
 ${code}
 If you did not sign up for Flair, please disregard this email.`;
 	}
@@ -93,7 +93,7 @@ If you did not request this, please disregard this email.`;
 
 		return `Verify your new email with Flair
 You requested to change the the email address associated with your Flair account. Please confirm this change by clicking the button below.
-Verify email ( ${webUrl}/verify-email?email=${encodeURIComponent(email)}&token=${token}&flow=email-change )
+Verify email ( ${webUrl}/verify-email-change?email=${encodeURIComponent(email)}&token=${token} )
 This link will expire in ${ex}.
 If you did not request this, please disregard this email.`;
 	}

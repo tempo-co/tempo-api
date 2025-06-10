@@ -6,6 +6,9 @@ import {Repository} from 'typeorm';
 import {Account} from '@modules/account/account.entity';
 
 import {
+	EMAIL_CHANGE_ACCOUNT_EMAIL,
+	EMAIL_CHANGE_ACCOUNT_NAME,
+	EMAIL_CHANGE_ACCOUNT_PASSWORD,
 	PW_CHANGE_ACCOUNT_EMAIL,
 	PW_CHANGE_ACCOUNT_NAME,
 	PW_CHANGE_ACCOUNT_PASSWORD,
@@ -43,6 +46,12 @@ async function seedAccounts(app: INestApplicationContext) {
 			name: PW_CHANGE_ACCOUNT_NAME,
 			email: PW_CHANGE_ACCOUNT_EMAIL,
 			password: PW_CHANGE_ACCOUNT_PASSWORD,
+			isEmailVerified: true,
+		},
+		{
+			name: EMAIL_CHANGE_ACCOUNT_NAME,
+			email: EMAIL_CHANGE_ACCOUNT_EMAIL,
+			password: EMAIL_CHANGE_ACCOUNT_PASSWORD,
 			isEmailVerified: true,
 		},
 	];

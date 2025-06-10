@@ -70,7 +70,7 @@ export class EmailVerifierService {
 		}
 
 		const code = await this._createCode(email);
-		const verificationUrl = await this._createUrl(code, email, 'onboarding');
+		const verificationUrl = this._createUrl('/verify-email', {email, code});
 		const expiration = ms(ms(this.EXPIRATION), {long: true});
 
 		await this.emailService.send({
@@ -87,7 +87,7 @@ export class EmailVerifierService {
 		await this.accountService.validateEmailIsUnique(newEmail);
 
 		const token = await this._createToken(newEmail);
-		const verificationUrl = await this._createUrl(token, newEmail, 'email-change');
+		const verificationUrl = this._createUrl('/verify-email-change', {email: newEmail, token});
 		const expiration = ms(ms(this.EXPIRATION), {long: true});
 
 		await this.emailService.send({
@@ -112,11 +112,9 @@ export class EmailVerifierService {
 		return {message: EMAIL_CHANGE_SUCCESS};
 	}
 
-	private async _createUrl(secret: string, email: Account['email'], flow: 'onboarding' | 'email-change') {
-		const url = new URL('/verify-email', this.WEB_BASE_URL);
-
-		const secretKey = flow === 'onboarding' ? 'code' : 'token';
-		url.search = new URLSearchParams({email, [secretKey]: secret, flow}).toString();
+	private _createUrl(path: string, params: Record<string, string>) {
+		const url = new URL(path, this.WEB_BASE_URL);
+		url.search = new URLSearchParams(params).toString();
 		return url.toString();
 	}
 
