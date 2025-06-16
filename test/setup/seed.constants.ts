@@ -13,3 +13,7 @@ export const PW_CHANGE_ACCOUNT_PASSWORD = 'pw-change';
 export const EMAIL_CHANGE_ACCOUNT_NAME = 'Email Change Account';
 export const EMAIL_CHANGE_ACCOUNT_EMAIL = 'email-change@test.com';
 export const EMAIL_CHANGE_ACCOUNT_PASSWORD = 'email-change';
+
+export const SESSION_TEST_ACCOUNT_NAME = 'Session Test Account';
+export const SESSION_TEST_ACCOUNT_EMAIL = 'session-test@test.com';
+export const SESSION_TEST_ACCOUNT_PASSWORD = 'session-test';
