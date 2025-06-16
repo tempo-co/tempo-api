@@ -14,8 +14,8 @@ import {PasswordResetVerifyDto} from '@modules/auth/api/dtos/password-reset-veri
 
 import {getApp} from '../../setup/e2e.setup';
 import {
-	PW_CHANGE_ACCOUNT_EMAIL,
-	PW_CHANGE_ACCOUNT_PASSWORD,
+	PW_RESET_ACCOUNT_EMAIL,
+	PW_RESET_ACCOUNT_PASSWORD,
 	VERIFIED_ACCOUNT_EMAIL,
 	VERIFIED_ACCOUNT_PASSWORD,
 } from '../../setup/seed.constants';
@@ -45,11 +45,11 @@ describe('AuthController - Reset Password', () => {
 		let accountToResetEmail: string;
 
 		beforeAll(async () => {
-			accountToResetEmail = PW_CHANGE_ACCOUNT_EMAIL;
+			accountToResetEmail = PW_RESET_ACCOUNT_EMAIL;
 			const agent = request.agent(httpServer);
 			await agent
 				.post('/auth/login')
-				.send({email: accountToResetEmail, password: PW_CHANGE_ACCOUNT_PASSWORD})
+				.send({email: accountToResetEmail, password: PW_RESET_ACCOUNT_PASSWORD})
 				.expect(200);
 		});
 
