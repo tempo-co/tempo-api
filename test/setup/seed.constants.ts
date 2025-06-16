@@ -10,6 +10,10 @@ export const PW_CHANGE_ACCOUNT_NAME = 'Password Change Account';
 export const PW_CHANGE_ACCOUNT_EMAIL = 'pw-change@test.com';
 export const PW_CHANGE_ACCOUNT_PASSWORD = 'pw-change';
 
+export const PW_RESET_ACCOUNT_NAME = 'Password Reset Account';
+export const PW_RESET_ACCOUNT_EMAIL = 'pw-reset@test.com';
+export const PW_RESET_ACCOUNT_PASSWORD = 'pw-reset';
+
 export const EMAIL_CHANGE_ACCOUNT_NAME = 'Email Change Account';
 export const EMAIL_CHANGE_ACCOUNT_EMAIL = 'email-change@test.com';
 export const EMAIL_CHANGE_ACCOUNT_PASSWORD = 'email-change';
