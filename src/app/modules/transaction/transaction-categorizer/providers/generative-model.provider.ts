@@ -1,9 +1,4 @@
-import {
-	FunctionDeclarationSchemaType,
-	GenerationConfig,
-	GenerativeModel,
-	GoogleGenerativeAI,
-} from '@google/generative-ai';
+import {GenerationConfig, GenerativeModel, GoogleGenerativeAI, SchemaType} from '@google/generative-ai';
 import {Provider} from '@nestjs/common';
 
 import {ConfigurationService} from '@core/config/config.service';
@@ -25,23 +20,33 @@ export const GenerativeModelProvider: Provider = {
 };
 
 const systemInstruction =
-	`For each transaction in the provided array, categorize it based on the description, amount ` +
-	`and currency. Return only the 'category' field, and ensure that the categories are returned ` +
-	`in the same order as the transactions provided. Use only the following categories: ` +
-	`${Object.values(Category)}. If present, use merchant names hidden within the description to ` +
-	`determine the category. Descriptions may be in different languages; consider translations ` +
-	`and common patterns. If a category cannot be determined, provide your best guess, and avoid ` +
-	`returning 'OTHER' unless absolutely necessary.`;
+	`For each transaction in the provided array, categorize it based on its description, amount and currency. ` +
+	`Return a JSON array of objects, where each object contains the "correlationId" of the transaction and its corresponding "category". ` +
+	`Use only the following categories: ${Object.values(Category)}. ` +
+	`If present, use merchant names hidden within the description to determine the category. ` +
+	`Descriptions may be in different languages; consider translations and common patterns. ` +
+	`If a category cannot be determined, provide your best guess, and avoid returning 'OTHER' unless absolutely necessary.`;
 
 const generationConfig: GenerationConfig = {
 	responseMimeType: 'application/json',
 	responseSchema: {
-		type: FunctionDeclarationSchemaType.ARRAY,
-		description: 'Array of transaction categories',
+		type: SchemaType.ARRAY,
+		description: 'Array of categorized transactions',
 		items: {
-			type: FunctionDeclarationSchemaType.STRING,
-			description: 'Transaction category',
-			properties: {},
+			type: SchemaType.OBJECT,
+			properties: {
+				correlationId: {
+					type: SchemaType.STRING,
+					description: 'The unique identifier for the transaction.',
+				},
+				category: {
+					type: SchemaType.STRING,
+					enum: Object.values(Category),
+					description: 'The category of the transaction.',
+					format: 'enum',
+				},
+			},
+			required: ['correlationId', 'category'],
 		},
 	},
 };
