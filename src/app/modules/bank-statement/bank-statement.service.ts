@@ -1,4 +1,4 @@
-import {ConflictException, Injectable, NotFoundException} from '@nestjs/common';
+import {ConflictException, Injectable} from '@nestjs/common';
 import {InjectRepository} from '@nestjs/typeorm';
 import {plainToInstance} from 'class-transformer';
 import {Repository} from 'typeorm';
@@ -40,10 +40,7 @@ export class BankStatementService {
 		const categorizedTransactions = await this.transactionCategorizerService.categorize(mappedTransactions);
 
 		const savedFile = await this.fileService.save(file);
-		const savedBankStatement = await this.bankStatementRepository.save({
-			file: savedFile,
-			bankAccount,
-		});
+		const savedBankStatement = await this.bankStatementRepository.save({file: savedFile, bankAccount});
 
 		const transactions = categorizedTransactions.map((transaction) => ({
 			...transaction,
@@ -76,18 +73,6 @@ export class BankStatementService {
 			.getManyAndCount();
 
 		return {bankStatements, total};
-	}
-
-	async findByIdAndAccountId(id: BankStatement['id'], accountId: Account['id']) {
-		const bankStatement = await this.bankStatementRepository.findOne({
-			where: {id: id, bankAccount: {account: {id: accountId}}},
-			relations: ['file'],
-		});
-
-		if (!bankStatement) {
-			throw new NotFoundException('Bank statement not found.');
-		}
-		return bankStatement;
 	}
 
 	async deleteByIdAndAccountId(id: BankStatement['id'], accountId: Account['id']) {
