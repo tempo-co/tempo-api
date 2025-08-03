@@ -2,15 +2,15 @@ import {GenerativeModel} from '@google/generative-ai';
 import {Injectable} from '@nestjs/common';
 import crypto from 'node:crypto';
 
-import {TransactionPartial} from '@modules/transaction/transaction-mapper/services/transaction-mapper.interface';
+import {TransactionCreateDto} from '@modules/transaction/transaction-mapper/services/transaction-mapper.interface';
 import {Transaction} from '@modules/transaction/transaction.entity';
 
 import {Category} from '../constants/category.enum';
 
 const BATCH_SIZE = 100;
 
-type CategorizedTransactionPartial = TransactionPartial & {category: Transaction['category']};
-type TransactionToCategorize = TransactionPartial & {correlationId: string};
+type CategorizedTransactionPartial = TransactionCreateDto & {category: Transaction['category']};
+type TransactionToCategorize = TransactionCreateDto & {correlationId: string};
 
 @Injectable()
 export class TransactionCategorizerService {
@@ -18,7 +18,7 @@ export class TransactionCategorizerService {
 
 	constructor(private readonly model: GenerativeModel) {}
 
-	async categorize(transactions: TransactionPartial[]) {
+	async categorize(transactions: TransactionCreateDto[]) {
 		if (transactions.length === 0) return [];
 
 		const transactionsWithId: TransactionToCategorize[] = transactions.map((transaction) => ({

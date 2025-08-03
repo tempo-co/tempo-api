@@ -2,7 +2,7 @@ import {UnprocessableEntityException} from '@nestjs/common';
 import {z} from 'zod';
 
 import {amountPattern} from '../../constants/amount.regex';
-import {TransactionMapper, TransactionPartial} from '../transaction-mapper.interface';
+import {TransactionCreateDto, TransactionMapper} from '../transaction-mapper.interface';
 
 const revolutTransactionSchema = z.object({
 	type: z.string().optional(),
@@ -21,7 +21,7 @@ const revolutTransactionSchema = z.object({
 export type RevolutTransaction = z.infer<typeof revolutTransactionSchema>;
 
 export class RevolutTransactionMapper implements TransactionMapper {
-	map(transaction: RevolutTransaction): TransactionPartial {
+	map(transaction: RevolutTransaction): TransactionCreateDto {
 		const validationResult = revolutTransactionSchema.safeParse(transaction);
 		if (!validationResult.success) {
 			throw new UnprocessableEntityException('File is not a valid Revolut bank statement.');

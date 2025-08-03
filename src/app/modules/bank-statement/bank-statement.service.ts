@@ -10,7 +10,7 @@ import {PaginationDto} from '@modules/bank-statement/api/pagination.dto';
 import {FileParserService} from '@modules/file/file-parser/services/file-parser.service';
 import {FileService} from '@modules/file/file.service';
 import {TransactionCategorizerService} from '@modules/transaction/transaction-categorizer/services/transaction-categorizer.service';
-import {TransactionPartial} from '@modules/transaction/transaction-mapper/services/transaction-mapper.interface';
+import {TransactionCreateDto} from '@modules/transaction/transaction-mapper/services/transaction-mapper.interface';
 import {TransactionMapperService} from '@modules/transaction/transaction-mapper/services/transaction-mapper.service';
 import {TransactionService} from '@modules/transaction/transaction.service';
 
@@ -33,7 +33,7 @@ export class BankStatementService {
 		const bankAccount = await this.bankAccountService.findById(bankAccountId, accountId);
 
 		const records = this.fileParserService.parse(file.buffer, file.mimetype);
-		const mappedTransactions = await this.transactionMapperService.map(records, bankAccount.bank);
+		const mappedTransactions = await this.transactionMapperService.map(records, bankAccount);
 
 		await this.assertNoPeriodOverlap(mappedTransactions, bankAccountId);
 
@@ -94,7 +94,7 @@ export class BankStatementService {
 		await this.fileService.deleteById(bankStatement.file.id);
 	}
 
-	private async assertNoPeriodOverlap(transactions: TransactionPartial[], bankAccountId: BankAccount['id']) {
+	private async assertNoPeriodOverlap(transactions: TransactionCreateDto[], bankAccountId: BankAccount['id']) {
 		let periodStart = transactions[0].startedAt;
 		let periodEnd = transactions[0].startedAt;
 
