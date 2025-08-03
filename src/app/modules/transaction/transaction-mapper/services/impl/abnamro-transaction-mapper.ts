@@ -2,7 +2,7 @@ import {UnprocessableEntityException} from '@nestjs/common';
 import {z} from 'zod';
 
 import {amountPattern} from '../../constants/amount.regex';
-import {TransactionMapper, TransactionPartial} from '../transaction-mapper.interface';
+import {TransactionCreateDto, TransactionMapper} from '../transaction-mapper.interface';
 
 const abnAmroTransactionSchema = z.object({
 	accountNumber: z.string().optional(),
@@ -18,7 +18,7 @@ const abnAmroTransactionSchema = z.object({
 export type AbnAmroTransaction = z.infer<typeof abnAmroTransactionSchema>;
 
 export class AbnAmroTransactionMapper implements TransactionMapper {
-	map(transaction: AbnAmroTransaction): TransactionPartial {
+	map(transaction: AbnAmroTransaction): TransactionCreateDto {
 		const validationResult = abnAmroTransactionSchema.safeParse(transaction);
 		if (!validationResult.success) {
 			throw new UnprocessableEntityException('File is not a valid ABN AMRO bank statement.');

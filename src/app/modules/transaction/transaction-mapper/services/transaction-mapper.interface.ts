@@ -1,7 +1,10 @@
+import {BankAccount} from '@modules/bank-account/bank-account.entity';
 import {Transaction} from '@modules/transaction/transaction.entity';
 
 export interface TransactionMapper {
-	map(records: Record<string, string>): TransactionPartial;
+	map(records: Record<string, string>): TransactionCreateDto;
 }
 
-export type TransactionPartial = Pick<Transaction, 'startedAt' | 'completedAt' | 'description' | 'amount' | 'currency'>;
+export type TransactionCreateDto = Pick<Transaction, 'startedAt' | 'completedAt' | 'description' | 'amount'> & {
+	currency: BankAccount['currency'];
+};

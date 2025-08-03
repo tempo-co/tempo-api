@@ -1,12 +1,10 @@
 import {Exclude, Expose, Type} from 'class-transformer';
-import {IsDate, IsEnum, IsIn, IsNotEmpty, IsNumber, IsString, Length, Max, Min} from 'class-validator';
+import {IsDate, IsEnum, IsNotEmpty, IsNumber, IsString, Length, Max, Min} from 'class-validator';
 import {Column, CreateDateColumn, Entity, ManyToOne, PrimaryGeneratedColumn, UpdateDateColumn} from 'typeorm';
 
 import {BankAccount} from '@modules/bank-account/bank-account.entity';
 import {BankStatement} from '@modules/bank-statement/bank-statement.entity';
 import {Category} from '@modules/transaction/transaction-categorizer/constants/category.enum';
-
-import {currencyCodes} from './transaction-mapper/constants/currency-codes';
 
 @Entity('transactions')
 export class Transaction {
@@ -40,14 +38,6 @@ export class Transaction {
 	@Max(999999999999.99)
 	@Expose()
 	amount: number;
-
-	@Column({type: 'varchar', length: 3})
-	@IsNotEmpty()
-	@IsString()
-	@Length(3, 3)
-	@IsIn(currencyCodes)
-	@Expose()
-	currency: string;
 
 	@CreateDateColumn({type: 'timestamp'})
 	@Expose()
