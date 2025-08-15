@@ -1,5 +1,6 @@
 import {Injectable, NotFoundException} from '@nestjs/common';
 import {InjectRepository} from '@nestjs/typeorm';
+import {plainToInstance} from 'class-transformer';
 import {Repository} from 'typeorm';
 
 import {Account} from '@modules/account/account.entity';
@@ -18,7 +19,8 @@ export class BankAccountService {
 
 	async save(dto: BankAccountCreateDto, accountId: Account['id']): Promise<BankAccount> {
 		const account = await this.accountService.findById(accountId);
-		return this.bankAccountRepository.save({...dto, account});
+		const savedBankAccount = await this.bankAccountRepository.save({...dto, account});
+		return plainToInstance(BankAccount, savedBankAccount);
 	}
 
 	async findAllByAccountId(accountId: Account['id']) {
