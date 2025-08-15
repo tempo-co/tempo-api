@@ -39,6 +39,10 @@ export class Transaction {
 	@Expose()
 	amount: number;
 
+	@Column({type: 'varchar', length: 3})
+	@Expose()
+	currency: string;
+
 	@CreateDateColumn({type: 'timestamp'})
 	@Expose()
 	createdAt: Date;
