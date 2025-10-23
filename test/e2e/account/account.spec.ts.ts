@@ -25,7 +25,7 @@ describe('Account controller - /me', () => {
 		httpServer = app.getHttpServer();
 	});
 
-	describe('/accounts/me (GET)', () => {
+	describe('GET /accounts/me', () => {
 		it('should return the current VERIFIED authenticated account', async () => {
 			const agent = request.agent(httpServer);
 
@@ -79,7 +79,7 @@ describe('Account controller - /me', () => {
 		});
 	});
 
-	describe('/accounts/me (PATCH)', () => {
+	describe('PATCH /accounts/me', () => {
 		let verifiedAgent: TestAgent;
 		let unverifiedAgent: TestAgent;
 

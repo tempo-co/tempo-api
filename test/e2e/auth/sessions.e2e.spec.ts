@@ -29,7 +29,7 @@ describe('AuthController - Sessions', () => {
 		httpServer = getApp().getHttpServer();
 	});
 
-	describe('/auth/sessions (GET)', () => {
+	describe('GET /auth/sessions', () => {
 		let verifiedAgent1: TestAgent;
 		let verifiedAgent2: TestAgent;
 		let unverifiedAgent: TestAgent;
@@ -122,7 +122,7 @@ describe('AuthController - Sessions', () => {
 		});
 	});
 
-	describe('/auth/sessions (DELETE)', () => {
+	describe('DELETE /auth/sessions', () => {
 		let verifiedAgent1: TestAgent;
 		let verifiedAgent2: TestAgent;
 		let verifiedAgent3: TestAgent;
@@ -223,7 +223,7 @@ describe('AuthController - Sessions', () => {
 		});
 	});
 
-	describe('/auth/sessions/:sessionId (DELETE)', () => {
+	describe('DELETE /auth/sessions/:sessionId', () => {
 		let verifiedAgent1: TestAgent; // Agent making the revoke request
 		let verifiedAgent2: TestAgent; // Agent whose session will be revoked
 		let unverifiedAgent: TestAgent;

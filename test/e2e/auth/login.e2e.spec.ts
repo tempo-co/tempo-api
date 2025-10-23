@@ -16,7 +16,7 @@ describe('AuthController - Login', () => {
 		httpServer = getApp().getHttpServer();
 	});
 
-	describe('/auth/login (POST)', () => {
+	describe('POST /auth/login', () => {
 		let agent: TestAgent;
 		let accountCredentials: SignUpDto;
 

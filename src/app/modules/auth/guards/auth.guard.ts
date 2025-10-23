@@ -22,7 +22,7 @@ export class AuthGuard implements CanActivate {
 		}
 
 		const request = context.switchToHttp().getRequest() as Request;
-		const user = request.user as Account; // const should be renamed to account and should come from request.user.account
+		const user = request.user as Account;
 
 		if (!request.isAuthenticated()) {
 			throw new UnauthorizedException();

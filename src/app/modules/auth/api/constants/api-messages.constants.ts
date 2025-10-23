@@ -9,6 +9,7 @@ export const EMAIL_ALREADY_VERIFIED = 'Email is already verified.';
 export const EMAIL_VERIFICATION_SENT = 'Verification email sent.';
 export const EMAIL_VERIFICATION_SUCCESS = 'Email has been verified.';
 export const EMAIL_ALREADY_IN_USE = 'This email is already in use.';
+export const EMAIL_IS_AVAILABLE = 'Email is available';
 export const EMAIL_CHANGE_SUCCESS = 'Email has been changed.';
 export const EMAIL_NOT_VERIFIED = 'Email not verified.';
 

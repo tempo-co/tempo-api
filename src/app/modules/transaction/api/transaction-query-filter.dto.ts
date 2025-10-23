@@ -1,9 +1,7 @@
 import {Type} from 'class-transformer';
-import {IsArray, IsDateString, IsEnum, IsOptional, ValidateNested} from 'class-validator';
+import {IsArray, IsDateString, IsEnum, IsOptional, IsUUID, ValidateNested} from 'class-validator';
 
 import {Category} from '@modules/transaction/transaction-categorizer/constants/category.enum';
-
-import {Bank} from '../transaction-mapper/constants/bank.enum';
 
 export class DateRangeDto {
 	@IsDateString()
@@ -27,6 +25,6 @@ export class TransactionQueryFilterDto {
 
 	@IsOptional()
 	@IsArray()
-	@IsEnum(Bank, {each: true})
-	banks?: Bank[];
+	@IsUUID('4', {each: true})
+	bankAccountIds?: string[];
 }

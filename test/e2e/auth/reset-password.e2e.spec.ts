@@ -41,7 +41,7 @@ describe('AuthController - Reset Password', () => {
 		await EmailUtils.clearEmails(mailpitApiUrl);
 	});
 
-	describe('/auth/reset-password/request (POST)', () => {
+	describe('POST/auth/reset-password/request', () => {
 		let accountToResetEmail: string;
 
 		beforeAll(async () => {
@@ -128,7 +128,7 @@ describe('AuthController - Reset Password', () => {
 		});
 	});
 
-	describe('/auth/reset-password/verify (POST)', () => {
+	describe('POST/auth/reset-password/verify', () => {
 		let resetToken: string | null;
 		let accountToResetEmail: string;
 		let originalPassword: string;
