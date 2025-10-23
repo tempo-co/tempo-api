@@ -1,12 +1,15 @@
-import {ConflictException, Injectable} from '@nestjs/common';
+import {InjectQueue} from '@nestjs/bullmq';
+import {ConflictException, Injectable, NotFoundException} from '@nestjs/common';
 import {InjectRepository} from '@nestjs/typeorm';
+import {Job, Queue} from 'bullmq';
 import {plainToInstance} from 'class-transformer';
 import {Repository} from 'typeorm';
 
+import {BANK_STATEMENT_QUEUE, PROCESS_STATEMENT_JOB} from '@core/queue/queue.constants';
 import {Account} from '@modules/account/account.entity';
 import {BankAccount} from '@modules/bank-account/bank-account.entity';
 import {BankAccountService} from '@modules/bank-account/bank-account.service';
-import {PaginationDto} from '@modules/bank-statement/api/pagination.dto';
+import {PaginationDto} from '@modules/bank-statement/api/dtos/pagination.dto';
 import {FileParserService} from '@modules/file/file-parser/services/file-parser.service';
 import {FileService} from '@modules/file/file.service';
 import {TransactionCategorizerService} from '@modules/transaction/transaction-categorizer/services/transaction-categorizer.service';
@@ -14,13 +17,25 @@ import {TransactionCreateDto} from '@modules/transaction/transaction-mapper/serv
 import {TransactionMapperService} from '@modules/transaction/transaction-mapper/services/transaction-mapper.service';
 import {TransactionService} from '@modules/transaction/transaction.service';
 
+import {
+	BANK_STATEMENT_DELETE_SUCCESS,
+	BANK_STATEMENT_NOT_FOUND,
+	BANK_STATEMENT_PERIOD_OVERLAP,
+	JOB_NOT_FOUND,
+} from './api/constants/api-messages.constants';
+import {BankStatementJob} from './api/dtos/bank-statement-job.dto';
+import {JobStatusDto} from './api/dtos/job-status.dto';
 import {BankStatement} from './bank-statement.entity';
+
+const PROGRESS_INTERVAL_MS = 2000;
 
 @Injectable()
 export class BankStatementService {
 	constructor(
 		@InjectRepository(BankStatement)
 		private readonly bankStatementRepository: Repository<BankStatement>,
+		@InjectQueue(BANK_STATEMENT_QUEUE)
+		private readonly bankStatementQueue: Queue,
 		private readonly bankAccountService: BankAccountService,
 		private readonly fileParserService: FileParserService,
 		private readonly transactionMapperService: TransactionMapperService,
@@ -29,17 +44,33 @@ export class BankStatementService {
 		private readonly fileService: FileService,
 	) {}
 
-	async save(file: Express.Multer.File, bankAccountId: BankAccount['id'], accountId: Account['id']) {
+	async processUpload(job: Job<BankStatementJob>) {
+		const {bankAccountId, accountId, file: sourceFile} = job.data;
+		const file = {...sourceFile, buffer: Buffer.from(sourceFile.buffer)};
+		await job.updateProgress(10);
+
 		const bankAccount = await this.bankAccountService.findById(bankAccountId, accountId);
 
 		const records = this.fileParserService.parse(file.buffer, file.mimetype);
 		const mappedTransactions = await this.transactionMapperService.map(records, bankAccount);
 
 		await this.assertNoPeriodOverlap(mappedTransactions, bankAccountId);
+		await job.updateProgress(20);
 
-		const categorizedTransactions = await this.transactionCategorizerService.categorize(mappedTransactions);
+		// simulate progress while long-running categorization api call(s) take place
+		const progressInterval = setInterval(async () => {
+			const currentProgress = Number(job.progress);
+			if (currentProgress < 90) {
+				await job.updateProgress(currentProgress + 10);
+			}
+		}, PROGRESS_INTERVAL_MS);
 
-		const savedFile = await this.fileService.save(file);
+		const {categorizedTransactions} = await (async () => {
+			const categorizedTransactions = await this.transactionCategorizerService.categorize(mappedTransactions);
+			return {categorizedTransactions};
+		})().finally(() => clearInterval(progressInterval));
+
+		const savedFile = await this.fileService.save(file as Express.Multer.File);
 		const savedBankStatement = await this.bankStatementRepository.save({file: savedFile, bankAccount});
 
 		const transactions = categorizedTransactions.map((transaction) => ({
@@ -49,17 +80,39 @@ export class BankStatementService {
 		}));
 		const savedTransactions = await this.transactionService.saveAll(transactions);
 
+		await job.updateProgress(100);
 		return plainToInstance(BankStatement, {...savedBankStatement, transactions: savedTransactions});
 	}
 
-	async findAllByBankAccountIdAndAccountId(
-		bankAccountId: BankAccount['id'],
-		accountId: Account['id'],
-		{pageIndex, pageSize}: PaginationDto,
-	): Promise<{
-		bankStatements: BankStatement[];
-		total: number;
-	}> {
+	async addUploadJob(accountId: Account['id'], file: Express.Multer.File, bankAccountId: BankAccount['id']) {
+		const {buffer, originalname, mimetype, size} = file;
+
+		const bankStatementJob: BankStatementJob = {
+			file: {buffer, originalname, mimetype, size},
+			bankAccountId,
+			accountId,
+		};
+
+		const job = await this.bankStatementQueue.add(PROCESS_STATEMENT_JOB, bankStatementJob);
+		return {jobId: job.id};
+	}
+
+	async getJobStatus(jobId: string, accountId: Account['id']): Promise<JobStatusDto> {
+		const job = await this.bankStatementQueue.getJob(jobId);
+
+		if (!job || job.data.accountId !== accountId) {
+			throw new NotFoundException(JOB_NOT_FOUND);
+		}
+
+		return {
+			id: job.id,
+			progress: job.progress,
+			status: await job.getState(),
+			failedReason: job.failedReason,
+		};
+	}
+
+	async findAll(bankAccountId: BankAccount['id'], accountId: Account['id'], {pageIndex, pageSize}: PaginationDto) {
 		const [bankStatements, total] = await this.bankStatementRepository
 			.createQueryBuilder('bankStatement')
 			.innerJoin('bankStatement.bankAccount', 'bankAccount')
@@ -75,14 +128,14 @@ export class BankStatementService {
 		return {bankStatements, total};
 	}
 
-	async deleteByIdAndAccountId(id: BankStatement['id'], accountId: Account['id']) {
+	async delete(id: BankStatement['id'], accountId: Account['id']) {
 		const bankStatement = await this.bankStatementRepository.findOne({
 			where: {id: id, bankAccount: {account: {id: accountId}}},
 			relations: ['file', 'transactions'],
 		});
 
 		if (!bankStatement) {
-			return;
+			throw new NotFoundException(BANK_STATEMENT_NOT_FOUND);
 		}
 
 		if (bankStatement.transactions.length > 0) {
@@ -92,6 +145,8 @@ export class BankStatementService {
 
 		await this.bankStatementRepository.delete(id);
 		await this.fileService.deleteById(bankStatement.file.id);
+
+		return {message: BANK_STATEMENT_DELETE_SUCCESS};
 	}
 
 	private async assertNoPeriodOverlap(transactions: TransactionCreateDto[], bankAccountId: BankAccount['id']) {
@@ -131,7 +186,7 @@ export class BankStatementService {
 		});
 
 		if (overlappingStatement) {
-			throw new ConflictException(`A bank statement already exists for this period.`);
+			throw new ConflictException(BANK_STATEMENT_PERIOD_OVERLAP);
 		}
 	}
 }

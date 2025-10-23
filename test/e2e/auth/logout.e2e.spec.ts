@@ -15,7 +15,7 @@ describe('AuthController - Logout', () => {
 		httpServer = getApp().getHttpServer();
 	});
 
-	describe('/auth/logout (POST)', () => {
+	describe('POST /auth/logout', () => {
 		let agent: TestAgent;
 		let accountCredentials: SignUpDto;
 

@@ -44,7 +44,7 @@ describe('AuthController - Signup', () => {
 		await EmailUtils.clearEmails(mailpitApiUrl);
 	});
 
-	describe('/auth/signup (POST)', () => {
+	describe('POST /auth/signup', () => {
 		it('should create a new account and send welcome email', async () => {
 			const signUpDto: SignUpDto = {
 				name: faker.person.fullName(),
@@ -209,7 +209,7 @@ describe('AuthController - Signup', () => {
 		});
 	});
 
-	describe('/auth/signup/resend (POST)', () => {
+	describe('POST /auth/signup/resend', () => {
 		let unverifiedAgent: TestAgent;
 		let verifiedAgent: TestAgent;
 
@@ -285,7 +285,7 @@ describe('AuthController - Signup', () => {
 		});
 	});
 
-	describe('/auth/signup/verify (POST)', () => {
+	describe('POST /auth/signup/verify', () => {
 		let verificationCode: string | null;
 		let accountCredentials: SignUpDto;
 		let agent: TestAgent;

@@ -26,18 +26,16 @@ export class TransactionCategorizerService {
 			correlationId: crypto.randomUUID(),
 		}));
 
-		const batches: TransactionToCategorize[][] = [];
-
-		for (let i = 0; i < transactionsWithId.length; i += BATCH_SIZE) {
-			batches.push(transactionsWithId.slice(i, i + BATCH_SIZE));
-		}
+		const batches = Array.from({length: Math.ceil(transactionsWithId.length / BATCH_SIZE)}, (_, i) =>
+			transactionsWithId.slice(i * BATCH_SIZE, (i + 1) * BATCH_SIZE),
+		);
 
 		const batchPromises = batches.map((batch) => this._processBatch(batch));
 		const results = await Promise.allSettled(batchPromises);
 
-		return results.flatMap((result, index) => {
+		return results.flatMap((result, i) => {
 			if (result.status === 'rejected') {
-				return batches[index].map(({correlationId, ...rest}) => ({...rest, category: Category.OTHER}));
+				return batches[i].map(({correlationId, ...rest}) => ({...rest, category: Category.OTHER}));
 			}
 			return result.value;
 		});

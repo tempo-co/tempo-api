@@ -46,7 +46,7 @@ describe('AuthController - Change email', () => {
 		await EmailUtils.clearEmails(mailpitApiUrl);
 	});
 
-	describe('/auth/change-email/check (HEAD)', () => {
+	describe('HEAD /auth/change-email/check', () => {
 		let verifiedAgent: TestAgent;
 		let unverifiedAgent: TestAgent;
 		let existingEmail: string;
@@ -124,7 +124,7 @@ describe('AuthController - Change email', () => {
 		});
 	});
 
-	describe('/auth/change-email/request (POST)', () => {
+	describe('POST /auth/change-email/request', () => {
 		let verifiedAgent: TestAgent;
 		let unverifiedAgent: TestAgent;
 		let conflictAccountEmail: string;
@@ -244,7 +244,7 @@ describe('AuthController - Change email', () => {
 		});
 	});
 
-	describe('/auth/change-email/verify (POST)', () => {
+	describe('POST /auth/change-email/verify', () => {
 		let verifiedAgent: TestAgent;
 		let token: string;
 		let newEmailAddress: string;

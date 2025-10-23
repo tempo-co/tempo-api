@@ -3,7 +3,7 @@ import {ApiTags} from '@nestjs/swagger';
 import {Response} from 'express';
 
 import {Account} from '@modules/account/account.entity';
-import {CurrentUser} from '@modules/auth/decorators/current-user.decorator';
+import {CurrentAccount} from '@modules/auth/decorators/current-user.decorator';
 
 import {File} from './file.entity';
 import {FileService} from './file.service';
@@ -15,17 +15,20 @@ export class FileController {
 
 	@Head(':id')
 	async findOneMetadata(
-		@CurrentUser() user: Account,
+		@CurrentAccount() account: Account,
 		@Param('id', new ParseUUIDPipe({version: '4'})) id: File['id'],
 		@Res({passthrough: true}) res: Response,
 	) {
-		const file = await this.fileService.findOneByIdAndAccountId(id, user.id);
+		const file = await this.fileService.findOneByIdAndAccountId(id, account.id);
 		this.fileService.setFileHeaders(res, file);
 	}
 
 	@Get(':id')
-	async findOneUrl(@CurrentUser() user: Account, @Param('id', new ParseUUIDPipe({version: '4'})) id: File['id']) {
-		const file = await this.fileService.findOneByIdAndAccountId(id, user.id);
+	async findOneUrl(
+		@CurrentAccount() account: Account,
+		@Param('id', new ParseUUIDPipe({version: '4'})) id: File['id'],
+	) {
+		const file = await this.fileService.findOneByIdAndAccountId(id, account.id);
 		const url = await this.fileService.getSignedUrl(file);
 		return {url};
 	}

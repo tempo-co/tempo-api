@@ -56,8 +56,10 @@ export class TransactionService {
 			query.andWhere('transaction.startedAt BETWEEN :from AND :to', {from, to});
 		}
 
-		if (filter.banks && filter.banks.length > 0) {
-			query.andWhere('bankAccount.bank IN (:...banks)', {banks: filter.banks});
+		if (filter.bankAccountIds && filter.bankAccountIds.length > 0) {
+			query.andWhere('bankAccount.id IN (:...bankAccountIds)', {
+				bankAccountIds: filter.bankAccountIds,
+			});
 		}
 
 		const [transactions, total] = await query.getManyAndCount();
@@ -75,15 +77,10 @@ export class TransactionService {
 		return this.transactionRepository.delete(ids);
 	}
 
-	async update(accountId: Account['id'], id: Transaction['id'], dto: TransactionUpdateDto) {
+	async update(accountId: Account['id'], id: Transaction['id'], updates: TransactionUpdateDto) {
 		const transaction = await this.findById(accountId, id);
+		this.transactionRepository.merge(transaction, updates);
 
-		const updates: Partial<Transaction> = {};
-		if (dto.category) {
-			updates.category = dto.category;
-		}
-
-		await this.transactionRepository.update({id: transaction.id}, updates);
-		return this.transactionRepository.findBy({id: transaction.id});
+		return this.transactionRepository.save(transaction);
 	}
 }

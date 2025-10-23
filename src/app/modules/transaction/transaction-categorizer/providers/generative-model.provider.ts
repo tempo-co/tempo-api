@@ -12,7 +12,7 @@ export const GenerativeModelProvider: Provider = {
 		const apiKey = configService.get('GEMINI_API_KEY');
 
 		return new GoogleGenerativeAI(apiKey).getGenerativeModel({
-			model: 'gemini-1.5-flash',
+			model: 'gemini-2.0-flash',
 			systemInstruction,
 			generationConfig,
 		});

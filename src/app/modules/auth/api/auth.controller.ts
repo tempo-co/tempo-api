@@ -6,7 +6,7 @@ import {Request, Response} from 'express';
 import {TOO_MANY_REQUESTS} from '@core/rate-limit/api-messages.constants';
 import {Account} from '@modules/account/account.entity';
 
-import {CurrentUser} from '../decorators/current-user.decorator';
+import {CurrentAccount} from '../decorators/current-user.decorator';
 import {Public} from '../decorators/public.decorator';
 import {SkipEmailVerification} from '../decorators/skip-email-verification.decorator';
 import {LocalLogInGuard} from '../guards/local-login.guard';
@@ -21,6 +21,7 @@ import {
 	EMAIL_ALREADY_VERIFIED,
 	EMAIL_CHANGE_SUCCESS,
 	EMAIL_INVALID_TOKEN,
+	EMAIL_IS_AVAILABLE,
 	EMAIL_VERIFICATION_SENT,
 	EMAIL_VERIFICATION_SUCCESS,
 	INVALID_CREDENTIALS,
@@ -78,8 +79,8 @@ export class AuthController {
 	@ApiResponse({status: 401, description: INVALID_CREDENTIALS})
 	@ApiResponse({status: 429, description: TOO_MANY_REQUESTS})
 	@ApiOperation({summary: 'Logs in a user and starts a session.'})
-	async logIn(@Body() _dto: LogInDto, @CurrentUser() user: Account) {
-		return user;
+	async logIn(@Body() _dto: LogInDto, @CurrentAccount() account: Account) {
+		return account;
 	}
 
 	@Post('logout')
@@ -104,8 +105,8 @@ export class AuthController {
 	@ApiResponse({status: 401, description: UNAUTHORIZED})
 	@ApiResponse({status: 429, description: TOO_MANY_REQUESTS})
 	@ApiOperation({summary: 'Resends the email verification code to the current user.'})
-	async resendWelcomeEmail(@CurrentUser() user: Account) {
-		return await this.emailVerifierService.sendWelcomeEmail(user);
+	async resendWelcomeEmail(@CurrentAccount() account: Account) {
+		return await this.emailVerifierService.sendWelcomeEmail(account);
 	}
 
 	@Public()
@@ -127,7 +128,7 @@ export class AuthController {
 	@Head('change-email/check')
 	@HttpCode(204)
 	@Throttle({default: {limit: 10, ttl: minutes(1)}})
-	@ApiResponse({status: 204, description: 'Email is available.'})
+	@ApiResponse({status: 204, description: EMAIL_IS_AVAILABLE})
 	@ApiResponse({status: 401, description: UNAUTHORIZED})
 	@ApiResponse({status: 409, description: EMAIL_ALREADY_IN_USE})
 	@ApiResponse({status: 429, description: TOO_MANY_REQUESTS})
@@ -144,8 +145,8 @@ export class AuthController {
 	@ApiResponse({status: 409, description: EMAIL_ALREADY_IN_USE})
 	@ApiResponse({status: 429, description: TOO_MANY_REQUESTS})
 	@ApiOperation({summary: "Requests a change to the account's email."})
-	async requestEmailChange(@CurrentUser() user: Account, @Body() dto: EmailChangeRequestDto) {
-		return await this.emailVerifierService.requestEmailChange(user, dto.newEmail);
+	async requestEmailChange(@CurrentAccount() account: Account, @Body() dto: EmailChangeRequestDto) {
+		return await this.emailVerifierService.requestEmailChange(account, dto.newEmail);
 	}
 
 	@Post('change-email/verify')
@@ -157,7 +158,7 @@ export class AuthController {
 	@ApiResponse({status: 409, description: EMAIL_ALREADY_IN_USE})
 	@ApiResponse({status: 429, description: TOO_MANY_REQUESTS})
 	@ApiOperation({summary: 'Verifies the new email using a token.'})
-	async verifyEmailChange(@CurrentUser() account: Account, @Body() dto: EmailChangeVerifyDto) {
+	async verifyEmailChange(@CurrentAccount() account: Account, @Body() dto: EmailChangeVerifyDto) {
 		return await this.emailVerifierService.verifyEmailChange(account, dto.token, dto.email);
 	}
 
@@ -168,8 +169,8 @@ export class AuthController {
 	@ApiResponse({status: 401, description: UNAUTHORIZED})
 	@ApiResponse({status: 429, description: TOO_MANY_REQUESTS})
 	@ApiOperation({summary: 'Changes the password for the current account.'})
-	async changePassword(@CurrentUser() user: Account, @Body() dto: PasswordChangeDto) {
-		return await this.authService.changePassword(user, dto);
+	async changePassword(@CurrentAccount() account: Account, @Body() dto: PasswordChangeDto) {
+		return await this.authService.changePassword(account, dto);
 	}
 
 	@Public()
@@ -197,12 +198,12 @@ export class AuthController {
 
 	@Get('sessions')
 	@HttpCode(200)
-	@ApiResponse({status: 200, description: 'List of active sessions.', type: [SessionResponseDto]})
+	@ApiResponse({status: 200, type: [SessionResponseDto]})
 	@ApiResponse({status: 401, description: UNAUTHORIZED})
 	@ApiResponse({status: 429, description: TOO_MANY_REQUESTS})
 	@ApiOperation({summary: 'Retrieves all active sessions for the current account.'})
-	async getSessions(@CurrentUser() user: Account, @Req() request: Request) {
-		return await this.sessionService.getSessions(user.id, request.session.id);
+	async getSessions(@CurrentAccount() account: Account, @Req() request: Request) {
+		return await this.sessionService.getSessions(account.id, request.session.id);
 	}
 
 	@Delete('sessions/:sessionId')
@@ -213,8 +214,8 @@ export class AuthController {
 	@ApiResponse({status: 409, description: CANNOT_REVOKE_CURRENT_SESSION})
 	@ApiResponse({status: 429, description: TOO_MANY_REQUESTS})
 	@ApiOperation({summary: 'Revokes a session.'})
-	async revokeSession(@CurrentUser() user: Account, @Req() request: Request, @Param() dto: SessionRevokeDto) {
-		return await this.sessionService.revokeSession(user.id, request.session.id, dto.sessionId);
+	async revokeSession(@CurrentAccount() account: Account, @Req() request: Request, @Param() dto: SessionRevokeDto) {
+		return await this.sessionService.revokeSession(account.id, request.session.id, dto.sessionId);
 	}
 
 	@Delete('sessions')
@@ -224,7 +225,7 @@ export class AuthController {
 	@ApiResponse({status: 401, description: UNAUTHORIZED})
 	@ApiResponse({status: 429, description: TOO_MANY_REQUESTS})
 	@ApiOperation({summary: 'Revokes all sessions except the current one.'})
-	async revokeAllOtherSessions(@CurrentUser() user: Account, @Req() request: Request) {
-		return await this.sessionService.revokeAllOtherSessions(user.id, request.session.id);
+	async revokeAllOtherSessions(@CurrentAccount() account: Account, @Req() request: Request) {
+		return await this.sessionService.revokeAllOtherSessions(account.id, request.session.id);
 	}
 }

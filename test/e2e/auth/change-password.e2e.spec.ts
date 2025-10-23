@@ -22,15 +22,12 @@ describe('AuthController - Change password', () => {
 		httpServer = getApp().getHttpServer();
 	});
 
-	describe('/auth/change-password (POST)', () => {
+	describe('POST /auth/change-password', () => {
 		it('should change password for authenticated account and allow login with new password', async () => {
 			const agent = request.agent(httpServer);
 			await agent
 				.post('/auth/login')
-				.send({
-					email: PW_CHANGE_ACCOUNT_EMAIL,
-					password: PW_CHANGE_ACCOUNT_PASSWORD,
-				})
+				.send({email: PW_CHANGE_ACCOUNT_EMAIL, password: PW_CHANGE_ACCOUNT_PASSWORD})
 				.expect(200);
 
 			const newPassword = faker.internet.password({length: 12});
@@ -66,10 +63,7 @@ describe('AuthController - Change password', () => {
 			const agent = request.agent(httpServer);
 			await agent
 				.post('/auth/login')
-				.send({
-					email: VERIFIED_ACCOUNT_EMAIL,
-					password: VERIFIED_ACCOUNT_PASSWORD,
-				})
+				.send({email: VERIFIED_ACCOUNT_EMAIL, password: VERIFIED_ACCOUNT_PASSWORD})
 				.expect(200);
 
 			const changePasswordDto: PasswordChangeDto = {
@@ -106,10 +100,7 @@ describe('AuthController - Change password', () => {
 			const agent = request.agent(httpServer);
 			await agent
 				.post('/auth/login')
-				.send({
-					email: VERIFIED_ACCOUNT_EMAIL,
-					password: VERIFIED_ACCOUNT_PASSWORD,
-				})
+				.send({email: VERIFIED_ACCOUNT_EMAIL, password: VERIFIED_ACCOUNT_PASSWORD})
 				.expect(200);
 
 			const changePasswordDto: PasswordChangeDto = {
@@ -134,10 +125,7 @@ describe('AuthController - Change password', () => {
 			const agent = request.agent(httpServer);
 			await agent
 				.post('/auth/login')
-				.send({
-					email: VERIFIED_ACCOUNT_EMAIL,
-					password: VERIFIED_ACCOUNT_PASSWORD,
-				})
+				.send({email: VERIFIED_ACCOUNT_EMAIL, password: VERIFIED_ACCOUNT_PASSWORD})
 				.expect(200);
 
 			const changePasswordDto: Partial<PasswordChangeDto> = {
@@ -159,10 +147,7 @@ describe('AuthController - Change password', () => {
 			const agent = request.agent(httpServer);
 			await agent
 				.post('/auth/login')
-				.send({
-					email: VERIFIED_ACCOUNT_EMAIL,
-					password: VERIFIED_ACCOUNT_PASSWORD,
-				})
+				.send({email: VERIFIED_ACCOUNT_EMAIL, password: VERIFIED_ACCOUNT_PASSWORD})
 				.expect(200);
 
 			const changePasswordDto: Partial<PasswordChangeDto> = {

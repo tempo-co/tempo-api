@@ -11,58 +11,72 @@ import {
 	UseInterceptors,
 } from '@nestjs/common';
 import {FileInterceptor} from '@nestjs/platform-express';
-import {ApiResponse, ApiTags} from '@nestjs/swagger';
+import {ApiOperation, ApiResponse, ApiTags} from '@nestjs/swagger';
 
 import {Account} from '@modules/account/account.entity';
 import {UNAUTHORIZED} from '@modules/auth/api/constants/api-messages.constants';
-import {CurrentUser} from '@modules/auth/decorators/current-user.decorator';
+import {CurrentAccount} from '@modules/auth/decorators/current-user.decorator';
 import {BankAccount} from '@modules/bank-account/bank-account.entity';
-import {PaginationDto} from '@modules/bank-statement/api/pagination.dto';
+import {PaginationDto} from '@modules/bank-statement/api/dtos/pagination.dto';
 
 import {BankStatement} from '../bank-statement.entity';
 import {BankStatementService} from '../bank-statement.service';
+import {
+	BANK_STATEMENT_DELETE_SUCCESS,
+	BANK_STATEMENT_NOT_FOUND,
+	BANK_STATEMENT_UPLOAD_ACCEPTED,
+	JOB_NOT_FOUND,
+} from './constants/api-messages.constants';
+import {JobStatusDto} from './dtos/job-status.dto';
 
 @ApiTags('Bank statements')
-// TODO: REMOVE :bankAccountId FROM PATH
 @Controller('bank-accounts/:bankAccountId/bank-statements')
 export class BankStatementController {
 	constructor(private readonly bankStatementService: BankStatementService) {}
 
 	@Post('upload')
+	@HttpCode(202)
 	@UseInterceptors(FileInterceptor('file'))
-	@Post('login')
-	@HttpCode(200)
-	@ApiResponse({status: 200, description: 'Bank statement created.'})
-	@ApiResponse({status: 400, description: 'Failed to parse file.'})
+	@ApiResponse({status: 202, description: BANK_STATEMENT_UPLOAD_ACCEPTED})
 	@ApiResponse({status: 401, description: UNAUTHORIZED})
-	@ApiResponse({status: 409, description: 'A bank statement already exists for this period.'})
-	@ApiResponse({status: 422, description: 'File is not a valid bank statement.'})
+	@ApiOperation({summary: 'Accepts a bank statement file for processing.'})
 	async upload(
-		@CurrentUser() user: Account,
+		@CurrentAccount() account: Account,
 		@UploadedFile() file: Express.Multer.File,
 		@Param('bankAccountId', new ParseUUIDPipe({version: '4'})) bankAccountId: BankAccount['id'],
-	): Promise<BankStatement> {
-		return this.bankStatementService.save(file, bankAccountId, user.id);
+	) {
+		return this.bankStatementService.addUploadJob(account.id, file, bankAccountId);
+	}
+
+	@Get('upload/status/:jobId')
+	@ApiResponse({status: 200, type: JobStatusDto})
+	@ApiResponse({status: 404, description: JOB_NOT_FOUND})
+	@ApiOperation({summary: 'Get the status of a bank statement upload job.'})
+	async getUploadStatus(@Param('jobId') jobId: string, @CurrentAccount() account: Account) {
+		return this.bankStatementService.getJobStatus(jobId, account.id);
 	}
 
 	@Get()
-	async getAllByAccountAndBankAccountId(
-		@CurrentUser() user: Account,
+	@ApiResponse({status: 200})
+	@ApiOperation({summary: 'Get all bank statements for a bank account.'})
+	async getAll(
+		@CurrentAccount() account: Account,
 		@Param('bankAccountId', new ParseUUIDPipe({version: '4'})) bankAccountId: BankAccount['id'],
 		@Query() paginationDto: PaginationDto,
-	): Promise<{
-		bankStatements: BankStatement[];
-		total: number;
-	}> {
-		return this.bankStatementService.findAllByBankAccountIdAndAccountId(bankAccountId, user.id, paginationDto);
+	) {
+		return this.bankStatementService.findAll(bankAccountId, account.id, paginationDto);
 	}
 
 	@Delete(':bankStatementId')
-	async deleteById(
-		@CurrentUser() user: Account,
+	@HttpCode(204)
+	@ApiResponse({status: 204, description: BANK_STATEMENT_DELETE_SUCCESS})
+	@ApiResponse({status: 404, description: BANK_STATEMENT_NOT_FOUND})
+	@ApiOperation({summary: 'Delete a bank statement by ID.'})
+	async delete(
+		@CurrentAccount() account: Account,
 		@Param('bankStatementId', new ParseUUIDPipe({version: '4'}))
 		bankStatementId: BankStatement['id'],
-	): Promise<void> {
-		return this.bankStatementService.deleteByIdAndAccountId(bankStatementId, user.id);
+	) {
+		return this.bankStatementService.delete(bankStatementId, account.id);
 	}
 }
