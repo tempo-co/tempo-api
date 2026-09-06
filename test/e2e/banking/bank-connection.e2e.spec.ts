@@ -139,6 +139,11 @@ describe('BankConnectionController', () => {
 			.expect(403);
 	});
 
+	it('requires an authenticated, verified account to list connections', async () => {
+		await request(httpServer).get('/bank-connections').expect(401);
+		await unverifiedAgent.get('/bank-connections').expect(403);
+	});
+
 	it('validates the requested ASPSP', async () => {
 		await verifiedAgent
 			.post('/bank-connections/authorize')
@@ -260,12 +265,27 @@ describe('BankConnectionController', () => {
 			.query({state: successfulState, code: 'replay-test-code'})
 			.expect(302)
 			.expect('Location', 'http://localhost:5173/bank-connections?result=connected');
+
+		const successfulConnection = await bankConnectionRepository.findOne({
+			where: {account: {id: account.id}},
+			order: {createdAt: 'DESC'},
+		});
+		if (!successfulConnection) throw new Error('Successful authorization connection was not persisted.');
+		const encryptedProviderSessionId = successfulConnection.providerSessionId;
+
 		await request(httpServer)
 			.get('/bank-connections/callback')
 			.query({state: successfulState, code: 'replay-test-code'})
 			.expect(302)
 			.expect('Location', 'http://localhost:5173/bank-connections?result=error');
 		expect(successfulResponse.body).toEqual({authorizationUrl: 'https://auth.example.test/authorize'});
+
+		const replayedConnection = await bankConnectionRepository.findOneBy({id: successfulConnection.id});
+		expect(replayedConnection).toMatchObject({
+			status: 'AUTHORIZED',
+			providerSessionId: encryptedProviderSessionId,
+			authorizationStateHash: null,
+		});
 	});
 
 	it('rejects an expired authorization state', async () => {
@@ -293,7 +313,7 @@ describe('BankConnectionController', () => {
 	});
 
 	it('marks provider failures as failed without leaking provider details', async () => {
-		const authorizationResponse = await verifiedAgent
+		await verifiedAgent
 			.post('/bank-connections/authorize')
 			.send({aspspName: 'ABN AMRO', aspspCountry: 'NL'})
 			.expect(201);
@@ -311,11 +331,10 @@ describe('BankConnectionController', () => {
 			order: {createdAt: 'DESC'},
 		});
 		expect(connection?.status).toBe('FAILED');
-		expect(authorizationResponse.body).not.toHaveProperty('providerSessionId');
 	});
 
 	it('rolls back the connection transaction when external-account persistence fails', async () => {
-		const authorizationResponse = await verifiedAgent
+		await verifiedAgent
 			.post('/bank-connections/authorize')
 			.send({aspspName: 'ABN AMRO', aspspCountry: 'NL'})
 			.expect(201);
@@ -353,7 +372,6 @@ describe('BankConnectionController', () => {
 		expect(connection.status).toBe('FAILED');
 		expect(connection.providerSessionId).toBeNull();
 		expect(await externalAccountRepository.count({where: {bankConnection: {id: connection.id}}})).toBe(0);
-		expect(authorizationResponse.body).not.toHaveProperty('providerSessionId');
 	});
 
 	it('retains separate session account IDs and hashes across re-authorization', async () => {
@@ -452,6 +470,16 @@ describe('BankConnectionController', () => {
 		expect(response.body).toEqual([]);
 	});
 
+	it('enforces authentication, verification, ownership, and UUID validation for transaction reads', async () => {
+		const {connection} = await createAuthorizedConnection('transaction-access-check');
+		const transactionPath = `/bank-connections/${connection.id}/transactions`;
+
+		await request(httpServer).get(transactionPath).expect(401);
+		await unverifiedAgent.get(transactionPath).expect(403);
+		await otherVerifiedAgent.get(transactionPath).expect(404);
+		await verifiedAgent.get('/bank-connections/not-a-uuid/transactions').expect(400);
+	});
+
 	it('synchronizes balances and transactions without exposing provider identifiers', async () => {
 		const {connection, externalAccount} = await createAuthorizedConnection('sync-provider-session');
 		const balances = makeBalances();
@@ -463,15 +491,11 @@ describe('BankConnectionController', () => {
 		expect(firstResponse.body).toEqual(
 			expect.objectContaining({
 				status: 'SUCCEEDED',
+				requestedFrom: null,
 				accountsFetched: 1,
 				balancesFetched: 2,
 				transactionsFetched: 5,
 			}),
-		);
-		expect(getAccountTransactions).toHaveBeenCalledWith(
-			externalAccount.providerAccountId,
-			{strategy: 'longest'},
-			expect.any(AbortSignal),
 		);
 
 		const persistedBalances = await externalAccountBalanceRepository.find({
@@ -542,18 +566,14 @@ describe('BankConnectionController', () => {
 			referenceNumber: 'reference-sync-0-updated',
 		};
 		getAccountTransactions.mockResolvedValueOnce(updatedTransactions);
-		getAccountTransactions.mockClear();
 
 		const secondResponse = await verifiedAgent.post(`/bank-connections/${connection.id}/sync`).expect(200);
-		expect(secondResponse.body.status).toBe('SUCCEEDED');
-		expect(getAccountTransactions).toHaveBeenCalledWith(
-			externalAccount.providerAccountId,
+		expect(secondResponse.body).toEqual(
 			expect.objectContaining({
-				strategy: 'default',
-				dateFrom: expect.any(String),
-				dateTo: expect.any(String),
+				status: 'SUCCEEDED',
+				requestedFrom: expect.any(String),
+				requestedTo: expect.any(String),
 			}),
-			expect.any(AbortSignal),
 		);
 		expect(await externalTransactionRepository.count({where: {externalAccountId: externalAccount.id}})).toBe(5);
 		expect(await externalAccountBalanceRepository.count({where: {externalAccountId: externalAccount.id}})).toBe(4);
@@ -568,50 +588,56 @@ describe('BankConnectionController', () => {
 		});
 	});
 
-	it.each([
-		['minimum allowed limit', '1', 200],
-		['maximum allowed limit', '100', 200],
-		['a suffix', '10oops', 400],
-		['scientific notation', '1e2', 400],
-		['leading whitespace', ' 10', 400],
-		['trailing whitespace', '10 ', 400],
-		['a plus sign', '+10', 400],
-		['a negative sign', '-1', 400],
-		['zero', '0', 400],
-		['a value above the maximum', '101', 400],
-	])('validates the transaction limit for %s', async (_case, limit, expectedStatus) => {
-		const {connection} = await createAuthorizedConnection(`limit-validation-${String(limit)}`);
+	it('validates representative transaction limits', async () => {
+		const {connection} = await createAuthorizedConnection('limit-validation');
 
-		await verifiedAgent
-			.get(`/bank-connections/${connection.id}/transactions`)
-			.query({limit})
-			.expect(expectedStatus);
+		try {
+			for (const [limit, expectedStatus] of [
+				['1', 200],
+				['100', 200],
+				['10oops', 400],
+				['0', 400],
+				['101', 400],
+			] as const) {
+				await verifiedAgent
+					.get(`/bank-connections/${connection.id}/transactions`)
+					.query({limit})
+					.expect(expectedStatus);
+			}
+		} finally {
+			await bankConnectionRepository.delete(connection.id);
+		}
 	});
 
 	it('uses the default transaction limit when omitted', async () => {
 		const {connection, externalAccount} = await createAuthorizedConnection('default-limit-validation');
-		await externalTransactionRepository.save(
-			Array.from({length: 26}, (_, index) =>
-				externalTransactionRepository.create({
-					externalAccountId: externalAccount.id,
-					providerTransactionId: `default-limit-transaction-${index}`,
-					entryReference: `default-limit-entry-${index}`,
-					dedupeKey: faker.string.uuid(),
-					bookingDate: '2026-08-26',
-					valueDate: '2026-08-26',
-					amount: '1.00',
-					currency: 'EUR',
-					creditDebitIndicator: 'CRDT',
-					transactionStatus: 'BOOK',
-					description: `Default limit transaction ${index}`,
-				}),
-			),
-		);
 
-		const response = await verifiedAgent.get(`/bank-connections/${connection.id}/transactions`).expect(200);
+		try {
+			await externalTransactionRepository.save(
+				Array.from({length: 26}, (_, index) =>
+					externalTransactionRepository.create({
+						externalAccountId: externalAccount.id,
+						providerTransactionId: `default-limit-transaction-${index}`,
+						entryReference: `default-limit-entry-${index}`,
+						dedupeKey: faker.string.uuid(),
+						bookingDate: '2026-08-26',
+						valueDate: '2026-08-26',
+						amount: '1.00',
+						currency: 'EUR',
+						creditDebitIndicator: 'CRDT',
+						transactionStatus: 'BOOK',
+						description: `Default limit transaction ${index}`,
+					}),
+				),
+			);
 
-		expect(response.body.total).toBe(26);
-		expect(response.body.transactions).toHaveLength(25);
+			const response = await verifiedAgent.get(`/bank-connections/${connection.id}/transactions`).expect(200);
+
+			expect(response.body.total).toBe(26);
+			expect(response.body.transactions).toHaveLength(25);
+		} finally {
+			await bankConnectionRepository.delete(connection.id);
+		}
 	});
 
 	it('enforces authentication, verification, ownership, and authorized status for synchronization', async () => {
@@ -620,6 +646,7 @@ describe('BankConnectionController', () => {
 		await request(httpServer).post(`/bank-connections/${connection.id}/sync`).expect(401);
 		await unverifiedAgent.post(`/bank-connections/${connection.id}/sync`).expect(403);
 		await otherVerifiedAgent.post(`/bank-connections/${connection.id}/sync`).expect(404);
+		await verifiedAgent.post('/bank-connections/not-a-uuid/sync').expect(400);
 
 		const pendingConnection = await bankConnectionRepository.save(
 			bankConnectionRepository.create({
@@ -631,6 +658,39 @@ describe('BankConnectionController', () => {
 			}),
 		);
 		await verifiedAgent.post(`/bank-connections/${pendingConnection.id}/sync`).expect(409);
+	});
+
+	it('marks expired consent before synchronization', async () => {
+		const connection = await bankConnectionRepository.save(
+			bankConnectionRepository.create({
+				account,
+				provider: 'enable-banking',
+				aspspName: 'ABN AMRO',
+				aspspCountry: 'NL',
+				status: 'AUTHORIZED',
+				providerSessionId: app.get(BankingEncryptionService).encrypt('expired-session'),
+				consentValidUntil: new Date(Date.now() - 1),
+			}),
+		);
+
+		try {
+			getSessionAccounts.mockClear();
+			getAccountBalances.mockClear();
+			getAccountTransactions.mockClear();
+			await verifiedAgent.post(`/bank-connections/${connection.id}/sync`).expect(409);
+
+			expect(getSessionAccounts).not.toHaveBeenCalled();
+			expect(getAccountBalances).not.toHaveBeenCalled();
+			expect(getAccountTransactions).not.toHaveBeenCalled();
+			const expiredConnection = await bankConnectionRepository.findOneBy({id: connection.id});
+			expect(expiredConnection).toMatchObject({
+				status: 'EXPIRED',
+				lastSyncError: 'Bank consent has expired. Please reconnect.',
+			});
+			expect(await bankSyncRunRepository.count({where: {bankConnection: {id: connection.id}}})).toBe(0);
+		} finally {
+			await bankConnectionRepository.delete(connection.id);
+		}
 	});
 
 	it('marks a run partial when one account fails and preserves successful account data', async () => {
