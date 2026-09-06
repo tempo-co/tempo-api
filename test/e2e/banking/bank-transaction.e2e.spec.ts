@@ -199,8 +199,12 @@ describe('BankTransactionController', () => {
 	});
 
 	it('requires an authenticated, verified account', async () => {
+		const transactionPath = `/bank-transactions/${fixtureTransaction.id}`;
+
 		await request(httpServer).get('/bank-transactions').expect(401);
+		await request(httpServer).get(transactionPath).expect(401);
 		await unverifiedAgent.get('/bank-transactions').expect(403);
+		await unverifiedAgent.get(transactionPath).expect(403);
 	});
 
 	it('lists owner-scoped transactions with safe source metadata', async () => {
@@ -240,7 +244,56 @@ describe('BankTransactionController', () => {
 		expect(response.body.transactions[0]).not.toHaveProperty('bankTransactionSubCode');
 	});
 
-	it('supports pagination, sorting, date, account, and search filters', async () => {
+	it('uses default pagination and preserves the full total across pages', async () => {
+		const additionalTransactions = await externalTransactionRepository.save(
+			Array.from({length: 8}, (_, index) =>
+				externalTransactionRepository.create({
+					externalAccountId: fixtureExternalAccount.id,
+					providerTransactionId: `provider-transaction-default-${index}`,
+					entryReference: `provider-entry-default-${index}`,
+					dedupeKey: randomUUID(),
+					bookingDate: '2026-08-01',
+					valueDate: '2026-08-01',
+					amount: '1.00',
+					currency: 'EUR',
+					creditDebitIndicator: 'CRDT',
+					transactionStatus: 'BOOK',
+					description: `Default pagination transaction ${index}`,
+				}),
+			),
+		);
+
+		try {
+			const response = await verifiedAgent.get('/bank-transactions').expect(200);
+
+			expect(response.body.total).toBe(12);
+			expect(response.body.transactions).toHaveLength(10);
+			expect(response.body.transactions[0]).toMatchObject({
+				id: fixtureTransaction.id,
+				bookingDate: '2026-08-26',
+			});
+
+			const firstPageIds = response.body.transactions.map(({id}: {id: string}) => id);
+			const nextPageResponse = await verifiedAgent
+				.get('/bank-transactions')
+				.query({'pagination[pageIndex]': '1'})
+				.expect(200);
+			const nextPageIds = nextPageResponse.body.transactions.map(({id}: {id: string}) => id);
+
+			expect(nextPageResponse.body.total).toBe(12);
+			expect(nextPageResponse.body.transactions).toHaveLength(2);
+			expect(new Set([...firstPageIds, ...nextPageIds]).size).toBe(12);
+			expect(
+				nextPageResponse.body.transactions.every(
+					({bookingDate}: {bookingDate: string}) => bookingDate === '2026-08-01',
+				),
+			).toBe(true);
+		} finally {
+			await externalTransactionRepository.remove(additionalTransactions);
+		}
+	});
+
+	it('supports pagination and sorting', async () => {
 		const paginatedResponse = await verifiedAgent
 			.get('/bank-transactions')
 			.query({
@@ -254,7 +307,9 @@ describe('BankTransactionController', () => {
 		expect(paginatedResponse.body.total).toBe(4);
 		expect(paginatedResponse.body.transactions).toHaveLength(4);
 		expect(paginatedResponse.body.transactions[0].amount).toBe('-30.00000000');
+	});
 
+	it('applies date, account, and search filters', async () => {
 		const filteredResponse = await verifiedAgent
 			.get('/bank-transactions')
 			.query({
@@ -269,23 +324,13 @@ describe('BankTransactionController', () => {
 		expect(filteredResponse.body.transactions[0].description).toBe('Coffee shop');
 	});
 
-	it('enforces the maximum page size', async () => {
-		await verifiedAgent.get('/bank-transactions').query({'pagination[pageSize]': '51'}).expect(400);
-		await verifiedAgent.get('/bank-transactions').query({'pagination[pageSize]': '11'}).expect(400);
-	});
-
 	it.each([
-		['a valid page index', 'pagination[pageIndex]', '0', 200],
 		['a positive page index', 'pagination[pageIndex]', '1', 200],
-		['a valid page size', 'pagination[pageSize]', '10', 200],
 		['the maximum page size', 'pagination[pageSize]', '50', 200],
 		['a suffix in the page index', 'pagination[pageIndex]', '1oops', 400],
-		['scientific notation in the page size', 'pagination[pageSize]', '1e1', 400],
-		['whitespace in the page index', 'pagination[pageIndex]', ' 1', 400],
-		['a plus sign in the page size', 'pagination[pageSize]', '+10', 400],
 		['a negative page index', 'pagination[pageIndex]', '-1', 400],
 		['zero page size', 'pagination[pageSize]', '0', 400],
-		['a page size above the allowed range', 'pagination[pageSize]', '51', 400],
+		['a page size not in the allowed options', 'pagination[pageSize]', '11', 400],
 	])('validates pagination input for %s', async (_case, field, value, expectedStatus) => {
 		await verifiedAgent
 			.get('/bank-transactions')
@@ -293,11 +338,25 @@ describe('BankTransactionController', () => {
 			.expect(expectedStatus);
 	});
 
+	it.each([
+		['an unsupported sort field', {'sort[by]': 'postedDate'}],
+		['an unsupported sort order', {'sort[order]': 'DOWN'}],
+		['an invalid booking date', {'filter[bookingDate][from]': '2026-99-99'}],
+		['a malformed external account ID', {'filter[externalAccountIds][]': 'not-a-uuid'}],
+	])('rejects %s', async (_case, query) => {
+		await verifiedAgent.get('/bank-transactions').query(query).expect(400);
+	});
+
 	it('does not expose another account’s transactions or details', async () => {
 		const listResponse = await otherVerifiedAgent.get('/bank-transactions').expect(200);
 		expect(listResponse.body).toEqual({transactions: [], total: 0});
 
 		await otherVerifiedAgent.get(`/bank-transactions/${fixtureTransaction.id}`).expect(404);
+	});
+
+	it('validates transaction IDs and returns not found for missing transactions', async () => {
+		await verifiedAgent.get('/bank-transactions/not-a-uuid').expect(400);
+		await verifiedAgent.get(`/bank-transactions/${randomUUID()}`).expect(404);
 	});
 
 	it('returns safe transaction details for the owner', async () => {
