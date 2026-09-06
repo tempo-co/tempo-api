@@ -12,11 +12,7 @@ import {RedisModule} from '@core/redis/redis.module';
 import {SessionModule} from '@core/session/session.module';
 import {AccountModule} from '@modules/account/account.module';
 import {AuthModule} from '@modules/auth/auth.module';
-import {BankStatementModule} from '@modules/bank-statement/bank-statement.module';
-import {CurrencyModule} from '@modules/currency/currency.module';
-import {FileParserModule} from '@modules/file/file-parser/file-parser.module';
-import {TransactionCategorizerModule} from '@modules/transaction/transaction-categorizer/transaction-categorizer.module';
-import {TransactionModule} from '@modules/transaction/transaction.module';
+import {BankingModule} from '@modules/banking/banking.module';
 
 @Module({
 	imports: [
@@ -29,12 +25,8 @@ import {TransactionModule} from '@modules/transaction/transaction.module';
 		EmailModule,
 		HealthModule,
 		AuthModule,
-		FileParserModule,
-		TransactionModule,
-		TransactionCategorizerModule,
 		AccountModule,
-		BankStatementModule,
-		CurrencyModule,
+		BankingModule,
 	],
 	providers: [
 		{provide: APP_GUARD, useClass: ThrottlerGuard},

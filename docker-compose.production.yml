@@ -1,0 +1,93 @@
+name: flair-api-production
+
+services:
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    volumes:
+      - flair_production_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  mailpit:
+    image: axllent/mailpit
+    restart: unless-stopped
+    command: ['--webroot=/flair/mailpit/']
+    healthcheck:
+      test: ['CMD', '/mailpit', 'readyz', '--webroot', '/flair/mailpit/']
+    ports:
+      # EMAIL_PORT/EMAIL_UI_PORT are container ports; host ports are separate
+      # so test and development can continue using 1025/8025.
+      - '127.0.0.1:${EMAIL_HOST_PORT:?EMAIL_HOST_PORT must be set}:${EMAIL_PORT}'
+      - '127.0.0.1:${EMAIL_UI_HOST_PORT:?EMAIL_UI_HOST_PORT must be set}:${EMAIL_UI_PORT}'
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env.production.local
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_URL: redis://redis:6379
+      EMAIL_HOST: mailpit
+      ENABLE_BANKING_PRIVATE_KEY_PATH: /run/secrets/enable-banking-private.key
+    volumes:
+      - type: bind
+        source: ${ENABLE_BANKING_PRIVATE_KEY_HOST_PATH}
+        target: /run/secrets/enable-banking-private.key
+        read_only: true
+    expose:
+      - '3000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://127.0.0.1:3000/health']
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  web:
+    build:
+      context: ../flair-web
+      dockerfile: Dockerfile.production
+      args:
+        VITE_API_URL: /flair/api
+        VITE_APP_URL: '${WEB_BASE_URL:?WEB_BASE_URL must be set}'
+        VITE_BASE_PATH: /flair/
+        VITE_EMAIL_UI_URL: ${EMAIL_UI_URL}
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:8080:8080'
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  flair_production_postgres_data:

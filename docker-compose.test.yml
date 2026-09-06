@@ -1,3 +1,5 @@
+name: flair-api-test
+
 services:
   mailpit:
     image: axllent/mailpit
@@ -13,7 +15,7 @@ services:
       - "${REDIS_PORT}:${REDIS_PORT}"
 
   postgres:
-    image: postgres
+    image: postgres:17
     container_name: postgres_test
     environment:
       POSTGRES_USER: ${DB_USERNAME}

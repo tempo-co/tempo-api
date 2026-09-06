@@ -19,7 +19,7 @@ import {RedisModule} from '@core/redis/redis.module';
 				return {
 					throttlers: [
 						{
-							ttl: ms(config.get('THROTTLE_TTL')),
+							ttl: ms(config.get('THROTTLE_TTL') as ms.StringValue),
 							limit: config.get('THROTTLE_LIMIT'),
 						},
 					],

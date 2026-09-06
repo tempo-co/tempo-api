@@ -1,5 +1,5 @@
 import {Inject, MiddlewareConsumer, Module, NestModule} from '@nestjs/common';
-import RedisStore from 'connect-redis';
+import {RedisStore} from 'connect-redis';
 import session from 'express-session';
 import Redis from 'ioredis';
 import ms from 'ms';
@@ -33,8 +33,7 @@ export class SessionModule implements NestModule {
 						secure: isProduction,
 						httpOnly: true,
 						sameSite: 'strict',
-						maxAge: ms(this.config.get('SESSION_EXPIRATION')),
-						...(isProduction ? {domain: this.config.get('WEB_BASE_URL')} : {}),
+						maxAge: ms(this.config.get('SESSION_EXPIRATION') as ms.StringValue),
 					},
 				}),
 				passport.initialize(),

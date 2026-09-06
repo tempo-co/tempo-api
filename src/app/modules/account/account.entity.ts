@@ -1,16 +1,5 @@
-import {Exclude, Expose, Type} from 'class-transformer';
-import {
-	Column,
-	CreateDateColumn,
-	Entity,
-	Index,
-	OneToMany,
-	PrimaryGeneratedColumn,
-	Unique,
-	UpdateDateColumn,
-} from 'typeorm';
-
-import {BankAccount} from '@modules/bank-account/bank-account.entity';
+import {Exclude, Expose} from 'class-transformer';
+import {Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn, Unique, UpdateDateColumn} from 'typeorm';
 
 @Entity('accounts')
 @Unique('index_accounts_unique_email', ['email'])
@@ -43,9 +32,4 @@ export class Account {
 	@UpdateDateColumn()
 	@Expose()
 	updatedAt: Date;
-
-	@OneToMany(() => BankAccount, (bankAccount) => bankAccount.account)
-	@Expose()
-	@Type(() => BankAccount)
-	bankAccounts: Array<BankAccount>;
 }
