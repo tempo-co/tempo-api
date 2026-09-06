@@ -263,7 +263,7 @@ describe('BankConnectionController', () => {
 			.expect('Location', 'http://localhost:5173/bank-connections?result=connected');
 
 		const successfulConnection = await bankConnectionRepository.findOne({
-			where: {account: {id: account.id}},
+			where: {account: {id: account.id}, status: 'AUTHORIZED'},
 			order: {createdAt: 'DESC'},
 		});
 		if (!successfulConnection) throw new Error('Successful authorization connection was not persisted.');
@@ -370,95 +370,148 @@ describe('BankConnectionController', () => {
 		expect(await bankAccountRepository.count({where: {bankConnection: {id: connection.id}}})).toBe(0);
 	});
 
-	it('retains separate session account IDs and hashes across re-authorization', async () => {
+	it('merges re-authorization into the existing connection instead of duplicating it', async () => {
+		await bankConnectionRepository
+			.createQueryBuilder()
+			.delete()
+			.where('accountId = :accountId', {accountId: account.id})
+			.execute();
+
 		await verifiedAgent
 			.post('/bank-connections/authorize')
 			.send({aspspName: 'ABN AMRO', aspspCountry: 'NL'})
 			.expect(201);
 		const firstState = startAuthorization.mock.calls.at(-1)?.[0].state;
-		const firstConnection = (
+		createSession.mockResolvedValueOnce({
+			sessionId: 'provider-session-reauth-original',
+			consentValidUntil: '2030-01-01T00:00:00.000Z',
+			aspsp: {name: 'ABN AMRO', country: 'NL'},
+			accounts: [
+				{uid: 'provider-account-original', identificationHash: 'stable-account-reauth', currency: 'EUR'},
+			],
+		});
+		await request(httpServer)
+			.get('/bank-connections/callback')
+			.query({state: firstState, code: 'reauth-original-code'})
+			.expect(302);
+
+		const originalConnection = (
 			await bankConnectionRepository.find({
-				where: {account: {id: account.id}},
+				where: {account: {id: account.id}, status: 'AUTHORIZED'},
 				order: {createdAt: 'DESC'},
 			})
 		)[0];
+		if (!originalConnection) throw new Error('Authorized connection was not persisted.');
+		const originalBankAccount = await bankAccountRepository.findOne({
+			where: {bankConnection: {id: originalConnection.id}},
+		});
+		if (!originalBankAccount) throw new Error('Bank account was not persisted.');
 
 		await verifiedAgent
 			.post('/bank-connections/authorize')
 			.send({aspspName: 'ABN AMRO', aspspCountry: 'NL'})
 			.expect(201);
 		const secondState = startAuthorization.mock.calls.at(-1)?.[0].state;
-		const secondConnection = (
-			await bankConnectionRepository.find({
-				where: {account: {id: account.id}},
-				order: {createdAt: 'DESC'},
-			})
-		)[0];
-
-		if (!firstConnection || !secondConnection) {
-			throw new Error('Expected both authorization connections to be persisted');
-		}
-
-		createSession
-			.mockResolvedValueOnce({
-				sessionId: 'provider-session-first-reauthorization',
-				consentValidUntil: '2030-01-01T00:00:00.000Z',
-				aspsp: {name: 'ABN AMRO', country: 'NL'},
-				accounts: [
-					{
-						uid: 'provider-account-first-reauthorization',
-						identificationHash: 'stable-account-reauthorization',
-						currency: 'EUR',
-					},
-				],
-			})
-			.mockResolvedValueOnce({
-				sessionId: 'provider-session-second-reauthorization',
-				consentValidUntil: '2030-01-01T00:00:00.000Z',
-				aspsp: {name: 'ABN AMRO', country: 'NL'},
-				accounts: [
-					{
-						uid: 'provider-account-second-reauthorization',
-						identificationHash: 'stable-account-reauthorization',
-						currency: 'EUR',
-					},
-				],
-			});
-
-		await request(httpServer)
-			.get('/bank-connections/callback')
-			.query({state: firstState, code: 'first-reauthorization-code'})
-			.expect(302);
-		await request(httpServer)
-			.get('/bank-connections/callback')
-			.query({state: secondState, code: 'second-reauthorization-code'})
-			.expect(302);
-
-		const connections = await bankConnectionRepository.find({
-			where: {account: {id: account.id}},
-			order: {createdAt: 'DESC'},
+		createSession.mockResolvedValueOnce({
+			sessionId: 'provider-session-reauth-refreshed',
+			consentValidUntil: '2031-01-01T00:00:00.000Z',
+			aspsp: {name: 'ABN AMRO', country: 'NL'},
+			accounts: [
+				{
+					// Enable Banking rotates the session-scoped uid; the identification hash is stable.
+					uid: 'provider-account-rotated',
+					identificationHash: 'stable-account-reauth',
+					currency: 'EUR',
+				},
+			],
 		});
-		expect(connections).toEqual(
-			expect.arrayContaining([
-				expect.objectContaining({id: firstConnection.id, status: 'AUTHORIZED'}),
-				expect.objectContaining({id: secondConnection.id, status: 'AUTHORIZED'}),
-			]),
+		await request(httpServer)
+			.get('/bank-connections/callback')
+			.query({state: secondState, code: 'reauth-refreshed-code'})
+			.expect(302)
+			.expect('Location', 'http://localhost:5173/bank-connections?result=connected');
+
+		const authorizedConnections = await bankConnectionRepository.find({
+			where: {account: {id: account.id}, status: 'AUTHORIZED'},
+		});
+		expect(authorizedConnections).toHaveLength(1);
+		expect(authorizedConnections[0].id).toBe(originalConnection.id);
+		expect(authorizedConnections[0].consentValidUntil?.getTime()).toBeGreaterThan(
+			originalConnection.consentValidUntil?.getTime() ?? 0,
 		);
 
-		const firstBankAccount = await bankAccountRepository.findOne({
-			where: {bankConnection: {id: firstConnection.id}},
+		const refreshedBankAccounts = await bankAccountRepository.find({
+			where: {bankConnection: {id: originalConnection.id}},
 		});
-		const secondBankAccount = await bankAccountRepository.findOne({
-			where: {bankConnection: {id: secondConnection.id}},
+		expect(refreshedBankAccounts).toHaveLength(1);
+		expect(refreshedBankAccounts[0].id).toBe(originalBankAccount.id);
+		expect(refreshedBankAccounts[0].providerAccountId).toBe('provider-account-rotated');
+		expect(refreshedBankAccounts[0].identificationHash).toBe('stable-account-reauth');
+	});
+
+	it('keeps the live connection untouched when re-authorization is cancelled', async () => {
+		await bankConnectionRepository
+			.createQueryBuilder()
+			.delete()
+			.where('accountId = :accountId', {accountId: account.id})
+			.execute();
+		const {connection} = await createAuthorizedConnection('cancel-reauth-session');
+		const encryptedSessionId = connection.providerSessionId;
+
+		await verifiedAgent
+			.post('/bank-connections/authorize')
+			.send({aspspName: 'ABN AMRO', aspspCountry: 'NL'})
+			.expect(201);
+		const cancelledState = startAuthorization.mock.calls.at(-1)?.[0].state;
+		await request(httpServer)
+			.get('/bank-connections/callback')
+			.query({state: cancelledState, error: 'access_denied'})
+			.expect(302)
+			.expect('Location', 'http://localhost:5173/bank-connections?result=cancelled');
+
+		const liveConnection = await bankConnectionRepository.findOneBy({id: connection.id});
+		expect(liveConnection).toMatchObject({status: 'AUTHORIZED', providerSessionId: encryptedSessionId});
+		expect(await bankAccountRepository.count({where: {bankConnection: {id: connection.id}}})).toBe(1);
+	});
+
+	it('refreshes an expired connection on re-authorization', async () => {
+		await bankConnectionRepository
+			.createQueryBuilder()
+			.delete()
+			.where('accountId = :accountId', {accountId: account.id})
+			.execute();
+		const {connection} = await createAuthorizedConnection('expired-reauth-session');
+
+		await bankConnectionRepository.update(
+			{id: connection.id},
+			{status: 'EXPIRED', consentValidUntil: new Date(Date.now() - 60 * 60 * 1000)},
+		);
+
+		await verifiedAgent
+			.post('/bank-connections/authorize')
+			.send({aspspName: 'ABN AMRO', aspspCountry: 'NL'})
+			.expect(201);
+		const state = startAuthorization.mock.calls.at(-1)?.[0].state;
+		createSession.mockResolvedValueOnce({
+			sessionId: 'provider-session-revived',
+			consentValidUntil: '2031-06-01T00:00:00.000Z',
+			aspsp: {name: 'ABN AMRO', country: 'NL'},
+			accounts: [
+				{uid: 'provider-account-revived', identificationHash: 'hash-expired-reauth-session', currency: 'EUR'},
+			],
 		});
-		expect(firstBankAccount).toMatchObject({
-			providerAccountId: 'provider-account-first-reauthorization',
-			identificationHash: 'stable-account-reauthorization',
+		await request(httpServer)
+			.get('/bank-connections/callback')
+			.query({state, code: 'revive-code'})
+			.expect(302)
+			.expect('Location', 'http://localhost:5173/bank-connections?result=connected');
+
+		const authorizedConnections = await bankConnectionRepository.find({
+			where: {account: {id: account.id}, status: 'AUTHORIZED'},
 		});
-		expect(secondBankAccount).toMatchObject({
-			providerAccountId: 'provider-account-second-reauthorization',
-			identificationHash: 'stable-account-reauthorization',
-		});
+		expect(authorizedConnections).toHaveLength(1);
+		expect(authorizedConnections[0].id).toBe(connection.id);
+		expect(await bankAccountRepository.count({where: {bankConnection: {id: connection.id}}})).toBe(1);
 	});
 
 	it('does not expose one account owner’s connections to another account', async () => {

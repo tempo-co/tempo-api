@@ -72,10 +72,8 @@ describe('BankingService authorization state lifecycle', () => {
 			authorizationStateHash: hashState(callbackState),
 		};
 		const transactionConnectionRepository = {
-			findOneBy: jest.fn().mockResolvedValue(connection),
-			update: jest.fn().mockResolvedValue({affected: 0}),
+			findOne: jest.fn().mockResolvedValue(null),
 		};
-		const transactionBankAccountRepository = {};
 		const bankConnectionRepository = {
 			findOne: jest.fn().mockResolvedValue(connection),
 			update: jest.fn().mockResolvedValue({affected: 0}),
@@ -84,7 +82,7 @@ describe('BankingService authorization state lifecycle', () => {
 			transaction: jest.fn(async (callback: (manager: unknown) => Promise<void>) =>
 				callback({
 					getRepository: jest.fn((entity: unknown) =>
-						entity === BankConnection ? transactionConnectionRepository : transactionBankAccountRepository,
+						entity === BankConnection ? transactionConnectionRepository : {},
 					),
 				}),
 			),
@@ -113,10 +111,7 @@ describe('BankingService authorization state lifecycle', () => {
 
 		await expect(service.handleCallback({state: callbackState, code: 'provider-code'})).resolves.toBe('error');
 
-		expect(transactionConnectionRepository.update).toHaveBeenCalledWith(
-			{id: state.connectionId, status: 'PENDING_AUTHORIZATION', authorizationStateHash: hashState(callbackState)},
-			expect.objectContaining({status: 'AUTHORIZED', authorizationStateHash: null}),
-		);
+		expect(transactionConnectionRepository.findOne).toHaveBeenCalled();
 		expect(bankConnectionRepository.update).toHaveBeenCalledWith(
 			{id: state.connectionId, status: 'PENDING_AUTHORIZATION', authorizationStateHash: hashState(callbackState)},
 			{status: 'FAILED', authorizationStateHash: null},

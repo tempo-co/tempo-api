@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import {InjectRepository} from '@nestjs/typeorm';
 import {createHash} from 'node:crypto';
-import {DataSource, Repository} from 'typeorm';
+import {DataSource, In, Repository} from 'typeorm';
 
 import {ConfigurationService} from '@core/config/config.service';
 import {Account} from '@modules/account/account.entity';
@@ -41,6 +41,7 @@ const PENDING_AUTHORIZATION = 'PENDING_AUTHORIZATION';
 const AUTHORIZED = 'AUTHORIZED';
 const CANCELLED = 'CANCELLED';
 const FAILED = 'FAILED';
+const EXPIRED = 'EXPIRED';
 
 @Injectable()
 export class BankingService {
@@ -218,7 +219,7 @@ export class BankingService {
 
 		try {
 			const session = await this.enableBankingClient.createSession(query.code);
-			await this.persistAuthorizedSession(connection.id, authorizationStateHash, session);
+			await this.persistAuthorizedSession(state.accountId, connection.id, authorizationStateHash, session);
 			return 'connected';
 		} catch (error) {
 			this.logger.warn(`Enable Banking authorization failed: ${this.getSafeErrorCode(error)}`);
@@ -228,6 +229,7 @@ export class BankingService {
 	}
 
 	private async persistAuthorizedSession(
+		accountId: Account['id'],
 		connectionId: string,
 		authorizationStateHash: string,
 		session: EnableBankingSession,
@@ -240,8 +242,35 @@ export class BankingService {
 		await this.dataSource.transaction(async (manager) => {
 			const connectionRepository = manager.getRepository(BankConnection);
 			const bankAccountRepository = manager.getRepository(BankAccount);
-			const connectionUpdate = await connectionRepository.update(
-				{id: connectionId, status: PENDING_AUTHORIZATION, authorizationStateHash},
+
+			const pendingConnection = await connectionRepository.findOne({
+				where: {
+					id: connectionId,
+					status: PENDING_AUTHORIZATION,
+					authorizationStateHash,
+					account: {id: accountId},
+				},
+			});
+			if (!pendingConnection) {
+				throw new BankingAuthorizationStateError('state_superseded');
+			}
+
+			// Re-authorizing an ASPSP refreshes the existing connection instead of
+			// creating a parallel one with duplicated bank accounts and transactions.
+			const reusableConnection = await connectionRepository.findOne({
+				where: {
+					account: {id: accountId},
+					provider: PROVIDER,
+					aspspName: pendingConnection.aspspName,
+					aspspCountry: pendingConnection.aspspCountry,
+					status: In([AUTHORIZED, EXPIRED]),
+				},
+				order: {createdAt: 'DESC'},
+			});
+			const targetConnection = reusableConnection ?? pendingConnection;
+
+			await connectionRepository.update(
+				{id: targetConnection.id},
 				{
 					providerSessionId: this.encryptionService.encrypt(session.sessionId),
 					status: AUTHORIZED,
@@ -252,27 +281,27 @@ export class BankingService {
 					lastSyncError: null,
 				},
 			);
-			if (connectionUpdate.affected === 0) {
-				throw new Error('Bank connection authorization was superseded.');
-			}
 
 			for (const account of session.accounts) {
 				if (!account.uid) continue;
 
 				const values = this.toBankAccountValues(account);
 				let bankAccount = await bankAccountRepository.findOne({
-					where: {bankConnection: {id: connectionId}, providerAccountId: account.uid},
+					where: {bankConnection: {id: targetConnection.id}, providerAccountId: account.uid},
 				});
 
 				if (!bankAccount) {
 					bankAccount = await bankAccountRepository.findOne({
-						where: {bankConnection: {id: connectionId}, identificationHash: account.identificationHash},
+						where: {
+							bankConnection: {id: targetConnection.id},
+							identificationHash: account.identificationHash,
+						},
 					});
 				}
 
 				if (!bankAccount) {
 					bankAccount = bankAccountRepository.create({
-						bankConnection: {id: connectionId},
+						bankConnection: {id: targetConnection.id},
 						...values,
 					});
 				} else {
@@ -280,6 +309,10 @@ export class BankingService {
 				}
 
 				await bankAccountRepository.save(bankAccount);
+			}
+
+			if (targetConnection.id !== pendingConnection.id) {
+				await connectionRepository.delete({id: pendingConnection.id});
 			}
 		});
 	}
