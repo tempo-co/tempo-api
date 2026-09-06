@@ -3,8 +3,8 @@ import {NestExpressApplication} from '@nestjs/platform-express';
 import {Test} from '@nestjs/testing';
 import {Server} from 'node:net';
 
+import {seedAccounts} from '../../scripts/seed-data/seed-accounts';
 import {AppModule} from '../../src/app.module';
-import {seedDatabase} from './seed-database';
 
 let app: INestApplication<Server>;
 
@@ -15,7 +15,7 @@ beforeAll(async () => {
 	app.useGlobalPipes(new ValidationPipe({whitelist: true, transform: true}));
 	await app.init();
 
-	await seedDatabase(app);
+	await seedAccounts(app);
 });
 
 afterAll(async () => {

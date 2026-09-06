@@ -12,7 +12,6 @@ import {BankConnection} from '@modules/banking/bank-connection.entity';
 import {ExternalAccount} from '@modules/banking/external-account.entity';
 import {ExternalTransaction} from '@modules/banking/external-transaction.entity';
 
-import {getApp} from '../../setup/e2e.setup';
 import {
 	SESSION_TEST_ACCOUNT_EMAIL,
 	SESSION_TEST_ACCOUNT_PASSWORD,
@@ -20,7 +19,8 @@ import {
 	UNVERIFIED_ACCOUNT_PASSWORD,
 	VERIFIED_ACCOUNT_EMAIL,
 	VERIFIED_ACCOUNT_PASSWORD,
-} from '../../setup/seed.constants';
+} from '../../../scripts/seed-data/seed.constants';
+import {getApp} from '../../setup/e2e.setup';
 
 describe('BankTransactionController', () => {
 	let app: INestApplication;

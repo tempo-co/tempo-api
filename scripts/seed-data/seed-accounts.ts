@@ -26,13 +26,9 @@ import {
 	VERIFIED_ACCOUNT_PASSWORD,
 } from './seed.constants';
 
-export async function seedDatabase(app: INestApplicationContext) {
-	await seedAccounts(app);
-}
-
 type AccountSeedData = Pick<Account, 'name' | 'email' | 'password' | 'isEmailVerified'>;
 
-async function seedAccounts(app: INestApplicationContext) {
+export async function seedAccounts(app: INestApplicationContext) {
 	const accountRepository = app.get<Repository<Account>>(getRepositoryToken(Account));
 
 	const accountsToSeed: AccountSeedData[] = [

@@ -20,7 +20,6 @@ import {ExternalTransaction} from '@modules/banking/external-transaction.entity'
 import {BankingEncryptionService} from '@modules/banking/services/banking-encryption.service';
 import {EnableBankingClient, EnableBankingClientError} from '@modules/banking/services/enable-banking.client';
 
-import {getApp} from '../../setup/e2e.setup';
 import {
 	SESSION_TEST_ACCOUNT_EMAIL,
 	SESSION_TEST_ACCOUNT_PASSWORD,
@@ -28,7 +27,8 @@ import {
 	UNVERIFIED_ACCOUNT_PASSWORD,
 	VERIFIED_ACCOUNT_EMAIL,
 	VERIFIED_ACCOUNT_PASSWORD,
-} from '../../setup/seed.constants';
+} from '../../../scripts/seed-data/seed.constants';
+import {getApp} from '../../setup/e2e.setup';
 
 describe('BankConnectionController', () => {
 	let app: INestApplication;
