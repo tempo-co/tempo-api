@@ -1,21 +1,21 @@
 import {Column, CreateDateColumn, Entity, Index, JoinColumn, ManyToOne, PrimaryGeneratedColumn} from 'typeorm';
 
+import {BankAccount} from './bank-account.entity';
 import {BankSyncRun} from './bank-sync-run.entity';
-import {ExternalAccount} from './external-account.entity';
 
-@Entity('external_account_balances')
-@Index('idx_external_account_balances_account_observed_at', ['externalAccountId', 'observedAt'])
-@Index('idx_external_account_balances_sync_run_account', ['bankSyncRunId', 'externalAccountId'])
-export class ExternalAccountBalance {
+@Entity('bank_account_balances')
+@Index('idx_bank_account_balances_account_observed_at', ['bankAccountId', 'observedAt'])
+@Index('idx_bank_account_balances_sync_run_account', ['bankSyncRunId', 'bankAccountId'])
+export class BankAccountBalance {
 	@PrimaryGeneratedColumn('uuid')
 	id: string;
 
 	@Column({type: 'uuid'})
-	externalAccountId: string;
+	bankAccountId: string;
 
-	@ManyToOne(() => ExternalAccount, {onDelete: 'CASCADE', nullable: false})
-	@JoinColumn({name: 'externalAccountId'})
-	externalAccount: ExternalAccount;
+	@ManyToOne(() => BankAccount, {onDelete: 'CASCADE', nullable: false})
+	@JoinColumn({name: 'bankAccountId'})
+	bankAccount: BankAccount;
 
 	@Column({type: 'uuid'})
 	bankSyncRunId: string;

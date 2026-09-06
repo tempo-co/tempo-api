@@ -2,11 +2,11 @@ import Redis from 'ioredis';
 import {DataSource, Repository} from 'typeorm';
 
 import {BANKING_SERVICE_UNAVAILABLE} from '../api/constants/banking-messages.constants';
+import {BankAccountBalance} from '../bank-account-balance.entity';
+import {BankAccount} from '../bank-account.entity';
 import {BankConnection} from '../bank-connection.entity';
 import {BankSyncRun} from '../bank-sync-run.entity';
-import {ExternalAccountBalance} from '../external-account-balance.entity';
-import {ExternalAccount} from '../external-account.entity';
-import {ExternalTransaction} from '../external-transaction.entity';
+import {BankTransaction} from '../bank-transaction.entity';
 import {BankingEncryptionService} from './banking-encryption.service';
 import {BankingSyncService} from './banking-sync.service';
 import {EnableBankingClient} from './enable-banking.client';
@@ -62,7 +62,7 @@ describe('BankingSyncService', () => {
 			findOne: jest.fn(),
 			update: jest.fn().mockResolvedValue(undefined),
 		};
-		const externalAccountRepositoryMock = {
+		const bankAccountRepositoryMock = {
 			find: jest.fn().mockResolvedValue([]),
 		};
 		const bankSyncRunRepositoryMock = {
@@ -76,16 +76,16 @@ describe('BankingSyncService', () => {
 			bankConnection: {update: jest.fn().mockResolvedValue(undefined)},
 			bankSyncRun: {update: jest.fn().mockResolvedValue(undefined)},
 			balance: {insert: jest.fn().mockResolvedValue(undefined)},
-			externalTransaction: {upsert: jest.fn().mockResolvedValue(undefined)},
-			externalAccount: {update: jest.fn().mockResolvedValue(undefined)},
+			bankTransaction: {upsert: jest.fn().mockResolvedValue(undefined)},
+			bankAccount: {update: jest.fn().mockResolvedValue(undefined)},
 		};
 		const transactionManager = {
 			getRepository: jest.fn((entity: unknown) => {
 				if (entity === BankConnection) return persistenceRepositories.bankConnection;
 				if (entity === BankSyncRun) return persistenceRepositories.bankSyncRun;
-				if (entity === ExternalAccountBalance) return persistenceRepositories.balance;
-				if (entity === ExternalTransaction) return persistenceRepositories.externalTransaction;
-				return persistenceRepositories.externalAccount;
+				if (entity === BankAccountBalance) return persistenceRepositories.balance;
+				if (entity === BankTransaction) return persistenceRepositories.bankTransaction;
+				return persistenceRepositories.bankAccount;
 			}),
 		};
 		const dataSourceMock = {
@@ -102,7 +102,7 @@ describe('BankingSyncService', () => {
 		};
 		const service = new BankingSyncService(
 			bankConnectionRepositoryMock as unknown as Repository<BankConnection>,
-			externalAccountRepositoryMock as unknown as Repository<ExternalAccount>,
+			bankAccountRepositoryMock as unknown as Repository<BankAccount>,
 			bankSyncRunRepositoryMock as unknown as Repository<BankSyncRun>,
 			redisMock as unknown as Redis,
 			dataSourceMock as unknown as DataSource,
@@ -190,10 +190,10 @@ describe('BankingSyncService synchronization lock', () => {
 			lastSyncedAt: null,
 			lastSyncError: null,
 		} as unknown as BankConnection;
-		const externalAccount = {
-			id: 'external-account-id',
+		const bankAccount = {
+			id: 'bank-account-id',
 			providerAccountId: 'provider-account-id',
-		} as unknown as ExternalAccount;
+		} as unknown as BankAccount;
 		const run = {
 			id: 'run-id',
 			startedAt: new Date(),
@@ -215,8 +215,8 @@ describe('BankingSyncService synchronization lock', () => {
 			findOne: jest.fn().mockResolvedValue(connection),
 			update: jest.fn().mockResolvedValue(undefined),
 		};
-		const externalAccountRepository = {
-			find: jest.fn().mockResolvedValue([externalAccount]),
+		const bankAccountRepository = {
+			find: jest.fn().mockResolvedValue([bankAccount]),
 			update: jest.fn().mockResolvedValue(undefined),
 		};
 		const bankSyncRunRepository = {
@@ -249,7 +249,7 @@ describe('BankingSyncService synchronization lock', () => {
 
 		service = new BankingSyncService(
 			bankConnectionRepository as unknown as Repository<BankConnection>,
-			externalAccountRepository as unknown as Repository<ExternalAccount>,
+			bankAccountRepository as unknown as Repository<BankAccount>,
 			bankSyncRunRepository as unknown as Repository<BankSyncRun>,
 			redis as unknown as Redis,
 			dataSource as unknown as DataSource,

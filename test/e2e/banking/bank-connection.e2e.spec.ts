@@ -11,12 +11,12 @@ import {Repository} from 'typeorm';
 import {REDIS} from '@core/redis/redis.constants';
 import {Account} from '@modules/account/account.entity';
 import {AccountService} from '@modules/account/account.service';
+import {BankAccountBalance} from '@modules/banking/bank-account-balance.entity';
+import {BankAccount} from '@modules/banking/bank-account.entity';
 import {BankConnection} from '@modules/banking/bank-connection.entity';
 import {BankSyncRun} from '@modules/banking/bank-sync-run.entity';
+import {BankTransaction} from '@modules/banking/bank-transaction.entity';
 import {EnableBankingBalance, EnableBankingTransaction} from '@modules/banking/enable-banking.types';
-import {ExternalAccountBalance} from '@modules/banking/external-account-balance.entity';
-import {ExternalAccount} from '@modules/banking/external-account.entity';
-import {ExternalTransaction} from '@modules/banking/external-transaction.entity';
 import {BankingEncryptionService} from '@modules/banking/services/banking-encryption.service';
 import {EnableBankingClient, EnableBankingClientError} from '@modules/banking/services/enable-banking.client';
 
@@ -38,10 +38,10 @@ describe('BankConnectionController', () => {
 	let otherVerifiedAgent: TestAgent;
 	let account: Account;
 	let bankConnectionRepository: Repository<BankConnection>;
-	let externalAccountRepository: Repository<ExternalAccount>;
+	let bankAccountRepository: Repository<BankAccount>;
 	let bankSyncRunRepository: Repository<BankSyncRun>;
-	let externalAccountBalanceRepository: Repository<ExternalAccountBalance>;
-	let externalTransactionRepository: Repository<ExternalTransaction>;
+	let bankAccountBalanceRepository: Repository<BankAccountBalance>;
+	let bankTransactionRepository: Repository<BankTransaction>;
 	let redis: Redis;
 	let enableBankingClient: EnableBankingClient;
 	let getAspsps: jest.SpiedFunction<EnableBankingClient['getAspsps']>;
@@ -60,14 +60,10 @@ describe('BankConnectionController', () => {
 		account = seededAccount;
 
 		bankConnectionRepository = app.get<Repository<BankConnection>>(getRepositoryToken(BankConnection));
-		externalAccountRepository = app.get<Repository<ExternalAccount>>(getRepositoryToken(ExternalAccount));
+		bankAccountRepository = app.get<Repository<BankAccount>>(getRepositoryToken(BankAccount));
 		bankSyncRunRepository = app.get<Repository<BankSyncRun>>(getRepositoryToken(BankSyncRun));
-		externalAccountBalanceRepository = app.get<Repository<ExternalAccountBalance>>(
-			getRepositoryToken(ExternalAccountBalance),
-		);
-		externalTransactionRepository = app.get<Repository<ExternalTransaction>>(
-			getRepositoryToken(ExternalTransaction),
-		);
+		bankAccountBalanceRepository = app.get<Repository<BankAccountBalance>>(getRepositoryToken(BankAccountBalance));
+		bankTransactionRepository = app.get<Repository<BankTransaction>>(getRepositoryToken(BankTransaction));
 		redis = app.get<Redis>(REDIS);
 		enableBankingClient = app.get(EnableBankingClient);
 		getAspsps = jest.spyOn(enableBankingClient, 'getAspsps');
@@ -195,28 +191,28 @@ describe('BankConnectionController', () => {
 			order: {createdAt: 'DESC'},
 		});
 		if (!connection) throw new Error('Bank connection was not persisted.');
-		const externalAccount = await externalAccountRepository.findOne({
+		const bankAccount = await bankAccountRepository.findOne({
 			where: {bankConnection: {id: connection.id}},
 		});
 
 		expect(connection.status).toBe('AUTHORIZED');
 		expect(connection.providerSessionId).toBeDefined();
 		expect(connection.providerSessionId).not.toBe(sessionId);
-		expect(externalAccount).toMatchObject({
+		expect(bankAccount).toMatchObject({
 			providerAccountId: 'provider-account-success',
 			identificationHash: 'stable-account-hash-success',
 			currency: 'EUR',
 			name: 'Joe',
 			details: 'Main account',
 		});
-		expect(externalAccount?.currentBalanceAmount).toBeNull();
+		expect(bankAccount?.currentBalanceAmount).toBeNull();
 
 		const response = await verifiedAgent.get('/bank-connections').expect(200);
 		expect(response.body).toEqual([
 			expect.objectContaining({
 				id: connection.id,
 				status: 'AUTHORIZED',
-				externalAccounts: [
+				bankAccounts: [
 					expect.objectContaining({
 						name: 'Joe',
 						currency: 'EUR',
@@ -333,7 +329,7 @@ describe('BankConnectionController', () => {
 		expect(connection?.status).toBe('FAILED');
 	});
 
-	it('rolls back the connection transaction when external-account persistence fails', async () => {
+	it('rolls back the connection transaction when bank-account persistence fails', async () => {
 		await verifiedAgent
 			.post('/bank-connections/authorize')
 			.send({aspspName: 'ABN AMRO', aspspCountry: 'NL'})
@@ -371,7 +367,7 @@ describe('BankConnectionController', () => {
 
 		expect(connection.status).toBe('FAILED');
 		expect(connection.providerSessionId).toBeNull();
-		expect(await externalAccountRepository.count({where: {bankConnection: {id: connection.id}}})).toBe(0);
+		expect(await bankAccountRepository.count({where: {bankConnection: {id: connection.id}}})).toBe(0);
 	});
 
 	it('retains separate session account IDs and hashes across re-authorization', async () => {
@@ -449,17 +445,17 @@ describe('BankConnectionController', () => {
 			]),
 		);
 
-		const firstExternalAccount = await externalAccountRepository.findOne({
+		const firstBankAccount = await bankAccountRepository.findOne({
 			where: {bankConnection: {id: firstConnection.id}},
 		});
-		const secondExternalAccount = await externalAccountRepository.findOne({
+		const secondBankAccount = await bankAccountRepository.findOne({
 			where: {bankConnection: {id: secondConnection.id}},
 		});
-		expect(firstExternalAccount).toMatchObject({
+		expect(firstBankAccount).toMatchObject({
 			providerAccountId: 'provider-account-first-reauthorization',
 			identificationHash: 'stable-account-reauthorization',
 		});
-		expect(secondExternalAccount).toMatchObject({
+		expect(secondBankAccount).toMatchObject({
 			providerAccountId: 'provider-account-second-reauthorization',
 			identificationHash: 'stable-account-reauthorization',
 		});
@@ -481,7 +477,7 @@ describe('BankConnectionController', () => {
 	});
 
 	it('synchronizes balances and transactions without exposing provider identifiers', async () => {
-		const {connection, externalAccount} = await createAuthorizedConnection('sync-provider-session');
+		const {connection, bankAccount} = await createAuthorizedConnection('sync-provider-session');
 		const balances = makeBalances();
 		const transactions = makeTransactions('sync');
 		getAccountBalances.mockResolvedValueOnce(balances);
@@ -498,14 +494,14 @@ describe('BankConnectionController', () => {
 			}),
 		);
 
-		const persistedBalances = await externalAccountBalanceRepository.find({
-			where: {externalAccountId: externalAccount.id},
+		const persistedBalances = await bankAccountBalanceRepository.find({
+			where: {bankAccountId: bankAccount.id},
 			order: {balanceType: 'ASC'},
 		});
 		expect(persistedBalances).toHaveLength(2);
 
-		const persistedTransactions = await externalTransactionRepository.find({
-			where: {externalAccountId: externalAccount.id},
+		const persistedTransactions = await bankTransactionRepository.find({
+			where: {bankAccountId: bankAccount.id},
 		});
 		expect(persistedTransactions).toHaveLength(5);
 		expect(persistedTransactions.find(({creditDebitIndicator}) => creditDebitIndicator === 'DBIT')?.amount).toBe(
@@ -532,7 +528,7 @@ describe('BankConnectionController', () => {
 			referenceNumberScheme: 'RF',
 		});
 
-		const refreshedAccount = await externalAccountRepository.findOneBy({id: externalAccount.id});
+		const refreshedAccount = await bankAccountRepository.findOneBy({id: bankAccount.id});
 		expect(refreshedAccount).toMatchObject({
 			currentBalanceAmount: '123.45000000',
 			currentBalanceType: 'AVAILABLE',
@@ -540,7 +536,7 @@ describe('BankConnectionController', () => {
 
 		const safeConnectionsResponse = await verifiedAgent.get('/bank-connections').expect(200);
 		const safeConnection = safeConnectionsResponse.body.find(({id}: {id: string}) => id === connection.id);
-		expect(safeConnection.externalAccounts[0].latestBalances).toEqual(
+		expect(safeConnection.bankAccounts[0].latestBalances).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({balanceType: 'AVAILABLE', amount: '123.45000000', isPrimary: true}),
 				expect.objectContaining({balanceType: 'BOOKED', amount: '120.00000000', isPrimary: false}),
@@ -555,7 +551,7 @@ describe('BankConnectionController', () => {
 		expect(transactionsResponse.body.transactions).toHaveLength(5);
 		expect(JSON.stringify(transactionsResponse.body)).not.toContain('provider-transaction-sync');
 		expect(JSON.stringify(transactionsResponse.body)).not.toContain('provider-entry-sync');
-		expect(transactionsResponse.body.transactions[0]).not.toHaveProperty('externalAccountId');
+		expect(transactionsResponse.body.transactions[0]).not.toHaveProperty('bankAccountId');
 
 		getAccountBalances.mockResolvedValueOnce(balances);
 		const updatedTransactions = makeTransactions('sync');
@@ -575,10 +571,10 @@ describe('BankConnectionController', () => {
 				requestedTo: expect.any(String),
 			}),
 		);
-		expect(await externalTransactionRepository.count({where: {externalAccountId: externalAccount.id}})).toBe(5);
-		expect(await externalAccountBalanceRepository.count({where: {externalAccountId: externalAccount.id}})).toBe(4);
-		const updatedTransaction = await externalTransactionRepository.findOneBy({
-			externalAccountId: externalAccount.id,
+		expect(await bankTransactionRepository.count({where: {bankAccountId: bankAccount.id}})).toBe(5);
+		expect(await bankAccountBalanceRepository.count({where: {bankAccountId: bankAccount.id}})).toBe(4);
+		const updatedTransaction = await bankTransactionRepository.findOneBy({
+			bankAccountId: bankAccount.id,
 			providerTransactionId: 'provider-transaction-sync-0',
 		});
 		expect(updatedTransaction).toMatchObject({
@@ -610,13 +606,13 @@ describe('BankConnectionController', () => {
 	});
 
 	it('uses the default transaction limit when omitted', async () => {
-		const {connection, externalAccount} = await createAuthorizedConnection('default-limit-validation');
+		const {connection, bankAccount} = await createAuthorizedConnection('default-limit-validation');
 
 		try {
-			await externalTransactionRepository.save(
+			await bankTransactionRepository.save(
 				Array.from({length: 26}, (_, index) =>
-					externalTransactionRepository.create({
-						externalAccountId: externalAccount.id,
+					bankTransactionRepository.create({
+						bankAccountId: bankAccount.id,
 						providerTransactionId: `default-limit-transaction-${index}`,
 						entryReference: `default-limit-entry-${index}`,
 						dedupeKey: faker.string.uuid(),
@@ -693,15 +689,15 @@ describe('BankConnectionController', () => {
 		}
 	});
 
-	it('reconciles external account activity from the provider account set', async () => {
-		const {connection, externalAccounts} = await createAuthorizedConnectionFixture(
+	it('reconciles bank account activity from the provider account set', async () => {
+		const {connection, bankAccounts} = await createAuthorizedConnectionFixture(
 			'account-reconciliation-session',
 			['account-keep', 'account-remove', 'account-reappear'].map((providerAccountId) => ({
 				providerAccountId,
 				identificationHash: `hash-${providerAccountId}`,
 			})),
 		);
-		await externalAccountRepository.update({id: externalAccounts[2].id}, {isActive: false});
+		await bankAccountRepository.update({id: bankAccounts[2].id}, {isActive: false});
 		sessionAccountIdsBySession.set('account-reconciliation-session', ['account-keep', 'account-reappear']);
 		getAccountBalances.mockResolvedValue([]);
 		getAccountTransactions.mockResolvedValue([]);
@@ -710,13 +706,13 @@ describe('BankConnectionController', () => {
 			const response = await verifiedAgent.post(`/bank-connections/${connection.id}/sync`).expect(200);
 
 			expect(response.body.status).toBe('SUCCEEDED');
-			expect(await externalAccountRepository.findOneBy({id: externalAccounts[0].id})).toMatchObject({
+			expect(await bankAccountRepository.findOneBy({id: bankAccounts[0].id})).toMatchObject({
 				isActive: true,
 			});
-			expect(await externalAccountRepository.findOneBy({id: externalAccounts[1].id})).toMatchObject({
+			expect(await bankAccountRepository.findOneBy({id: bankAccounts[1].id})).toMatchObject({
 				isActive: false,
 			});
-			expect(await externalAccountRepository.findOneBy({id: externalAccounts[2].id})).toMatchObject({
+			expect(await bankAccountRepository.findOneBy({id: bankAccounts[2].id})).toMatchObject({
 				isActive: true,
 			});
 		} finally {
@@ -724,15 +720,15 @@ describe('BankConnectionController', () => {
 		}
 	});
 
-	it('preserves external account activity when the provider account set is unavailable', async () => {
-		const {connection, externalAccounts} = await createAuthorizedConnectionFixture(
+	it('preserves bank account activity when the provider account set is unavailable', async () => {
+		const {connection, bankAccounts} = await createAuthorizedConnectionFixture(
 			'account-reconciliation-failure-session',
 			['account-still-active', 'account-still-inactive'].map((providerAccountId) => ({
 				providerAccountId,
 				identificationHash: `hash-${providerAccountId}`,
 			})),
 		);
-		await externalAccountRepository.update({id: externalAccounts[1].id}, {isActive: false});
+		await bankAccountRepository.update({id: bankAccounts[1].id}, {isActive: false});
 		getSessionAccounts.mockRejectedValueOnce(new EnableBankingClientError('provider_unreachable'));
 		getAccountBalances.mockResolvedValue([]);
 		getAccountTransactions.mockResolvedValue([]);
@@ -744,10 +740,10 @@ describe('BankConnectionController', () => {
 				status: 'PARTIAL',
 				errorMessage: 'Some bank data could not be synchronized.',
 			});
-			expect(await externalAccountRepository.findOneBy({id: externalAccounts[0].id})).toMatchObject({
+			expect(await bankAccountRepository.findOneBy({id: bankAccounts[0].id})).toMatchObject({
 				isActive: true,
 			});
-			expect(await externalAccountRepository.findOneBy({id: externalAccounts[1].id})).toMatchObject({
+			expect(await bankAccountRepository.findOneBy({id: bankAccounts[1].id})).toMatchObject({
 				isActive: false,
 			});
 		} finally {
@@ -794,18 +790,16 @@ describe('BankConnectionController', () => {
 		const response = await verifiedAgent.post(`/bank-connections/${connection.id}/sync`).expect(200);
 		expect(response.body.status).toBe('PARTIAL');
 		expect(response.body.errorMessage).toBe('Some bank data could not be synchronized.');
-		const successfulExternalAccount = await externalAccountRepository.findOne({
+		const successfulBankAccount = await bankAccountRepository.findOne({
 			where: {bankConnection: {id: connection.id}, providerAccountId: 'partial-success-account'},
 		});
-		if (!successfulExternalAccount) throw new Error('Expected successful external account.');
-		expect(
-			await externalTransactionRepository.count({where: {externalAccountId: successfulExternalAccount.id}}),
-		).toBe(5);
+		if (!successfulBankAccount) throw new Error('Expected successful bank account.');
+		expect(await bankTransactionRepository.count({where: {bankAccountId: successfulBankAccount.id}})).toBe(5);
 		expect(JSON.stringify(response.body)).not.toContain('provider_unreachable');
 	});
 
 	it('rolls back balance and transaction persistence when a transaction cannot be stored', async () => {
-		const {connection, externalAccount} = await createAuthorizedConnection('rollback-sync-session');
+		const {connection, bankAccount} = await createAuthorizedConnection('rollback-sync-session');
 		getAccountBalances.mockResolvedValueOnce(makeBalances());
 		getAccountTransactions.mockResolvedValueOnce([
 			{
@@ -816,8 +810,8 @@ describe('BankConnectionController', () => {
 
 		const response = await verifiedAgent.post(`/bank-connections/${connection.id}/sync`).expect(500);
 		expect(response.body.message).toBe('Bank synchronization could not be saved.');
-		expect(await externalAccountBalanceRepository.count({where: {externalAccountId: externalAccount.id}})).toBe(0);
-		expect(await externalTransactionRepository.count({where: {externalAccountId: externalAccount.id}})).toBe(0);
+		expect(await bankAccountBalanceRepository.count({where: {bankAccountId: bankAccount.id}})).toBe(0);
+		expect(await bankTransactionRepository.count({where: {bankAccountId: bankAccount.id}})).toBe(0);
 		expect(await bankSyncRunRepository.count({where: {bankConnection: {id: connection.id}}})).toBe(1);
 		expect(await bankSyncRunRepository.findOne({where: {bankConnection: {id: connection.id}}})).toMatchObject({
 			status: 'FAILED',
@@ -825,21 +819,21 @@ describe('BankConnectionController', () => {
 		});
 	});
 
-	type ExternalAccountFixture = {
+	type BankAccountFixture = {
 		providerAccountId: string;
 		identificationHash: string;
 		details?: string;
 	};
 
 	async function createAuthorizedConnection(providerSessionId: string) {
-		const {connection, externalAccounts} = await createAuthorizedConnectionFixture(providerSessionId, [
+		const {connection, bankAccounts} = await createAuthorizedConnectionFixture(providerSessionId, [
 			{
 				providerAccountId: 'sync-provider-account',
 				identificationHash: `hash-${providerSessionId}`,
 				details: 'Test account',
 			},
 		]);
-		return {connection, externalAccount: externalAccounts[0]};
+		return {connection, bankAccount: bankAccounts[0]};
 	}
 
 	async function createAuthorizedConnectionWithAccounts(providerSessionId: string, providerAccountIds: string[]) {
@@ -855,7 +849,7 @@ describe('BankConnectionController', () => {
 
 	async function createAuthorizedConnectionFixture(
 		providerSessionId: string,
-		externalAccountFixtures: ExternalAccountFixture[],
+		bankAccountFixtures: BankAccountFixture[],
 	) {
 		const connection = await bankConnectionRepository.save(
 			bankConnectionRepository.create({
@@ -868,9 +862,9 @@ describe('BankConnectionController', () => {
 				consentValidUntil: new Date(Date.now() + 60 * 60 * 1000),
 			}),
 		);
-		const externalAccounts = await externalAccountRepository.save(
-			externalAccountFixtures.map(({providerAccountId, identificationHash, details}) =>
-				externalAccountRepository.create({
+		const bankAccounts = await bankAccountRepository.save(
+			bankAccountFixtures.map(({providerAccountId, identificationHash, details}) =>
+				bankAccountRepository.create({
 					bankConnection: connection,
 					providerAccountId,
 					identificationHash,
@@ -883,9 +877,9 @@ describe('BankConnectionController', () => {
 		);
 		sessionAccountIdsBySession.set(
 			providerSessionId,
-			externalAccounts.map((externalAccount) => externalAccount.providerAccountId),
+			bankAccounts.map((bankAccount) => bankAccount.providerAccountId),
 		);
-		return {connection, externalAccounts};
+		return {connection, bankAccounts};
 	}
 });
 

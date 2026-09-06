@@ -75,7 +75,7 @@ describe('BankingService authorization state lifecycle', () => {
 			findOneBy: jest.fn().mockResolvedValue(connection),
 			update: jest.fn().mockResolvedValue({affected: 0}),
 		};
-		const transactionExternalAccountRepository = {};
+		const transactionBankAccountRepository = {};
 		const bankConnectionRepository = {
 			findOne: jest.fn().mockResolvedValue(connection),
 			update: jest.fn().mockResolvedValue({affected: 0}),
@@ -84,9 +84,7 @@ describe('BankingService authorization state lifecycle', () => {
 			transaction: jest.fn(async (callback: (manager: unknown) => Promise<void>) =>
 				callback({
 					getRepository: jest.fn((entity: unknown) =>
-						entity === BankConnection
-							? transactionConnectionRepository
-							: transactionExternalAccountRepository,
+						entity === BankConnection ? transactionConnectionRepository : transactionBankAccountRepository,
 					),
 				}),
 			),

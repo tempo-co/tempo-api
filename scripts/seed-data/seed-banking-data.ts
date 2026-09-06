@@ -3,17 +3,17 @@ import {getRepositoryToken} from '@nestjs/typeorm';
 import {Repository} from 'typeorm';
 
 import {Account} from '@modules/account/account.entity';
+import {BankAccountBalance} from '@modules/banking/bank-account-balance.entity';
+import {BankAccount} from '@modules/banking/bank-account.entity';
 import {BankConnection} from '@modules/banking/bank-connection.entity';
 import {BankSyncRun} from '@modules/banking/bank-sync-run.entity';
 import {BANK_TRANSACTION_TYPES} from '@modules/banking/bank-transaction-type';
-import {ExternalAccountBalance} from '@modules/banking/external-account-balance.entity';
-import {ExternalAccount} from '@modules/banking/external-account.entity';
-import {ExternalTransaction} from '@modules/banking/external-transaction.entity';
+import {BankTransaction} from '@modules/banking/bank-transaction.entity';
 
 import {VERIFIED_ACCOUNT_EMAIL} from './seed.constants';
 
 const SEEDED_BANK_CONNECTION_ID = '00000000-0000-4000-8000-000000000001';
-const SEEDED_EXTERNAL_ACCOUNT_ID = '00000000-0000-4000-8000-000000000002';
+const SEEDED_BANK_ACCOUNT_ID = '00000000-0000-4000-8000-000000000002';
 const SEEDED_SYNC_RUN_ID = '00000000-0000-4000-8000-000000000003';
 const SEEDED_BALANCE_IDS = ['00000000-0000-4000-8000-000000000004', '00000000-0000-4000-8000-000000000005'] as const;
 
@@ -21,10 +21,10 @@ export async function seedBankingData(app: INestApplicationContext) {
 	const accountRepository = app.get<Repository<Account>>(getRepositoryToken(Account));
 	const account = await accountRepository.findOneByOrFail({email: VERIFIED_ACCOUNT_EMAIL});
 	const bankConnectionRepository = app.get<Repository<BankConnection>>(getRepositoryToken(BankConnection));
-	const externalAccountRepository = app.get<Repository<ExternalAccount>>(getRepositoryToken(ExternalAccount));
+	const bankAccountRepository = app.get<Repository<BankAccount>>(getRepositoryToken(BankAccount));
 	const bankSyncRunRepository = app.get<Repository<BankSyncRun>>(getRepositoryToken(BankSyncRun));
-	const balanceRepository = app.get<Repository<ExternalAccountBalance>>(getRepositoryToken(ExternalAccountBalance));
-	const transactionRepository = app.get<Repository<ExternalTransaction>>(getRepositoryToken(ExternalTransaction));
+	const balanceRepository = app.get<Repository<BankAccountBalance>>(getRepositoryToken(BankAccountBalance));
+	const transactionRepository = app.get<Repository<BankTransaction>>(getRepositoryToken(BankTransaction));
 
 	const bankConnection = await bankConnectionRepository.save(
 		bankConnectionRepository.create({
@@ -43,9 +43,9 @@ export async function seedBankingData(app: INestApplicationContext) {
 		}),
 	);
 
-	const externalAccount = await externalAccountRepository.save(
-		externalAccountRepository.create({
-			id: SEEDED_EXTERNAL_ACCOUNT_ID,
+	const bankAccount = await bankAccountRepository.save(
+		bankAccountRepository.create({
+			id: SEEDED_BANK_ACCOUNT_ID,
 			bankConnection,
 			providerAccountId: 'seed-provider-account',
 			identificationHash: 'seed-identification-hash',
@@ -82,8 +82,8 @@ export async function seedBankingData(app: INestApplicationContext) {
 	await balanceRepository.save([
 		balanceRepository.create({
 			id: SEEDED_BALANCE_IDS[0],
-			externalAccountId: externalAccount.id,
-			externalAccount,
+			bankAccountId: bankAccount.id,
+			bankAccount,
 			bankSyncRunId: bankSyncRun.id,
 			bankSyncRun,
 			name: 'Available balance',
@@ -97,8 +97,8 @@ export async function seedBankingData(app: INestApplicationContext) {
 		}),
 		balanceRepository.create({
 			id: SEEDED_BALANCE_IDS[1],
-			externalAccountId: externalAccount.id,
-			externalAccount,
+			bankAccountId: bankAccount.id,
+			bankAccount,
 			bankSyncRunId: bankSyncRun.id,
 			bankSyncRun,
 			name: 'Booked balance',
@@ -113,14 +113,14 @@ export async function seedBankingData(app: INestApplicationContext) {
 	]);
 
 	await transactionRepository.save(
-		createSeedTransactions(externalAccount).map((transaction) => transactionRepository.create(transaction)),
+		createSeedTransactions(bankAccount).map((transaction) => transactionRepository.create(transaction)),
 	);
 }
 
-function createSeedTransactions(externalAccount: ExternalAccount) {
+function createSeedTransactions(bankAccount: BankAccount) {
 	const common = {
-		externalAccountId: externalAccount.id,
-		externalAccount,
+		bankAccountId: bankAccount.id,
+		bankAccount,
 		currency: 'EUR',
 		transactionStatus: 'BOOK',
 		bankTransactionCode: null,

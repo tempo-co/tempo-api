@@ -11,10 +11,10 @@ import {
 
 import {BankConnection} from './bank-connection.entity';
 
-@Entity('external_accounts')
-@Index('idx_external_accounts_connection_identification_hash', ['bankConnection', 'identificationHash'])
-@Index('idx_external_accounts_connection_provider_account_id', ['bankConnection', 'providerAccountId'])
-export class ExternalAccount {
+@Entity('bank_accounts')
+@Index('idx_bank_accounts_connection_identification_hash', ['bankConnection', 'identificationHash'])
+@Index('idx_bank_accounts_connection_provider_account_id', ['bankConnection', 'providerAccountId'])
+export class BankAccount {
 	@PrimaryGeneratedColumn('uuid')
 	id: string;
 

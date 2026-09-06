@@ -8,9 +8,9 @@ import {Repository} from 'typeorm';
 
 import {Account} from '@modules/account/account.entity';
 import {AccountService} from '@modules/account/account.service';
+import {BankAccount} from '@modules/banking/bank-account.entity';
 import {BankConnection} from '@modules/banking/bank-connection.entity';
-import {ExternalAccount} from '@modules/banking/external-account.entity';
-import {ExternalTransaction} from '@modules/banking/external-transaction.entity';
+import {BankTransaction} from '@modules/banking/bank-transaction.entity';
 
 import {
 	SESSION_TEST_ACCOUNT_EMAIL,
@@ -30,11 +30,11 @@ describe('BankTransactionController', () => {
 	let otherVerifiedAgent: TestAgent;
 	let account: Account;
 	let bankConnectionRepository: Repository<BankConnection>;
-	let externalAccountRepository: Repository<ExternalAccount>;
-	let externalTransactionRepository: Repository<ExternalTransaction>;
+	let bankAccountRepository: Repository<BankAccount>;
+	let bankTransactionRepository: Repository<BankTransaction>;
 	let fixtureConnection: BankConnection;
-	let fixtureExternalAccount: ExternalAccount;
-	let fixtureTransaction: ExternalTransaction;
+	let fixtureBankAccount: BankAccount;
+	let fixtureTransaction: BankTransaction;
 
 	beforeAll(async () => {
 		app = getApp();
@@ -45,10 +45,8 @@ describe('BankTransactionController', () => {
 		account = seededAccount;
 
 		bankConnectionRepository = app.get<Repository<BankConnection>>(getRepositoryToken(BankConnection));
-		externalAccountRepository = app.get<Repository<ExternalAccount>>(getRepositoryToken(ExternalAccount));
-		externalTransactionRepository = app.get<Repository<ExternalTransaction>>(
-			getRepositoryToken(ExternalTransaction),
-		);
+		bankAccountRepository = app.get<Repository<BankAccount>>(getRepositoryToken(BankAccount));
+		bankTransactionRepository = app.get<Repository<BankTransaction>>(getRepositoryToken(BankTransaction));
 
 		verifiedAgent = request.agent(httpServer);
 		await verifiedAgent
@@ -85,8 +83,8 @@ describe('BankTransactionController', () => {
 				providerSessionId: 'provider-session-must-not-leak',
 			}),
 		);
-		fixtureExternalAccount = await externalAccountRepository.save(
-			externalAccountRepository.create({
+		fixtureBankAccount = await bankAccountRepository.save(
+			bankAccountRepository.create({
 				bankConnection: fixtureConnection,
 				providerAccountId: 'provider-account-must-not-leak',
 				identificationHash: 'identification-hash-must-not-leak',
@@ -96,8 +94,8 @@ describe('BankTransactionController', () => {
 				isActive: true,
 			}),
 		);
-		const secondExternalAccount = await externalAccountRepository.save(
-			externalAccountRepository.create({
+		const secondBankAccount = await bankAccountRepository.save(
+			bankAccountRepository.create({
 				bankConnection: fixtureConnection,
 				providerAccountId: 'provider-account-second',
 				identificationHash: 'identification-hash-second',
@@ -107,9 +105,9 @@ describe('BankTransactionController', () => {
 			}),
 		);
 
-		const transactions = await externalTransactionRepository.save([
-			externalTransactionRepository.create({
-				externalAccountId: fixtureExternalAccount.id,
+		const transactions = await bankTransactionRepository.save([
+			bankTransactionRepository.create({
+				bankAccountId: fixtureBankAccount.id,
 				providerTransactionId: 'provider-transaction-coffee',
 				entryReference: 'provider-entry-coffee',
 				dedupeKey: randomUUID(),
@@ -138,8 +136,8 @@ describe('BankTransactionController', () => {
 				referenceNumber: 'reference-coffee',
 				referenceNumberScheme: 'RF',
 			}),
-			externalTransactionRepository.create({
-				externalAccountId: fixtureExternalAccount.id,
+			bankTransactionRepository.create({
+				bankAccountId: fixtureBankAccount.id,
 				providerTransactionId: 'provider-transaction-groceries',
 				entryReference: 'provider-entry-groceries',
 				dedupeKey: randomUUID(),
@@ -154,8 +152,8 @@ describe('BankTransactionController', () => {
 				merchantCategoryCode: '5411',
 				remittanceInformation: 'Weekly groceries',
 			}),
-			externalTransactionRepository.create({
-				externalAccountId: fixtureExternalAccount.id,
+			bankTransactionRepository.create({
+				bankAccountId: fixtureBankAccount.id,
 				providerTransactionId: 'provider-transaction-salary',
 				entryReference: 'provider-entry-salary',
 				dedupeKey: randomUUID(),
@@ -170,8 +168,8 @@ describe('BankTransactionController', () => {
 				merchantCategoryCode: null,
 				remittanceInformation: 'Monthly income',
 			}),
-			externalTransactionRepository.create({
-				externalAccountId: secondExternalAccount.id,
+			bankTransactionRepository.create({
+				bankAccountId: secondBankAccount.id,
 				providerTransactionId: 'provider-transaction-savings',
 				entryReference: 'provider-entry-savings',
 				dedupeKey: randomUUID(),
@@ -230,25 +228,25 @@ describe('BankTransactionController', () => {
 			referenceNumberScheme: 'RF',
 			bankName: 'ABN AMRO',
 			bankCountry: 'NL',
-			externalAccountName: 'Main account',
-			externalAccountAlias: 'Daily spending',
+			bankAccountName: 'Main account',
+			bankAccountAlias: 'Daily spending',
 		});
 		const serializedResponse = JSON.stringify(response.body);
 		expect(serializedResponse).not.toContain('provider-transaction-coffee');
 		expect(serializedResponse).not.toContain('provider-entry-coffee');
 		expect(serializedResponse).not.toContain('identification-hash-must-not-leak');
 		expect(serializedResponse).not.toContain('provider-account-must-not-leak');
-		expect(response.body.transactions[0]).not.toHaveProperty('externalAccountId');
+		expect(response.body.transactions[0]).not.toHaveProperty('bankAccountId');
 		expect(response.body.transactions[0]).not.toHaveProperty('dedupeKey');
 		expect(response.body.transactions[0]).not.toHaveProperty('bankTransactionCode');
 		expect(response.body.transactions[0]).not.toHaveProperty('bankTransactionSubCode');
 	});
 
 	it('uses default pagination and preserves the full total across pages', async () => {
-		const additionalTransactions = await externalTransactionRepository.save(
+		const additionalTransactions = await bankTransactionRepository.save(
 			Array.from({length: 8}, (_, index) =>
-				externalTransactionRepository.create({
-					externalAccountId: fixtureExternalAccount.id,
+				bankTransactionRepository.create({
+					bankAccountId: fixtureBankAccount.id,
 					providerTransactionId: `provider-transaction-default-${index}`,
 					entryReference: `provider-entry-default-${index}`,
 					dedupeKey: randomUUID(),
@@ -289,7 +287,7 @@ describe('BankTransactionController', () => {
 				),
 			).toBe(true);
 		} finally {
-			await externalTransactionRepository.remove(additionalTransactions);
+			await bankTransactionRepository.remove(additionalTransactions);
 		}
 	});
 
@@ -315,7 +313,7 @@ describe('BankTransactionController', () => {
 			.query({
 				'filter[bookingDate][from]': '2026-08-21',
 				'filter[bookingDate][to]': '2026-08-26',
-				'filter[externalAccountIds][]': fixtureExternalAccount.id,
+				'filter[bankAccountIds][]': fixtureBankAccount.id,
 				'filter[search]': 'coffee',
 			})
 			.expect(200);
@@ -342,7 +340,7 @@ describe('BankTransactionController', () => {
 		['an unsupported sort field', {'sort[by]': 'postedDate'}],
 		['an unsupported sort order', {'sort[order]': 'DOWN'}],
 		['an invalid booking date', {'filter[bookingDate][from]': '2026-99-99'}],
-		['a malformed external account ID', {'filter[externalAccountIds][]': 'not-a-uuid'}],
+		['a malformed bank account ID', {'filter[bankAccountIds][]': 'not-a-uuid'}],
 	])('rejects %s', async (_case, query) => {
 		await verifiedAgent.get('/bank-transactions').query(query).expect(400);
 	});
@@ -381,7 +379,7 @@ describe('BankTransactionController', () => {
 			referenceNumberScheme: 'RF',
 			remittanceInformation: 'Morning coffee',
 			bankName: 'ABN AMRO',
-			externalAccountAlias: 'Daily spending',
+			bankAccountAlias: 'Daily spending',
 		});
 		expect(JSON.stringify(response.body)).not.toContain('provider-transaction-coffee');
 		expect(JSON.stringify(response.body)).not.toContain('provider-entry-coffee');

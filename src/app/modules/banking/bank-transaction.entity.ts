@@ -9,22 +9,22 @@ import {
 	UpdateDateColumn,
 } from 'typeorm';
 
+import {BankAccount} from './bank-account.entity';
 import {BankTransactionType} from './bank-transaction-type';
-import {ExternalAccount} from './external-account.entity';
 
-@Entity('external_transactions')
-@Index('idx_external_transactions_account_dedupe', ['externalAccountId', 'dedupeKey'], {unique: true})
-@Index('idx_external_transactions_account_booking_date', ['externalAccountId', 'bookingDate'])
-export class ExternalTransaction {
+@Entity('bank_transactions')
+@Index('idx_bank_transactions_account_dedupe', ['bankAccountId', 'dedupeKey'], {unique: true})
+@Index('idx_bank_transactions_account_booking_date', ['bankAccountId', 'bookingDate'])
+export class BankTransaction {
 	@PrimaryGeneratedColumn('uuid')
 	id: string;
 
 	@Column({type: 'uuid'})
-	externalAccountId: string;
+	bankAccountId: string;
 
-	@ManyToOne(() => ExternalAccount, {onDelete: 'CASCADE', nullable: false})
-	@JoinColumn({name: 'externalAccountId'})
-	externalAccount: ExternalAccount;
+	@ManyToOne(() => BankAccount, {onDelete: 'CASCADE', nullable: false})
+	@JoinColumn({name: 'bankAccountId'})
+	bankAccount: BankAccount;
 
 	@Column({type: 'varchar', length: 255, nullable: true})
 	providerTransactionId: string | null;

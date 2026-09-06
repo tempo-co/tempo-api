@@ -23,15 +23,15 @@ import {
 } from './api/constants/banking-messages.constants';
 import {BankConnectionAuthorizeDto} from './api/dtos/bank-connection-authorize.dto';
 import {BankConnectionCallbackDto} from './api/dtos/bank-connection-callback.dto';
-import {BankConnectionResponseDto, ExternalAccountResponseDto} from './api/dtos/bank-connection-response.dto';
+import {BankAccountResponseDto, BankConnectionResponseDto} from './api/dtos/bank-connection-response.dto';
+import {BankAccountBalance} from './bank-account-balance.entity';
+import {BankAccount} from './bank-account.entity';
 import {BankConnectionCallbackResult} from './bank-connection-callback-result';
 import {BankConnection} from './bank-connection.entity';
 import {getBalancePreference, truncate} from './banking.utils';
 import {EnableBankingAccount, EnableBankingSession} from './enable-banking.types';
 import {BankingAuthorizationStateError} from './errors/banking-authorization-state.error';
 import {BankingEncryptionError} from './errors/banking-encryption.error';
-import {ExternalAccountBalance} from './external-account-balance.entity';
-import {ExternalAccount} from './external-account.entity';
 import {BankingAuthorizationStateService} from './services/banking-authorization-state.service';
 import {BankingEncryptionService} from './services/banking-encryption.service';
 import {EnableBankingClient, EnableBankingClientError} from './services/enable-banking.client';
@@ -49,10 +49,10 @@ export class BankingService {
 	constructor(
 		@InjectRepository(BankConnection)
 		private readonly bankConnectionRepository: Repository<BankConnection>,
-		@InjectRepository(ExternalAccount)
-		private readonly externalAccountRepository: Repository<ExternalAccount>,
-		@InjectRepository(ExternalAccountBalance)
-		private readonly externalAccountBalanceRepository: Repository<ExternalAccountBalance>,
+		@InjectRepository(BankAccount)
+		private readonly bankAccountRepository: Repository<BankAccount>,
+		@InjectRepository(BankAccountBalance)
+		private readonly bankAccountBalanceRepository: Repository<BankAccountBalance>,
 		private readonly accountService: AccountService,
 		private readonly configurationService: ConfigurationService,
 		private readonly dataSource: DataSource,
@@ -145,14 +145,14 @@ export class BankingService {
 
 		return Promise.all(
 			connections.map(async (connection) => {
-				const externalAccounts = await this.externalAccountRepository.find({
+				const bankAccounts = await this.bankAccountRepository.find({
 					where: {bankConnection: {id: connection.id}},
 					order: {createdAt: 'ASC'},
 				});
 				const accountsWithBalances = await Promise.all(
-					externalAccounts.map(async (externalAccount) => {
-						const latestBalances = await this.findLatestBalances(externalAccount.id);
-						return [externalAccount, latestBalances] as const;
+					bankAccounts.map(async (bankAccount) => {
+						const latestBalances = await this.findLatestBalances(bankAccount.id);
+						return [bankAccount, latestBalances] as const;
 					}),
 				);
 				return {
@@ -163,8 +163,8 @@ export class BankingService {
 					status: connection.status,
 					consentValidUntil: connection.consentValidUntil,
 					lastSyncedAt: connection.lastSyncedAt,
-					externalAccounts: accountsWithBalances.map(([externalAccount, latestBalances]) =>
-						this.toExternalAccountResponse(externalAccount, latestBalances),
+					bankAccounts: accountsWithBalances.map(([bankAccount, latestBalances]) =>
+						this.toBankAccountResponse(bankAccount, latestBalances),
 					),
 				};
 			}),
@@ -239,7 +239,7 @@ export class BankingService {
 
 		await this.dataSource.transaction(async (manager) => {
 			const connectionRepository = manager.getRepository(BankConnection);
-			const externalAccountRepository = manager.getRepository(ExternalAccount);
+			const bankAccountRepository = manager.getRepository(BankAccount);
 			const connectionUpdate = await connectionRepository.update(
 				{id: connectionId, status: PENDING_AUTHORIZATION, authorizationStateHash},
 				{
@@ -259,27 +259,27 @@ export class BankingService {
 			for (const account of session.accounts) {
 				if (!account.uid) continue;
 
-				const values = this.toExternalAccountValues(account);
-				let externalAccount = await externalAccountRepository.findOne({
+				const values = this.toBankAccountValues(account);
+				let bankAccount = await bankAccountRepository.findOne({
 					where: {bankConnection: {id: connectionId}, providerAccountId: account.uid},
 				});
 
-				if (!externalAccount) {
-					externalAccount = await externalAccountRepository.findOne({
+				if (!bankAccount) {
+					bankAccount = await bankAccountRepository.findOne({
 						where: {bankConnection: {id: connectionId}, identificationHash: account.identificationHash},
 					});
 				}
 
-				if (!externalAccount) {
-					externalAccount = externalAccountRepository.create({
+				if (!bankAccount) {
+					bankAccount = bankAccountRepository.create({
 						bankConnection: {id: connectionId},
 						...values,
 					});
 				} else {
-					Object.assign(externalAccount, values);
+					Object.assign(bankAccount, values);
 				}
 
-				await externalAccountRepository.save(externalAccount);
+				await bankAccountRepository.save(bankAccount);
 			}
 		});
 	}
@@ -313,7 +313,7 @@ export class BankingService {
 		return createHash('sha256').update(state).digest('hex');
 	}
 
-	private toExternalAccountValues(account: EnableBankingAccount) {
+	private toBankAccountValues(account: EnableBankingAccount) {
 		return {
 			providerAccountId: account.uid as string,
 			identificationHash: account.identificationHash,
@@ -325,21 +325,18 @@ export class BankingService {
 		};
 	}
 
-	private async findLatestBalances(externalAccountId: string): Promise<ExternalAccountBalance[]> {
-		return this.externalAccountBalanceRepository
+	private async findLatestBalances(bankAccountId: string): Promise<BankAccountBalance[]> {
+		return this.bankAccountBalanceRepository
 			.createQueryBuilder('balance')
 			.distinctOn(['balance.balanceType'])
-			.where('balance.externalAccountId = :externalAccountId', {externalAccountId})
+			.where('balance.bankAccountId = :bankAccountId', {bankAccountId})
 			.orderBy('balance.balanceType', 'ASC')
 			.addOrderBy('balance.observedAt', 'DESC')
 			.addOrderBy('balance.id', 'DESC')
 			.getMany();
 	}
 
-	private toExternalAccountResponse(
-		account: ExternalAccount,
-		latestBalances: ExternalAccountBalance[],
-	): ExternalAccountResponseDto {
+	private toBankAccountResponse(account: BankAccount, latestBalances: BankAccountBalance[]): BankAccountResponseDto {
 		const primaryBalance = this.selectPreferredBalance(latestBalances);
 
 		return {
@@ -368,7 +365,7 @@ export class BankingService {
 		};
 	}
 
-	private selectPreferredBalance(balances: ExternalAccountBalance[]): ExternalAccountBalance | undefined {
+	private selectPreferredBalance(balances: BankAccountBalance[]): BankAccountBalance | undefined {
 		return [...balances].sort((left, right) => {
 			const rankDifference = getBalancePreference(right.balanceType) - getBalancePreference(left.balanceType);
 			if (rankDifference !== 0) return rankDifference;

@@ -33,8 +33,8 @@ export class BankTransactionResponseDto {
 	referenceNumberScheme: string | null;
 	bankName: string;
 	bankCountry: string;
-	externalAccountName: string | null;
-	externalAccountAlias: string | null;
+	bankAccountName: string | null;
+	bankAccountAlias: string | null;
 }
 
 export class BankTransactionsResponseDto {

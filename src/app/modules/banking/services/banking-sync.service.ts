@@ -28,9 +28,12 @@ import {
 	BANKING_SYNC_ALREADY_IN_PROGRESS,
 } from '../api/constants/banking-messages.constants';
 import {BankSyncRunResponseDto} from '../api/dtos/bank-connection-response.dto';
+import {BankAccountBalance} from '../bank-account-balance.entity';
+import {BankAccount} from '../bank-account.entity';
 import {BankConnection} from '../bank-connection.entity';
 import {BankSyncRun} from '../bank-sync-run.entity';
 import {normalizeBankTransactionType} from '../bank-transaction-type';
+import {BankTransaction} from '../bank-transaction.entity';
 import {selectPreferredBalance, truncate} from '../banking.utils';
 import {
 	EnableBankingBalance,
@@ -38,9 +41,6 @@ import {
 	EnableBankingTransactionFetchOptions,
 } from '../enable-banking.types';
 import {BankingEncryptionError} from '../errors/banking-encryption.error';
-import {ExternalAccountBalance} from '../external-account-balance.entity';
-import {ExternalAccount} from '../external-account.entity';
-import {ExternalTransaction} from '../external-transaction.entity';
 import {BankingEncryptionService} from './banking-encryption.service';
 import {EnableBankingClient, EnableBankingClientError} from './enable-banking.client';
 
@@ -63,7 +63,7 @@ const SYNC_LOCK_RELEASE_SCRIPT =
 	"if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end";
 
 type AccountFetchResult = {
-	externalAccount: ExternalAccount;
+	bankAccount: BankAccount;
 	balances: EnableBankingBalance[];
 	transactions: EnableBankingTransaction[];
 	balancesSucceeded: boolean;
@@ -72,7 +72,7 @@ type AccountFetchResult = {
 
 type SyncFetchResult = {
 	accounts: AccountFetchResult[];
-	knownAccounts: ExternalAccount[];
+	knownAccounts: BankAccount[];
 	authoritativeAccountIds: Set<string> | null;
 	hasFailure: boolean;
 	hasSuccessfulEndpoint: boolean;
@@ -98,8 +98,8 @@ export class BankingSyncService {
 	constructor(
 		@InjectRepository(BankConnection)
 		private readonly bankConnectionRepository: Repository<BankConnection>,
-		@InjectRepository(ExternalAccount)
-		private readonly externalAccountRepository: Repository<ExternalAccount>,
+		@InjectRepository(BankAccount)
+		private readonly bankAccountRepository: Repository<BankAccount>,
 		@InjectRepository(BankSyncRun)
 		private readonly bankSyncRunRepository: Repository<BankSyncRun>,
 		@Inject(REDIS)
@@ -118,7 +118,7 @@ export class BankingSyncService {
 		try {
 			const providerSessionId = await this.validateConnection(connection);
 
-			const externalAccounts = await this.externalAccountRepository.find({
+			const bankAccounts = await this.bankAccountRepository.find({
 				where: {bankConnection: {id: connection.id}},
 				order: {createdAt: 'ASC'},
 			});
@@ -142,17 +142,12 @@ export class BankingSyncService {
 
 			let fetchResult: SyncFetchResult;
 			try {
-				fetchResult = await this.fetchAccounts(
-					externalAccounts,
-					providerSessionId,
-					transactionOptions,
-					lockLease,
-				);
+				fetchResult = await this.fetchAccounts(bankAccounts, providerSessionId, transactionOptions, lockLease);
 			} catch {
 				lockLease.assertHealthy();
 				fetchResult = {
 					accounts: [],
-					knownAccounts: externalAccounts,
+					knownAccounts: bankAccounts,
 					authoritativeAccountIds: null,
 					hasFailure: true,
 					hasSuccessfulEndpoint: false,
@@ -233,7 +228,7 @@ export class BankingSyncService {
 	}
 
 	private async fetchAccounts(
-		externalAccounts: ExternalAccount[],
+		bankAccounts: BankAccount[],
 		providerSessionId: string,
 		transactionOptions: EnableBankingTransactionFetchOptions,
 		lockLease: SyncLockLease,
@@ -268,7 +263,7 @@ export class BankingSyncService {
 		if (connectionExpired) {
 			return {
 				accounts,
-				knownAccounts: externalAccounts,
+				knownAccounts: bankAccounts,
 				authoritativeAccountIds,
 				hasFailure,
 				hasSuccessfulEndpoint,
@@ -277,10 +272,10 @@ export class BankingSyncService {
 			};
 		}
 
-		for (const externalAccount of externalAccounts) {
+		for (const bankAccount of bankAccounts) {
 			lockLease.assertHealthy();
-			if (authoritativeAccountIds && !authoritativeAccountIds.has(externalAccount.providerAccountId)) continue;
-			if (!authoritativeAccountIds && !externalAccount.isActive) continue;
+			if (authoritativeAccountIds && !authoritativeAccountIds.has(bankAccount.providerAccountId)) continue;
+			if (!authoritativeAccountIds && !bankAccount.isActive) continue;
 
 			let balances: EnableBankingBalance[] = [];
 			let transactions: EnableBankingTransaction[] = [];
@@ -289,7 +284,7 @@ export class BankingSyncService {
 
 			try {
 				balances = await this.enableBankingClient.getAccountBalances(
-					externalAccount.providerAccountId,
+					bankAccount.providerAccountId,
 					lockLease.signal,
 				);
 				lockLease.assertHealthy();
@@ -306,7 +301,7 @@ export class BankingSyncService {
 
 			try {
 				transactions = await this.enableBankingClient.getAccountTransactions(
-					externalAccount.providerAccountId,
+					bankAccount.providerAccountId,
 					transactionOptions,
 					lockLease.signal,
 				);
@@ -321,7 +316,7 @@ export class BankingSyncService {
 			}
 
 			accounts.push({
-				externalAccount,
+				bankAccount,
 				balances,
 				transactions,
 				balancesSucceeded,
@@ -334,7 +329,7 @@ export class BankingSyncService {
 
 		return {
 			accounts,
-			knownAccounts: externalAccounts,
+			knownAccounts: bankAccounts,
 			authoritativeAccountIds,
 			hasFailure,
 			hasSuccessfulEndpoint,
@@ -367,17 +362,17 @@ export class BankingSyncService {
 		await this.dataSource.transaction(async (manager) => {
 			const connectionRepository = manager.getRepository(BankConnection);
 			const runRepository = manager.getRepository(BankSyncRun);
-			const balanceRepository = manager.getRepository(ExternalAccountBalance);
-			const externalTransactionRepository = manager.getRepository(ExternalTransaction);
-			const externalAccountRepository = manager.getRepository(ExternalAccount);
+			const balanceRepository = manager.getRepository(BankAccountBalance);
+			const bankTransactionRepository = manager.getRepository(BankTransaction);
+			const bankAccountRepository = manager.getRepository(BankAccount);
 			const observedAt = new Date();
 
 			if (fetchResult.authoritativeAccountIds) {
-				for (const externalAccount of fetchResult.knownAccounts) {
-					const isActive = fetchResult.authoritativeAccountIds.has(externalAccount.providerAccountId);
-					if (externalAccount.isActive === isActive) continue;
+				for (const bankAccount of fetchResult.knownAccounts) {
+					const isActive = fetchResult.authoritativeAccountIds.has(bankAccount.providerAccountId);
+					if (bankAccount.isActive === isActive) continue;
 
-					await externalAccountRepository.update({id: externalAccount.id}, {isActive});
+					await bankAccountRepository.update({id: bankAccount.id}, {isActive});
 				}
 			}
 
@@ -385,25 +380,25 @@ export class BankingSyncService {
 				if (accountResult.balancesSucceeded && accountResult.balances.length > 0) {
 					await balanceRepository.insert(
 						accountResult.balances.map((balance) =>
-							this.toBalanceValues(accountResult.externalAccount, run, balance, observedAt),
+							this.toBalanceValues(accountResult.bankAccount, run, balance, observedAt),
 						),
 					);
 				}
 
 				if (accountResult.transactionsSucceeded && accountResult.transactions.length > 0) {
-					await externalTransactionRepository.upsert(
+					await bankTransactionRepository.upsert(
 						accountResult.transactions.map((transaction) =>
-							this.toExternalTransactionValues(accountResult.externalAccount, transaction),
+							this.toBankTransactionValues(accountResult.bankAccount, transaction),
 						),
-						['externalAccountId', 'dedupeKey'],
+						['bankAccountId', 'dedupeKey'],
 					);
 				}
 
 				if (accountResult.balancesSucceeded && accountResult.balances.length > 0) {
 					const preferredBalance = selectPreferredBalance(accountResult.balances);
 					if (preferredBalance) {
-						await externalAccountRepository.update(
-							{id: accountResult.externalAccount.id},
+						await bankAccountRepository.update(
+							{id: accountResult.bankAccount.id},
 							{
 								currentBalanceAmount: preferredBalance.amount,
 								currentBalanceType: truncate(preferredBalance.balanceType, 32),
@@ -454,13 +449,13 @@ export class BankingSyncService {
 	}
 
 	private toBalanceValues(
-		externalAccount: ExternalAccount,
+		bankAccount: BankAccount,
 		run: BankSyncRun,
 		balance: EnableBankingBalance,
 		observedAt: Date,
 	) {
 		return {
-			externalAccountId: externalAccount.id,
+			bankAccountId: bankAccount.id,
 			bankSyncRunId: run.id,
 			name: truncate(balance.name, 255),
 			balanceType: truncate(balance.balanceType, 32) ?? 'UNKNOWN',
@@ -473,7 +468,7 @@ export class BankingSyncService {
 		};
 	}
 
-	private toExternalTransactionValues(externalAccount: ExternalAccount, transaction: EnableBankingTransaction) {
+	private toBankTransactionValues(bankAccount: BankAccount, transaction: EnableBankingTransaction) {
 		const amount = this.toSignedAmount(transaction.amount, transaction.creditDebitIndicator);
 		const currency = transaction.currency.toUpperCase();
 		const description = truncate(transaction.description, 500);
@@ -493,7 +488,7 @@ export class BankingSyncService {
 		const hasExchangeRate = Boolean(transaction.exchangeRate && transaction.exchangeRateUnitCurrency);
 
 		return {
-			externalAccountId: externalAccount.id,
+			bankAccountId: bankAccount.id,
 			providerTransactionId,
 			entryReference,
 			dedupeKey: this.createDedupeKey({

@@ -76,7 +76,7 @@ export class BankTransactionFilterQueryDto {
 	@IsOptional()
 	@IsArray()
 	@IsUUID('4', {each: true})
-	externalAccountIds?: string[];
+	bankAccountIds?: string[];
 
 	@IsOptional()
 	@IsString()

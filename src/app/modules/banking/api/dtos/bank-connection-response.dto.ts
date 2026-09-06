@@ -1,4 +1,4 @@
-export class ExternalAccountResponseDto {
+export class BankAccountResponseDto {
 	id: string;
 	name: string | null;
 	details: string | null;
@@ -11,10 +11,10 @@ export class ExternalAccountResponseDto {
 	currentBalanceType: string | null;
 	balanceUpdatedAt: Date | null;
 	isActive: boolean;
-	latestBalances: ExternalAccountBalanceResponseDto[];
+	latestBalances: BankAccountBalanceResponseDto[];
 }
 
-export class ExternalAccountBalanceResponseDto {
+export class BankAccountBalanceResponseDto {
 	name: string | null;
 	balanceType: string;
 	amount: string;
@@ -33,10 +33,10 @@ export class BankConnectionResponseDto {
 	status: string;
 	consentValidUntil: Date | null;
 	lastSyncedAt: Date | null;
-	externalAccounts: ExternalAccountResponseDto[];
+	bankAccounts: BankAccountResponseDto[];
 }
 
-export class ExternalTransactionResponseDto {
+export class BankConnectionTransactionResponseDto {
 	id: string;
 	bookingDate: string | null;
 	valueDate: string | null;
@@ -50,8 +50,8 @@ export class ExternalTransactionResponseDto {
 	remittanceInformation: string | null;
 }
 
-export class ExternalTransactionsResponseDto {
-	transactions: ExternalTransactionResponseDto[];
+export class BankConnectionTransactionsResponseDto {
+	transactions: BankConnectionTransactionResponseDto[];
 	total: number;
 }
 

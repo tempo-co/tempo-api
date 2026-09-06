@@ -5,7 +5,7 @@ import {Brackets, Repository} from 'typeorm';
 import {Account} from '@modules/account/account.entity';
 
 import {BANKING_CONNECTION_NOT_FOUND, BANKING_TRANSACTION_NOT_FOUND} from '../api/constants/banking-messages.constants';
-import {ExternalTransactionsResponseDto} from '../api/dtos/bank-connection-response.dto';
+import {BankConnectionTransactionsResponseDto} from '../api/dtos/bank-connection-response.dto';
 import {
 	BankTransactionQueryDto,
 	BankTransactionSortField,
@@ -20,15 +20,15 @@ import {
 } from '../api/dtos/bank-transaction-response.dto';
 import {BankConnection} from '../bank-connection.entity';
 import {BANK_TRANSACTION_TYPES} from '../bank-transaction-type';
-import {ExternalTransaction} from '../external-transaction.entity';
+import {BankTransaction} from '../bank-transaction.entity';
 
 @Injectable()
 export class BankTransactionService {
 	constructor(
 		@InjectRepository(BankConnection)
 		private readonly bankConnectionRepository: Repository<BankConnection>,
-		@InjectRepository(ExternalTransaction)
-		private readonly externalTransactionRepository: Repository<ExternalTransaction>,
+		@InjectRepository(BankTransaction)
+		private readonly bankTransactionRepository: Repository<BankTransaction>,
 	) {}
 
 	async findAll(
@@ -47,9 +47,9 @@ export class BankTransactionService {
 		if (bookingDate?.to) {
 			query.andWhere('transaction.bookingDate <= :bookingDateTo', {bookingDateTo: bookingDate.to});
 		}
-		if (filter?.externalAccountIds && filter.externalAccountIds.length > 0) {
-			query.andWhere('externalAccount.id IN (:...externalAccountIds)', {
-				externalAccountIds: filter.externalAccountIds,
+		if (filter?.bankAccountIds && filter.bankAccountIds.length > 0) {
+			query.andWhere('bankAccount.id IN (:...bankAccountIds)', {
+				bankAccountIds: filter.bankAccountIds,
 			});
 		}
 
@@ -88,13 +88,13 @@ export class BankTransactionService {
 		accountId: Account['id'],
 		connectionId: BankConnection['id'],
 		limit: number,
-	): Promise<ExternalTransactionsResponseDto> {
+	): Promise<BankConnectionTransactionsResponseDto> {
 		await this.findOwnedConnection(accountId, connectionId);
 
-		const query = this.externalTransactionRepository
+		const query = this.bankTransactionRepository
 			.createQueryBuilder('transaction')
-			.innerJoin('transaction.externalAccount', 'externalAccount')
-			.innerJoin('externalAccount.bankConnection', 'connection')
+			.innerJoin('transaction.bankAccount', 'bankAccount')
+			.innerJoin('bankAccount.bankConnection', 'connection')
 			.innerJoin('connection.account', 'account')
 			.where('connection.id = :connectionId', {connectionId})
 			.andWhere('account.id = :accountId', {accountId})
@@ -105,12 +105,12 @@ export class BankTransactionService {
 
 		const [transactions, total] = await query.getManyAndCount();
 		return {
-			transactions: transactions.map((transaction) => this.toExternalTransactionResponse(transaction)),
+			transactions: transactions.map((transaction) => this.toBankTransactionResponse(transaction)),
 			total,
 		};
 	}
 
-	async findById(accountId: Account['id'], id: ExternalTransaction['id']): Promise<BankTransactionResponseDto> {
+	async findById(accountId: Account['id'], id: BankTransaction['id']): Promise<BankTransactionResponseDto> {
 		const transaction = await this.createOwnerScopedQuery(accountId)
 			.andWhere('transaction.id = :transactionId', {transactionId: id})
 			.getOne();
@@ -128,15 +128,15 @@ export class BankTransactionService {
 	}
 
 	private createOwnerScopedQuery(accountId: Account['id']) {
-		return this.externalTransactionRepository
+		return this.bankTransactionRepository
 			.createQueryBuilder('transaction')
-			.innerJoinAndSelect('transaction.externalAccount', 'externalAccount')
-			.innerJoinAndSelect('externalAccount.bankConnection', 'connection')
+			.innerJoinAndSelect('transaction.bankAccount', 'bankAccount')
+			.innerJoinAndSelect('bankAccount.bankConnection', 'connection')
 			.innerJoin('connection.account', 'account')
 			.where('account.id = :accountId', {accountId});
 	}
 
-	private toResponse(transaction: ExternalTransaction): BankTransactionResponseDto {
+	private toResponse(transaction: BankTransaction): BankTransactionResponseDto {
 		return {
 			id: transaction.id,
 			transactionDate: transaction.transactionDate,
@@ -162,16 +162,16 @@ export class BankTransactionService {
 			exchangeRateType: transaction.exchangeRateType,
 			referenceNumber: transaction.referenceNumber,
 			referenceNumberScheme: transaction.referenceNumberScheme,
-			bankName: transaction.externalAccount.bankConnection.aspspName,
-			bankCountry: transaction.externalAccount.bankConnection.aspspCountry,
-			externalAccountName: transaction.externalAccount.name,
-			externalAccountAlias: transaction.externalAccount.alias,
+			bankName: transaction.bankAccount.bankConnection.aspspName,
+			bankCountry: transaction.bankAccount.bankConnection.aspspCountry,
+			bankAccountName: transaction.bankAccount.name,
+			bankAccountAlias: transaction.bankAccount.alias,
 		};
 	}
 
-	private toExternalTransactionResponse(
-		transaction: ExternalTransaction,
-	): ExternalTransactionsResponseDto['transactions'][number] {
+	private toBankTransactionResponse(
+		transaction: BankTransaction,
+	): BankConnectionTransactionsResponseDto['transactions'][number] {
 		return {
 			id: transaction.id,
 			bookingDate: transaction.bookingDate,
