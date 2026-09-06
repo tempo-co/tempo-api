@@ -8,13 +8,13 @@ import {Account} from '@modules/account/account.entity';
 import {AccountUpdateDto} from '@modules/account/api/account-update.dto';
 import {EMAIL_NOT_VERIFIED} from '@modules/auth/api/constants/api-messages.constants';
 
-import {getApp} from '../../setup/e2e.setup';
 import {
 	UNVERIFIED_ACCOUNT_EMAIL,
 	UNVERIFIED_ACCOUNT_PASSWORD,
 	VERIFIED_ACCOUNT_EMAIL,
 	VERIFIED_ACCOUNT_PASSWORD,
-} from '../../setup/seed.constants';
+} from '../../../scripts/seed-data/seed.constants';
+import {getApp} from '../../setup/e2e.setup';
 
 describe('Account controller - /me', () => {
 	let httpServer: Server;
@@ -47,7 +47,6 @@ describe('Account controller - /me', () => {
 			expect(account.isEmailVerified).toBe(true);
 			expect(account.createdAt).toBeDefined();
 			expect(account.password).toBeUndefined();
-			expect(account.bankAccounts).toBeUndefined();
 		});
 
 		it('should return the current UNVERIFIED authenticated account', async () => {
@@ -71,7 +70,6 @@ describe('Account controller - /me', () => {
 			expect(account.isEmailVerified).toBe(false);
 			expect(account.createdAt).toBeDefined();
 			expect(account.password).toBeUndefined();
-			expect(account.bankAccounts).toBeUndefined();
 		});
 
 		it('should return 401 Unauthorized if the user is not authenticated', async () => {

@@ -5,6 +5,7 @@ import ms from 'ms';
 import crypto from 'node:crypto';
 
 import {ConfigurationService} from '@core/config/config.service';
+import {createWebUrl} from '@core/config/web-url';
 import {EmailService} from '@core/email/email.service';
 import {REDIS} from '@core/redis/redis.constants';
 import {Account} from '@modules/account/account.entity';
@@ -44,7 +45,7 @@ export class PasswordResetService {
 
 		const token = await this._createToken(account.id);
 		const resetUrl = this._createUrl(account.email, token);
-		const expiration = ms(ms(this.EXPIRATION), {long: true});
+		const expiration = ms(ms(this.EXPIRATION as ms.StringValue), {long: true});
 
 		await this.emailService.send({
 			to: account.email,
@@ -73,13 +74,13 @@ export class PasswordResetService {
 		const token: string = crypto.randomUUID();
 		const key = `${this.REDIS_KEY}:${token}`;
 
-		const expirationSeconds = Math.floor(ms(this.EXPIRATION) / 1000);
+		const expirationSeconds = Math.floor(ms(this.EXPIRATION as ms.StringValue) / 1000);
 		await this.redisClient.set(key, accountId, 'EX', expirationSeconds);
 		return token;
 	}
 
 	private _createUrl(email: Account['email'], token: string) {
-		const url = new URL('/reset-password', this.WEB_BASE_URL);
+		const url = new URL(createWebUrl('/reset-password', this.WEB_BASE_URL));
 		url.search = new URLSearchParams({email, token}).toString();
 		return url.toString();
 	}

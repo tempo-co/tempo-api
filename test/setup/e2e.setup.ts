@@ -1,19 +1,21 @@
 import {INestApplication, ValidationPipe} from '@nestjs/common';
+import {NestExpressApplication} from '@nestjs/platform-express';
 import {Test} from '@nestjs/testing';
 import {Server} from 'node:net';
 
+import {seedAccounts} from '../../scripts/seed-data/seed-accounts';
 import {AppModule} from '../../src/app.module';
-import {seedDatabase} from './seed-database';
 
 let app: INestApplication<Server>;
 
 beforeAll(async () => {
 	const moduleFixture = await Test.createTestingModule({imports: [AppModule]}).compile();
-	app = moduleFixture.createNestApplication();
+	app = moduleFixture.createNestApplication({forceCloseConnections: true});
+	(app as NestExpressApplication).set('query parser', 'extended');
 	app.useGlobalPipes(new ValidationPipe({whitelist: true, transform: true}));
 	await app.init();
 
-	await seedDatabase(app);
+	await seedAccounts(app);
 });
 
 afterAll(async () => {

@@ -1,5 +1,6 @@
 import {Module} from '@nestjs/common';
 import {TypeOrmModule} from '@nestjs/typeorm';
+import {join} from 'node:path';
 
 import {ConfigurationService} from '@core/config/config.service';
 
@@ -14,7 +15,9 @@ import {ConfigurationService} from '@core/config/config.service';
 				username: config.get('DB_USERNAME'),
 				password: config.get('DB_PASSWORD'),
 				database: config.get('DB_NAME'),
-				synchronize: config.get('DB_SYNCHRONIZE'),
+				synchronize: config.get('NODE_ENV') !== 'production' && config.get('DB_SYNCHRONIZE'),
+				migrations: [join(__dirname, 'migrations/*.{js,ts}')],
+				migrationsRun: config.get('NODE_ENV') === 'production',
 				autoLoadEntities: true,
 				dropSchema: config.get('NODE_ENV') === 'test',
 			}),

@@ -5,7 +5,6 @@ import request from 'supertest';
 import {EMAIL_NOT_VERIFIED, PASSWORD_CHANGE_SUCCESS} from '@modules/auth/api/constants/api-messages.constants';
 import {PasswordChangeDto} from '@modules/auth/api/dtos/password-change.dto';
 
-import {getApp} from '../../setup/e2e.setup';
 import {
 	PW_CHANGE_ACCOUNT_EMAIL,
 	PW_CHANGE_ACCOUNT_PASSWORD,
@@ -13,7 +12,8 @@ import {
 	UNVERIFIED_ACCOUNT_PASSWORD,
 	VERIFIED_ACCOUNT_EMAIL,
 	VERIFIED_ACCOUNT_PASSWORD,
-} from '../../setup/seed.constants';
+} from '../../../scripts/seed-data/seed.constants';
+import {getApp} from '../../setup/e2e.setup';
 
 describe('AuthController - Change password', () => {
 	let httpServer: Server;

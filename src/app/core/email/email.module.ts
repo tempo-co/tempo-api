@@ -1,5 +1,5 @@
 import {MailerModule} from '@nestjs-modules/mailer';
-import {HandlebarsAdapter} from '@nestjs-modules/mailer/dist/adapters/handlebars.adapter';
+import {HandlebarsAdapter} from '@nestjs-modules/mailer/adapters/handlebars.adapter';
 import {BullModule} from '@nestjs/bullmq';
 import {Module} from '@nestjs/common';
 import {join} from 'path';
@@ -18,7 +18,7 @@ import {EmailService} from './email.service';
 				transport: {
 					host: config.get('EMAIL_HOST'),
 					port: config.get('EMAIL_PORT'),
-					secure: config.get('NODE_ENV') === 'production',
+					secure: config.get('EMAIL_SECURE'),
 				},
 				defaults: {from: '"Flair" <no-reply@flair.com>'},
 				template: {

@@ -5,6 +5,7 @@ import ms from 'ms';
 import crypto from 'node:crypto';
 
 import {ConfigurationService} from '@core/config/config.service';
+import {createWebUrl} from '@core/config/web-url';
 import {EmailService} from '@core/email/email.service';
 import {REDIS} from '@core/redis/redis.constants';
 import {Account} from '@modules/account/account.entity';
@@ -71,7 +72,7 @@ export class EmailVerifierService {
 
 		const code = await this._createCode(email);
 		const verificationUrl = this._createUrl('/verify-email', {email, code});
-		const expiration = ms(ms(this.EXPIRATION), {long: true});
+		const expiration = ms(ms(this.EXPIRATION as ms.StringValue), {long: true});
 
 		await this.emailService.send({
 			to: email,
@@ -88,7 +89,7 @@ export class EmailVerifierService {
 
 		const token = await this._createToken(newEmail);
 		const verificationUrl = this._createUrl('/verify-email-change', {email: newEmail, token});
-		const expiration = ms(ms(this.EXPIRATION), {long: true});
+		const expiration = ms(ms(this.EXPIRATION as ms.StringValue), {long: true});
 
 		await this.emailService.send({
 			to: newEmail,
@@ -113,7 +114,7 @@ export class EmailVerifierService {
 	}
 
 	private _createUrl(path: string, params: Record<string, string>) {
-		const url = new URL(path, this.WEB_BASE_URL);
+		const url = new URL(createWebUrl(path, this.WEB_BASE_URL));
 		url.search = new URLSearchParams(params).toString();
 		return url.toString();
 	}
@@ -126,7 +127,7 @@ export class EmailVerifierService {
 			try {
 				await this._getEmailBySecret(code);
 			} catch {
-				const expirationSeconds = Math.floor(ms(this.EXPIRATION) / 1000);
+				const expirationSeconds = Math.floor(ms(this.EXPIRATION as ms.StringValue) / 1000);
 				await this.redisClient.set(key, email, 'EX', expirationSeconds);
 				return code;
 			}
@@ -137,7 +138,7 @@ export class EmailVerifierService {
 		const token: string = crypto.randomUUID();
 		const key = `${this.REDIS_KEY}:${token}`;
 
-		const expirationSeconds = Math.floor(ms(this.EXPIRATION) / 1000);
+		const expirationSeconds = Math.floor(ms(this.EXPIRATION as ms.StringValue) / 1000);
 		await this.redisClient.set(key, email, 'EX', expirationSeconds);
 		return token;
 	}

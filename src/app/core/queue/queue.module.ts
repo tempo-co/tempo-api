@@ -1,8 +1,7 @@
 import {BullModule} from '@nestjs/bullmq';
 import {Global, Module} from '@nestjs/common';
-import Redis from 'ioredis';
 
-import {REDIS} from '@core/redis/redis.constants';
+import {ConfigurationService} from '@core/config/config.service';
 import {RedisModule} from '@core/redis/redis.module';
 
 @Global()
@@ -11,18 +10,20 @@ import {RedisModule} from '@core/redis/redis.module';
 		RedisModule,
 		BullModule.forRootAsync({
 			imports: [RedisModule],
-			inject: [REDIS],
-			useFactory: async (redisClient: Redis) => {
-				return {
-					connection: redisClient,
-					defaultJobOptions: {
-						attempts: 3,
-						backoff: {type: 'exponential', delay: 1000},
-						removeOnComplete: true,
-						removeOnFail: {age: 86400, count: 500},
-					},
-				};
-			},
+			inject: [ConfigurationService],
+			useFactory: async (config: ConfigurationService) => ({
+				connection: {
+					url: config.get('REDIS_URL'),
+					maxRetriesPerRequest: null,
+					enableReadyCheck: true,
+				},
+				defaultJobOptions: {
+					attempts: 3,
+					backoff: {type: 'exponential', delay: 1000},
+					removeOnComplete: true,
+					removeOnFail: {age: 86400, count: 500},
+				},
+			}),
 		}),
 	],
 	exports: [BullModule],

@@ -21,7 +21,7 @@ export class SessionSerializer extends PassportSerializer {
 		try {
 			const account = await this.accountService.findById(id);
 			done(null, account);
-		} catch (error) {
+		} catch {
 			done(new UnauthorizedException(), null);
 		}
 	}
