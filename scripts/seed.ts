@@ -1,5 +1,6 @@
 import {NestFactory} from '@nestjs/core';
 import {AppModule} from 'src/app.module';
+import {seedBankingData} from 'test/setup/seed-banking-data';
 import {seedDatabase} from 'test/setup/seed-database';
 import {DataSource, QueryRunner} from 'typeorm';
 
@@ -11,6 +12,7 @@ async function seed() {
 
 	console.log('Seeding database...');
 	await seedDatabase(app);
+	await seedBankingData(app);
 
 	console.log('Seeding complete.');
 	await app.close();
