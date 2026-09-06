@@ -29,6 +29,8 @@ services:
     image: axllent/mailpit
     restart: unless-stopped
     command: ['--webroot=/flair/mailpit/']
+    healthcheck:
+      test: ['CMD', '/mailpit', 'readyz', '--webroot', '/flair/mailpit/']
     ports:
       - '127.0.0.1:${EMAIL_PORT}:${EMAIL_PORT}'
       - '127.0.0.1:${EMAIL_UI_PORT}:${EMAIL_UI_PORT}'
