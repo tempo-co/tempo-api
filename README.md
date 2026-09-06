@@ -6,7 +6,7 @@
     <img src="https://github.com/eduard-cc/flair-api/actions/workflows/ci.yml/badge.svg" alt="Build Status" />
   </a>
   <a href="https://nodejs.org/" target="_blank">
-    <img src="https://img.shields.io/badge/node.js-20.x-brightgreen" alt="Node.js Version" />
+    <img src="https://img.shields.io/badge/node.js-20.19%2B-brightgreen" alt="Node.js Version" />
   </a>
 </p>
 
@@ -18,13 +18,13 @@ Flair API is a backend service built with [NestJS](https://nestjs.com) for manag
 
 Make sure you have the following installed on your system:
 
-- [Node.js](https://nodejs.org/) (v20.x)
+- [Node.js](https://nodejs.org/) (v20.19.0+, v22.13.0+, or v24.x+)
 - [Docker](https://www.docker.com/)
 
 ## Installation
 
 ```bash
-$ npm install
+$ npm ci
 ```
 
 ## Env setup

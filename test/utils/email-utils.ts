@@ -68,7 +68,7 @@ export class EmailUtils {
 		code: string,
 		expiration: string,
 	) {
-		const ex = ms(ms(expiration), {long: true});
+		const ex = ms(ms(expiration as ms.StringValue), {long: true});
 
 		return `Welcome to Flair, ${name}.
 Please confirm your email address by clicking the button below.
@@ -79,7 +79,7 @@ If you did not sign up for Flair, please disregard this email.`;
 	}
 
 	static getPasswordResetEmailBody(email: Account['email'], webUrl: string, token: string, expiration: string) {
-		const ex = ms(ms(expiration), {long: true});
+		const ex = ms(ms(expiration as ms.StringValue), {long: true});
 
 		return `Reset your Flair password
 You requested a password reset for your Flair account. Click the button below to proceed and set a new password.
@@ -89,7 +89,7 @@ If you did not request this, please disregard this email.`;
 	}
 
 	static getVerifyNewEmailBody(email: Account['email'], webUrl: string, token: string, expiration: string) {
-		const ex = ms(ms(expiration), {long: true});
+		const ex = ms(ms(expiration as ms.StringValue), {long: true});
 
 		return `Verify your new email with Flair
 You requested to change the the email address associated with your Flair account. Please confirm this change by clicking the button below.
