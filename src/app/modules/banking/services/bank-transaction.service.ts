@@ -4,7 +4,8 @@ import {Brackets, Repository} from 'typeorm';
 
 import {Account} from '@modules/account/account.entity';
 
-import {BANKING_TRANSACTION_NOT_FOUND} from '../api/constants/banking-messages.constants';
+import {BANKING_CONNECTION_NOT_FOUND, BANKING_TRANSACTION_NOT_FOUND} from '../api/constants/banking-messages.constants';
+import {ExternalTransactionsResponseDto} from '../api/dtos/bank-connection-response.dto';
 import {
 	BankTransactionQueryDto,
 	BankTransactionSortField,
@@ -17,12 +18,15 @@ import {
 	BankTransactionResponseDto,
 	BankTransactionsResponseDto,
 } from '../api/dtos/bank-transaction-response.dto';
+import {BankConnection} from '../bank-connection.entity';
 import {BANK_TRANSACTION_TYPES} from '../bank-transaction-type';
 import {ExternalTransaction} from '../external-transaction.entity';
 
 @Injectable()
 export class BankTransactionService {
 	constructor(
+		@InjectRepository(BankConnection)
+		private readonly bankConnectionRepository: Repository<BankConnection>,
 		@InjectRepository(ExternalTransaction)
 		private readonly externalTransactionRepository: Repository<ExternalTransaction>,
 	) {}
@@ -80,6 +84,32 @@ export class BankTransactionService {
 		};
 	}
 
+	async findAllByConnectionId(
+		accountId: Account['id'],
+		connectionId: BankConnection['id'],
+		limit: number,
+	): Promise<ExternalTransactionsResponseDto> {
+		await this.findOwnedConnection(accountId, connectionId);
+
+		const query = this.externalTransactionRepository
+			.createQueryBuilder('transaction')
+			.innerJoin('transaction.externalAccount', 'externalAccount')
+			.innerJoin('externalAccount.bankConnection', 'connection')
+			.innerJoin('connection.account', 'account')
+			.where('connection.id = :connectionId', {connectionId})
+			.andWhere('account.id = :accountId', {accountId})
+			.orderBy('transaction.bookingDate', 'DESC', 'NULLS LAST')
+			.addOrderBy('transaction.valueDate', 'DESC', 'NULLS LAST')
+			.addOrderBy('transaction.createdAt', 'DESC')
+			.take(limit);
+
+		const [transactions, total] = await query.getManyAndCount();
+		return {
+			transactions: transactions.map((transaction) => this.toExternalTransactionResponse(transaction)),
+			total,
+		};
+	}
+
 	async findById(accountId: Account['id'], id: ExternalTransaction['id']): Promise<BankTransactionResponseDto> {
 		const transaction = await this.createOwnerScopedQuery(accountId)
 			.andWhere('transaction.id = :transactionId', {transactionId: id})
@@ -87,6 +117,14 @@ export class BankTransactionService {
 
 		if (!transaction) throw new NotFoundException(BANKING_TRANSACTION_NOT_FOUND);
 		return this.toResponse(transaction);
+	}
+
+	private async findOwnedConnection(accountId: Account['id'], connectionId: BankConnection['id']) {
+		const connection = await this.bankConnectionRepository.findOne({
+			where: {id: connectionId, account: {id: accountId}},
+		});
+		if (!connection) throw new NotFoundException(BANKING_CONNECTION_NOT_FOUND);
+		return connection;
 	}
 
 	private createOwnerScopedQuery(accountId: Account['id']) {
@@ -128,6 +166,24 @@ export class BankTransactionService {
 			bankCountry: transaction.externalAccount.bankConnection.aspspCountry,
 			externalAccountName: transaction.externalAccount.name,
 			externalAccountAlias: transaction.externalAccount.alias,
+		};
+	}
+
+	private toExternalTransactionResponse(
+		transaction: ExternalTransaction,
+	): ExternalTransactionsResponseDto['transactions'][number] {
+		return {
+			id: transaction.id,
+			bookingDate: transaction.bookingDate,
+			valueDate: transaction.valueDate,
+			amount: transaction.amount,
+			currency: transaction.currency,
+			creditDebitIndicator: transaction.creditDebitIndicator,
+			transactionStatus: transaction.transactionStatus,
+			description: transaction.description,
+			counterpartyName: transaction.counterpartyName,
+			merchantCategoryCode: transaction.merchantCategoryCode,
+			remittanceInformation: transaction.remittanceInformation,
 		};
 	}
 

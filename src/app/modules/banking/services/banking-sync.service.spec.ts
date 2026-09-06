@@ -72,7 +72,6 @@ describe('BankingSyncService', () => {
 			findOneBy: jest.fn().mockResolvedValue(completedRun),
 			update: jest.fn().mockResolvedValue(undefined),
 		};
-		const externalTransactionRepositoryMock = {};
 		const persistenceRepositories = {
 			bankConnection: {update: jest.fn().mockResolvedValue(undefined)},
 			bankSyncRun: {update: jest.fn().mockResolvedValue(undefined)},
@@ -105,7 +104,6 @@ describe('BankingSyncService', () => {
 			bankConnectionRepositoryMock as unknown as Repository<BankConnection>,
 			externalAccountRepositoryMock as unknown as Repository<ExternalAccount>,
 			bankSyncRunRepositoryMock as unknown as Repository<BankSyncRun>,
-			externalTransactionRepositoryMock as unknown as Repository<ExternalTransaction>,
 			redisMock as unknown as Redis,
 			dataSourceMock as unknown as DataSource,
 			enableBankingClientMock as unknown as EnableBankingClient,
@@ -228,7 +226,6 @@ describe('BankingSyncService synchronization lock', () => {
 			findOneBy: jest.fn().mockResolvedValue(completedRun),
 			update: jest.fn().mockResolvedValue(undefined),
 		};
-		const externalTransactionRepository = {};
 		const transactionRepository = {
 			insert: jest.fn().mockResolvedValue(undefined),
 			upsert: jest.fn().mockResolvedValue(undefined),
@@ -254,7 +251,6 @@ describe('BankingSyncService synchronization lock', () => {
 			bankConnectionRepository as unknown as Repository<BankConnection>,
 			externalAccountRepository as unknown as Repository<ExternalAccount>,
 			bankSyncRunRepository as unknown as Repository<BankSyncRun>,
-			externalTransactionRepository as unknown as Repository<ExternalTransaction>,
 			redis as unknown as Redis,
 			dataSource as unknown as DataSource,
 			enableBankingClient as unknown as EnableBankingClient,
@@ -416,7 +412,6 @@ describe('BankingSyncService account reconciliation', () => {
 			bankConnectionRepository as unknown as Repository<BankConnection>,
 			externalAccountRepository as unknown as Repository<ExternalAccount>,
 			bankSyncRunRepository as unknown as Repository<BankSyncRun>,
-			{} as Repository<ExternalTransaction>,
 			redis as unknown as Redis,
 			dataSource as unknown as DataSource,
 			enableBankingClient as unknown as EnableBankingClient,

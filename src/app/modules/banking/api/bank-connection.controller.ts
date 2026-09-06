@@ -10,6 +10,7 @@ import {CurrentAccount} from '@modules/auth/decorators/current-user.decorator';
 import {Public} from '@modules/auth/decorators/public.decorator';
 
 import {BankingService} from '../banking.service';
+import {BankTransactionService} from '../services/bank-transaction.service';
 import {BankingSyncService} from '../services/banking-sync.service';
 import {BankConnectionAuthorizeDto} from './dtos/bank-connection-authorize.dto';
 import {BankConnectionCallbackDto} from './dtos/bank-connection-callback.dto';
@@ -21,6 +22,7 @@ export class BankConnectionController {
 	constructor(
 		private readonly bankingService: BankingService,
 		private readonly bankingSyncService: BankingSyncService,
+		private readonly bankTransactionService: BankTransactionService,
 		private readonly configurationService: ConfigurationService,
 	) {}
 
@@ -62,6 +64,6 @@ export class BankConnectionController {
 		@Query() query: BankConnectionTransactionsQueryDto,
 		@CurrentAccount() account: Account,
 	) {
-		return this.bankingSyncService.findTransactions(account.id, connectionId, query.limit);
+		return this.bankTransactionService.findAllByConnectionId(account.id, connectionId, query.limit);
 	}
 }

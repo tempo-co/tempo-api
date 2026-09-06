@@ -27,11 +27,7 @@ import {
 	BANKING_SERVICE_UNAVAILABLE,
 	BANKING_SYNC_ALREADY_IN_PROGRESS,
 } from '../api/constants/banking-messages.constants';
-import {
-	BankSyncRunResponseDto,
-	ExternalTransactionResponseDto,
-	ExternalTransactionsResponseDto,
-} from '../api/dtos/bank-connection-response.dto';
+import {BankSyncRunResponseDto} from '../api/dtos/bank-connection-response.dto';
 import {BankConnection} from '../bank-connection.entity';
 import {BankSyncRun} from '../bank-sync-run.entity';
 import {normalizeBankTransactionType} from '../bank-transaction-type';
@@ -123,8 +119,6 @@ export class BankingSyncService {
 		private readonly externalAccountRepository: Repository<ExternalAccount>,
 		@InjectRepository(BankSyncRun)
 		private readonly bankSyncRunRepository: Repository<BankSyncRun>,
-		@InjectRepository(ExternalTransaction)
-		private readonly externalTransactionRepository: Repository<ExternalTransaction>,
 		@Inject(REDIS)
 		private readonly redis: Redis,
 		private readonly dataSource: DataSource,
@@ -208,32 +202,6 @@ export class BankingSyncService {
 				this.logger.warn('Bank synchronization lock release failed.');
 			}
 		}
-	}
-
-	async findTransactions(
-		accountId: Account['id'],
-		connectionId: BankConnection['id'],
-		limit: number,
-	): Promise<ExternalTransactionsResponseDto> {
-		await this.findOwnedConnection(accountId, connectionId);
-
-		const query = this.externalTransactionRepository
-			.createQueryBuilder('transaction')
-			.innerJoin('transaction.externalAccount', 'externalAccount')
-			.innerJoin('externalAccount.bankConnection', 'connection')
-			.innerJoin('connection.account', 'account')
-			.where('connection.id = :connectionId', {connectionId})
-			.andWhere('account.id = :accountId', {accountId})
-			.orderBy('transaction.bookingDate', 'DESC', 'NULLS LAST')
-			.addOrderBy('transaction.valueDate', 'DESC', 'NULLS LAST')
-			.addOrderBy('transaction.createdAt', 'DESC')
-			.take(limit);
-
-		const [transactions, total] = await query.getManyAndCount();
-		return {
-			transactions: transactions.map((transaction) => this.toTransactionResponse(transaction)),
-			total,
-		};
 	}
 
 	private async findOwnedConnection(accountId: Account['id'], connectionId: BankConnection['id']) {
@@ -585,22 +553,6 @@ export class BankingSyncService {
 			exchangeRateType: truncate(transaction.exchangeRateType, 16),
 			referenceNumber: truncate(transaction.referenceNumber, 255),
 			referenceNumberScheme: truncate(transaction.referenceNumberScheme, 32),
-		};
-	}
-
-	private toTransactionResponse(transaction: ExternalTransaction): ExternalTransactionResponseDto {
-		return {
-			id: transaction.id,
-			bookingDate: transaction.bookingDate,
-			valueDate: transaction.valueDate,
-			amount: transaction.amount,
-			currency: transaction.currency,
-			creditDebitIndicator: transaction.creditDebitIndicator,
-			transactionStatus: transaction.transactionStatus,
-			description: transaction.description,
-			counterpartyName: transaction.counterpartyName,
-			merchantCategoryCode: transaction.merchantCategoryCode,
-			remittanceInformation: transaction.remittanceInformation,
 		};
 	}
 
