@@ -29,13 +29,18 @@ describe('BankingEncryptionService', () => {
 
 	it('rejects malformed or tampered ciphertext with a typed error', () => {
 		const service = new BankingEncryptionService(createConfig(validKey));
+		const tamperedPayload = Buffer.from(service.encrypt('provider-session-id'), 'base64url');
+		tamperedPayload[0] ^= 1;
+		const tamperedCiphertext = tamperedPayload.toString('base64url');
 
-		expect(() => service.decrypt('malformed-ciphertext')).toThrow(BankingEncryptionError);
+		for (const ciphertext of ['malformed-ciphertext', tamperedCiphertext]) {
+			expect(() => service.decrypt(ciphertext)).toThrow(BankingEncryptionError);
 
-		try {
-			service.decrypt('malformed-ciphertext');
-		} catch (error) {
-			expect(error).toMatchObject({code: 'invalid_ciphertext'});
+			try {
+				service.decrypt(ciphertext);
+			} catch (error) {
+				expect(error).toMatchObject({code: 'invalid_ciphertext'});
+			}
 		}
 	});
 });

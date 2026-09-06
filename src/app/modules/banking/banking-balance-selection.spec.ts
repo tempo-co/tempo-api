@@ -1,16 +1,39 @@
+import {getBalancePreference, selectPreferredBalance} from './banking.utils';
 import {EnableBankingBalance} from './enable-banking.types';
-import {BankingSyncService} from './services/banking-sync.service';
 
-const selectPreferredBalance = (balances: EnableBankingBalance[]) => {
-	const service = Object.create(BankingSyncService.prototype) as BankingSyncService;
-	return (
-		service as unknown as {
-			selectPreferredBalance: (items: EnableBankingBalance[]) => EnableBankingBalance | undefined;
-		}
-	).selectPreferredBalance(balances);
-};
+describe('getBalancePreference', () => {
+	it.each([
+		['CLAV', 2],
+		['FWAV', 2],
+		['ITAV', 2],
+		['OPAV', 2],
+		['AVAILABLE', 2],
+		['CLBD', 1],
+		['ITBD', 1],
+		['OPBD', 1],
+		['PRCD', 1],
+		['BOOKED', 1],
+		['INFO', 0],
+		['OTHR', 0],
+		['XPCD', 0],
+		['UNKNOWN', 0],
+	])('maps balance type %s to preference %s', (balanceType, expectedPreference) => {
+		expect(getBalancePreference(balanceType)).toBe(expectedPreference);
+	});
 
-describe('BankingSyncService preferred balance selection', () => {
+	it('normalizes balance type codes before looking them up', () => {
+		expect(getBalancePreference(' clav ')).toBe(2);
+		expect(getBalancePreference('closing_available')).toBe(2);
+		expect(getBalancePreference('Booked')).toBe(1);
+	});
+
+	it('returns the neutral preference for unknown balance types', () => {
+		expect(getBalancePreference('NOT_AVAILABLE')).toBe(0);
+		expect(getBalancePreference('__proto__')).toBe(0);
+	});
+});
+
+describe('selectPreferredBalance', () => {
 	it('prefers an available closing balance over a booked closing balance', () => {
 		const available: EnableBankingBalance = {
 			balanceType: 'CLAV',

@@ -693,6 +693,86 @@ describe('BankConnectionController', () => {
 		}
 	});
 
+	it('reconciles external account activity from the provider account set', async () => {
+		const {connection, externalAccounts} = await createAuthorizedConnectionFixture(
+			'account-reconciliation-session',
+			['account-keep', 'account-remove', 'account-reappear'].map((providerAccountId) => ({
+				providerAccountId,
+				identificationHash: `hash-${providerAccountId}`,
+			})),
+		);
+		await externalAccountRepository.update({id: externalAccounts[2].id}, {isActive: false});
+		sessionAccountIdsBySession.set('account-reconciliation-session', ['account-keep', 'account-reappear']);
+		getAccountBalances.mockResolvedValue([]);
+		getAccountTransactions.mockResolvedValue([]);
+
+		try {
+			const response = await verifiedAgent.post(`/bank-connections/${connection.id}/sync`).expect(200);
+
+			expect(response.body.status).toBe('SUCCEEDED');
+			expect(await externalAccountRepository.findOneBy({id: externalAccounts[0].id})).toMatchObject({
+				isActive: true,
+			});
+			expect(await externalAccountRepository.findOneBy({id: externalAccounts[1].id})).toMatchObject({
+				isActive: false,
+			});
+			expect(await externalAccountRepository.findOneBy({id: externalAccounts[2].id})).toMatchObject({
+				isActive: true,
+			});
+		} finally {
+			await bankConnectionRepository.delete(connection.id);
+		}
+	});
+
+	it('preserves external account activity when the provider account set is unavailable', async () => {
+		const {connection, externalAccounts} = await createAuthorizedConnectionFixture(
+			'account-reconciliation-failure-session',
+			['account-still-active', 'account-still-inactive'].map((providerAccountId) => ({
+				providerAccountId,
+				identificationHash: `hash-${providerAccountId}`,
+			})),
+		);
+		await externalAccountRepository.update({id: externalAccounts[1].id}, {isActive: false});
+		getSessionAccounts.mockRejectedValueOnce(new EnableBankingClientError('provider_unreachable'));
+		getAccountBalances.mockResolvedValue([]);
+		getAccountTransactions.mockResolvedValue([]);
+
+		try {
+			const response = await verifiedAgent.post(`/bank-connections/${connection.id}/sync`).expect(200);
+
+			expect(response.body).toMatchObject({
+				status: 'PARTIAL',
+				errorMessage: 'Some bank data could not be synchronized.',
+			});
+			expect(await externalAccountRepository.findOneBy({id: externalAccounts[0].id})).toMatchObject({
+				isActive: true,
+			});
+			expect(await externalAccountRepository.findOneBy({id: externalAccounts[1].id})).toMatchObject({
+				isActive: false,
+			});
+		} finally {
+			await bankConnectionRepository.delete(connection.id);
+		}
+	});
+
+	it('returns provider rate-limit retry metadata for a partial sync', async () => {
+		const {connection} = await createAuthorizedConnection('rate-limit-session');
+		getAccountBalances.mockRejectedValueOnce(new EnableBankingClientError('ASPSP_RATE_LIMIT_EXCEEDED', 429, 17));
+		getAccountTransactions.mockResolvedValue([]);
+
+		try {
+			const response = await verifiedAgent.post(`/bank-connections/${connection.id}/sync`).expect(200);
+
+			expect(response.body).toMatchObject({
+				status: 'PARTIAL',
+				rateLimitSource: 'enable-banking',
+				retryAfterSeconds: 17,
+			});
+		} finally {
+			await bankConnectionRepository.delete(connection.id);
+		}
+	});
+
 	it('marks a run partial when one account fails and preserves successful account data', async () => {
 		const connection = await createAuthorizedConnectionWithAccounts('partial-session', [
 			'partial-success-account',

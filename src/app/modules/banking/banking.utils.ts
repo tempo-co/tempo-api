@@ -1,3 +1,5 @@
+import {EnableBankingBalance} from './enable-banking.types';
+
 const AVAILABLE_BALANCE_PREFERENCE = 2;
 const BOOKED_BALANCE_PREFERENCE = 1;
 const UNKNOWN_BALANCE_PREFERENCE = 0;
@@ -34,6 +36,38 @@ export function getBalancePreference(balanceType: string): number {
 		.replace(/[\s_-]+/g, '');
 	const preference = BALANCE_PREFERENCES[normalizedType];
 	return typeof preference === 'number' ? preference : UNKNOWN_BALANCE_PREFERENCE;
+}
+
+function compareDescending(left: string, right: string): number {
+	if (left === right) return 0;
+	return left > right ? -1 : 1;
+}
+
+function getBalanceTieBreaker(balance: EnableBankingBalance): string {
+	return JSON.stringify([
+		balance.balanceType,
+		balance.amount,
+		balance.currency,
+		balance.name ?? '',
+		balance.lastChangeDateTime ?? '',
+		balance.referenceDate ?? '',
+		balance.lastCommittedTransaction ?? '',
+	]);
+}
+
+export function selectPreferredBalance(balances: EnableBankingBalance[]): EnableBankingBalance | undefined {
+	return [...balances].sort((left, right) => {
+		const preferenceDifference = getBalancePreference(right.balanceType) - getBalancePreference(left.balanceType);
+		if (preferenceDifference !== 0) return preferenceDifference;
+
+		const referenceDateDifference = compareDescending(left.referenceDate ?? '', right.referenceDate ?? '');
+		if (referenceDateDifference !== 0) return referenceDateDifference;
+
+		const lastChangeDifference = compareDescending(left.lastChangeDateTime ?? '', right.lastChangeDateTime ?? '');
+		if (lastChangeDifference !== 0) return lastChangeDifference;
+
+		return compareDescending(getBalanceTieBreaker(left), getBalanceTieBreaker(right));
+	})[0];
 }
 
 export function truncate(value: string | null | undefined, length: number): string | null {

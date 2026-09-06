@@ -31,7 +31,7 @@ import {BankSyncRunResponseDto} from '../api/dtos/bank-connection-response.dto';
 import {BankConnection} from '../bank-connection.entity';
 import {BankSyncRun} from '../bank-sync-run.entity';
 import {normalizeBankTransactionType} from '../bank-transaction-type';
-import {getBalancePreference, truncate} from '../banking.utils';
+import {selectPreferredBalance, truncate} from '../banking.utils';
 import {
 	EnableBankingBalance,
 	EnableBankingTransaction,
@@ -84,23 +84,6 @@ type SyncRateLimit = {
 	source: 'enable-banking';
 	retryAfterSeconds: number;
 };
-
-function compareDescending(left: string, right: string): number {
-	if (left === right) return 0;
-	return left > right ? -1 : 1;
-}
-
-function getBalanceTieBreaker(balance: EnableBankingBalance): string {
-	return JSON.stringify([
-		balance.balanceType,
-		balance.amount,
-		balance.currency,
-		balance.name ?? '',
-		balance.lastChangeDateTime ?? '',
-		balance.referenceDate ?? '',
-		balance.lastCommittedTransaction ?? '',
-	]);
-}
 
 type SyncLockLease = {
 	signal: AbortSignal;
@@ -417,7 +400,7 @@ export class BankingSyncService {
 				}
 
 				if (accountResult.balancesSucceeded && accountResult.balances.length > 0) {
-					const preferredBalance = this.selectPreferredBalance(accountResult.balances);
+					const preferredBalance = selectPreferredBalance(accountResult.balances);
 					if (preferredBalance) {
 						await externalAccountRepository.update(
 							{id: accountResult.externalAccount.id},
@@ -589,25 +572,6 @@ export class BankingSyncService {
 		if (!current) return next;
 		if (!next || next.retryAfterSeconds <= current.retryAfterSeconds) return current;
 		return next;
-	}
-
-	private selectPreferredBalance(balances: EnableBankingBalance[]): EnableBankingBalance | undefined {
-		return [...balances].sort((left, right) => {
-			const preferenceDifference =
-				getBalancePreference(right.balanceType) - getBalancePreference(left.balanceType);
-			if (preferenceDifference !== 0) return preferenceDifference;
-
-			const referenceDateDifference = compareDescending(left.referenceDate ?? '', right.referenceDate ?? '');
-			if (referenceDateDifference !== 0) return referenceDateDifference;
-
-			const lastChangeDifference = compareDescending(
-				left.lastChangeDateTime ?? '',
-				right.lastChangeDateTime ?? '',
-			);
-			if (lastChangeDifference !== 0) return lastChangeDifference;
-
-			return compareDescending(getBalanceTieBreaker(left), getBalanceTieBreaker(right));
-		})[0];
 	}
 
 	private createDedupeKey(values: Record<string, string | null>): string {

@@ -79,6 +79,97 @@ describe('EnableBankingClient', () => {
 		}
 	});
 
+	it('starts authorization with the required provider access and redirect details', async () => {
+		fetchMock.mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({url: 'https://auth.example.test/start', authorization_id: 'authorization-id'}),
+				{
+					status: 200,
+					headers: {'content-type': 'application/json'},
+				},
+			),
+		);
+
+		await expect(
+			client.startAuthorization({
+				state: 'state-value',
+				redirectUrl: 'https://app.example.test/bank-connections/callback',
+				psuId: 'psu-id',
+				aspsp: {name: 'Nordea', country: 'FI'},
+				validUntil: '2030-01-01T00:00:00.000Z',
+			}),
+		).resolves.toEqual({url: 'https://auth.example.test/start', authorizationId: 'authorization-id'});
+
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		const requestUrl = new URL(String(fetchMock.mock.calls[0][0]));
+		const requestInit = fetchMock.mock.calls[0][1] as RequestInit;
+		expect(requestUrl.pathname).toBe('/auth');
+		expect(requestInit.method).toBe('POST');
+		expect(requestInit.headers).toEqual(
+			expect.objectContaining({
+				Accept: 'application/json',
+				'Content-Type': 'application/json',
+				Authorization: 'Bearer test.jwt',
+			}),
+		);
+		expect(JSON.parse(String(requestInit.body))).toEqual({
+			access: {balances: true, transactions: true, valid_until: '2030-01-01T00:00:00.000Z'},
+			aspsp: {name: 'Nordea', country: 'FI'},
+			state: 'state-value',
+			redirect_url: 'https://app.example.test/bank-connections/callback',
+			psu_type: 'personal',
+			psu_id: 'psu-id',
+		});
+	});
+
+	it('maps an authorization session and its provider accounts', async () => {
+		fetchMock.mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({
+					session_id: 'session-id',
+					access: {valid_until: '2030-01-01T00:00:00.000Z'},
+					aspsp: {name: 'Nordea', country: 'FI'},
+					accounts: [
+						{
+							uid: 'account-id',
+							identification_hash: 'account-hash',
+							name: 'Main account',
+							details: 'Everyday spending',
+							currency: 'EUR',
+							cash_account_type: 'CACC',
+							usage: 'PRIV',
+						},
+					],
+				}),
+				{status: 200, headers: {'content-type': 'application/json'}},
+			),
+		);
+
+		await expect(client.createSession('provider-code')).resolves.toEqual({
+			sessionId: 'session-id',
+			consentValidUntil: '2030-01-01T00:00:00.000Z',
+			aspsp: {name: 'Nordea', country: 'FI'},
+			accounts: [
+				{
+					uid: 'account-id',
+					identificationHash: 'account-hash',
+					name: 'Main account',
+					details: 'Everyday spending',
+					currency: 'EUR',
+					cashAccountType: 'CACC',
+					usage: 'PRIV',
+				},
+			],
+		});
+
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		const requestUrl = new URL(String(fetchMock.mock.calls[0][0]));
+		const requestInit = fetchMock.mock.calls[0][1] as RequestInit;
+		expect(requestUrl.pathname).toBe('/sessions');
+		expect(requestInit.method).toBe('POST');
+		expect(JSON.parse(String(requestInit.body))).toEqual({code: 'provider-code'});
+	});
+
 	it('requests ASPSPs for personal account-information access', async () => {
 		fetchMock.mockResolvedValueOnce(
 			new Response(
