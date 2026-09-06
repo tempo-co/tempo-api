@@ -276,7 +276,9 @@ describe('BankTransactionController', () => {
 
 	it.each([
 		['a valid page index', 'pagination[pageIndex]', '0', 200],
+		['a positive page index', 'pagination[pageIndex]', '1', 200],
 		['a valid page size', 'pagination[pageSize]', '10', 200],
+		['the maximum page size', 'pagination[pageSize]', '50', 200],
 		['a suffix in the page index', 'pagination[pageIndex]', '1oops', 400],
 		['scientific notation in the page size', 'pagination[pageSize]', '1e1', 400],
 		['whitespace in the page index', 'pagination[pageIndex]', ' 1', 400],

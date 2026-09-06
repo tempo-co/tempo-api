@@ -588,6 +588,32 @@ describe('BankConnectionController', () => {
 			.expect(expectedStatus);
 	});
 
+	it('uses the default transaction limit when omitted', async () => {
+		const {connection, externalAccount} = await createAuthorizedConnection('default-limit-validation');
+		await externalTransactionRepository.save(
+			Array.from({length: 26}, (_, index) =>
+				externalTransactionRepository.create({
+					externalAccountId: externalAccount.id,
+					providerTransactionId: `default-limit-transaction-${index}`,
+					entryReference: `default-limit-entry-${index}`,
+					dedupeKey: faker.string.uuid(),
+					bookingDate: '2026-08-26',
+					valueDate: '2026-08-26',
+					amount: '1.00',
+					currency: 'EUR',
+					creditDebitIndicator: 'CRDT',
+					transactionStatus: 'BOOK',
+					description: `Default limit transaction ${index}`,
+				}),
+			),
+		);
+
+		const response = await verifiedAgent.get(`/bank-connections/${connection.id}/transactions`).expect(200);
+
+		expect(response.body.total).toBe(26);
+		expect(response.body.transactions).toHaveLength(25);
+	});
+
 	it('enforces authentication, verification, ownership, and authorized status for synchronization', async () => {
 		const {connection} = await createAuthorizedConnection('auth-check-session');
 
