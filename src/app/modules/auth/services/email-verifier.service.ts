@@ -76,7 +76,7 @@ export class EmailVerifierService {
 
 		await this.emailService.send({
 			to: email,
-			subject: 'Welcome to Flair - Please confirm your email',
+			subject: 'Welcome to Tempo - Please confirm your email',
 			template: 'welcome',
 			context: {name, verificationUrl, code, expiration},
 		});
@@ -93,7 +93,7 @@ export class EmailVerifierService {
 
 		await this.emailService.send({
 			to: newEmail,
-			subject: 'Verify your new email with Flair',
+			subject: 'Verify your new email with Tempo',
 			template: 'verify-new-email',
 			context: {name: account.name, verificationUrl, expiration},
 		});

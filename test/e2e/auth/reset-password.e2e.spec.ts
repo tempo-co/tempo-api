@@ -80,7 +80,7 @@ describe('AuthController - Reset Password', () => {
 
 			expect(recipientEmail).toEqual(accountToResetEmail);
 			expect(token).toMatch(UUID_VALIDATION_REGEX);
-			expect(subject).toBe('Reset your Flair password');
+			expect(subject).toBe('Reset your Tempo password');
 			expect(body).toBe(expectedBody);
 		});
 

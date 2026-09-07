@@ -126,5 +126,5 @@ jobs:
           context: .
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/flair-api:latest
-            ghcr.io/${{ github.repository_owner }}/flair-api:${{ github.sha }}
+            ghcr.io/${{ github.repository_owner }}/tempo-api:latest
+            ghcr.io/${{ github.repository_owner }}/tempo-api:${{ github.sha }}
