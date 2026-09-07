@@ -19,8 +19,6 @@ export {ACCOUNT_DELETED_EMAIL_SUBJECT};
 export const ACCOUNT_DELETED_MESSAGE = 'Account has been deleted.';
 const SCAN_BATCH_SIZE = '250';
 
-type OwnedRedisKey = {key: string; value: string};
-
 @Injectable()
 export class AccountDeletionService {
 	private readonly logger = new Logger(AccountDeletionService.name);
@@ -85,9 +83,8 @@ export class AccountDeletionService {
 		owns: (value: string) => Promise<boolean> | boolean,
 	): Promise<void> {
 		try {
-			for (const owned of await this.scanOwnedKeys(matchPattern, owns)) {
-				await this.redis.del(owned.key);
-			}
+			const ownedKeys = await this.scanOwnedKeys(matchPattern, owns);
+			if (ownedKeys.length > 0) await this.redis.del(ownedKeys);
 		} catch {
 			this.logger.warn(`Failed to clean up keys matching "${matchPattern}" during account deletion.`);
 		}
@@ -96,8 +93,8 @@ export class AccountDeletionService {
 	private async scanOwnedKeys(
 		matchPattern: string,
 		owns: (value: string) => Promise<boolean> | boolean,
-	): Promise<OwnedRedisKey[]> {
-		const ownedKeys: OwnedRedisKey[] = [];
+	): Promise<string[]> {
+		const ownedKeys: string[] = [];
 		let cursor = '0';
 
 		while (true) {
@@ -108,7 +105,7 @@ export class AccountDeletionService {
 				const values = await this.redis.mget(keys);
 				for (let i = 0; i < keys.length; i++) {
 					const value = values[i];
-					if (value && (await owns(value))) ownedKeys.push({key: keys[i], value});
+					if (value && (await owns(value))) ownedKeys.push(keys[i]);
 				}
 			}
 			if (cursor === '0') break;
