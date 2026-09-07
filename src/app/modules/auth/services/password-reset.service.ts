@@ -8,6 +8,7 @@ import {ConfigurationService} from '@core/config/config.service';
 import {createWebUrl} from '@core/config/web-url';
 import {EmailService} from '@core/email/email.service';
 import {REDIS} from '@core/redis/redis.constants';
+import {SessionService} from '@core/session/session.service';
 import {Account} from '@modules/account/account.entity';
 import {AccountService} from '@modules/account/account.service';
 
@@ -17,7 +18,6 @@ import {
 	PASSWORD_RESET_SUCCESS,
 	PASSWORD_SAME_AS_OLD,
 } from '../api/constants/api-messages.constants';
-import {SessionService} from './session.service';
 
 @Injectable()
 export class PasswordResetService {

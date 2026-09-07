@@ -5,8 +5,8 @@ import {DataSource} from 'typeorm';
 
 import {ConfigurationService} from '@core/config/config.service';
 import {EmailService} from '@core/email/email.service';
+import {SessionService} from '@core/session/session.service';
 import {Account} from '@modules/account/account.entity';
-import {SessionService} from '@modules/auth/services/session.service';
 import {BankingAuthorizationStateService} from '@modules/banking/services/banking-authorization-state.service';
 
 import {AccountDeletionService} from './account-deletion.service';

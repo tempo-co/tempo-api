@@ -3,7 +3,7 @@ import {TypeOrmModule} from '@nestjs/typeorm';
 
 import {EmailModule} from '@core/email/email.module';
 import {RedisModule} from '@core/redis/redis.module';
-import {SessionsModule} from '@modules/auth/services/sessions.module';
+import {SessionModule} from '@core/session/session.module';
 import {BankingAuthorizationStateModule} from '@modules/banking/services/banking-authorization-state.module';
 
 import {AccountDeletionService} from './account-deletion.service';
@@ -16,7 +16,7 @@ import {AccountController} from './api/account.controller';
 		TypeOrmModule.forFeature([Account]),
 		EmailModule,
 		RedisModule,
-		SessionsModule,
+		SessionModule,
 		BankingAuthorizationStateModule,
 	],
 	providers: [AccountService, AccountDeletionService],

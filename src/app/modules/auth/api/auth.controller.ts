@@ -4,6 +4,7 @@ import {Throttle, minutes} from '@nestjs/throttler';
 import {Request, Response} from 'express';
 
 import {TOO_MANY_REQUESTS} from '@core/rate-limit/api-messages.constants';
+import {SessionService} from '@core/session/session.service';
 import {Account} from '@modules/account/account.entity';
 
 import {CurrentAccount} from '../decorators/current-user.decorator';
@@ -13,7 +14,6 @@ import {LocalLogInGuard} from '../guards/local-login.guard';
 import {AuthService} from '../services/auth.service';
 import {EmailVerifierService} from '../services/email-verifier.service';
 import {PasswordResetService} from '../services/password-reset.service';
-import {SessionService} from '../services/session.service';
 import {
 	ALL_OTHER_SESSIONS_REVOKED,
 	CANNOT_REVOKE_CURRENT_SESSION,

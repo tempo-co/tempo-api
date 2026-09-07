@@ -8,8 +8,8 @@ import {ConfigurationService} from '@core/config/config.service';
 import {EmailService} from '@core/email/email.service';
 import {EMAIL_QUEUE} from '@core/queue/queue.constants';
 import {REDIS} from '@core/redis/redis.constants';
+import {SessionService} from '@core/session/session.service';
 import {Account} from '@modules/account/account.entity';
-import {SessionService} from '@modules/auth/services/session.service';
 import {BankingAuthorizationStateService} from '@modules/banking/services/banking-authorization-state.service';
 
 import {AccountService} from './account.service';
