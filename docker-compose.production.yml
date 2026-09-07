@@ -75,7 +75,7 @@ services:
 
   web:
     build:
-      context: ../flair-web
+      context: ../tempo-web
       dockerfile: Dockerfile.production
       args:
         VITE_API_URL: /tempo/api
