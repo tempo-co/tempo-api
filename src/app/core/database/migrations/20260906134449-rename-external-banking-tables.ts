@@ -4,8 +4,6 @@ export class RenameExternalBankingTables20260906134449 implements MigrationInter
 	name = 'RenameExternalBankingTables20260906134449';
 
 	public async up(queryRunner: QueryRunner): Promise<void> {
-		// Baseline guard: databases created after this migration (fresh installs) already
-		// use the bank_* names, so the renames only apply to databases that predate them.
 		const hasExternalTables = await queryRunner.hasTable('external_transactions');
 		if (!hasExternalTables) {
 			return;
