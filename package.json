@@ -27,7 +27,8 @@
 		"docker:test:down": "docker compose -p tempo-api-test -f docker-compose.test.yml --env-file .env.test down -v --remove-orphans",
 		"test:e2e": "npm run docker:test:down && npm run docker:test:up && rimraf dist && jest --config ./test/jest-e2e.json --verbose --runInBand",
 		"test:e2e:cov": "npm run docker:test:down && npm run docker:test:up && rimraf dist && jest --config ./test/jest-e2e.json --verbose --coverage --runInBand",
-		"db:seed": "ts-node -r tsconfig-paths/register ./scripts/seed.ts"
+		"db:seed": "ts-node -r tsconfig-paths/register ./scripts/seed.ts",
+		"db:schema": "ts-node -r tsconfig-paths/register ./scripts/schema.ts"
 	},
 	"dependencies": {
 		"@nest-lab/throttler-storage-redis": "^1.2.0",
