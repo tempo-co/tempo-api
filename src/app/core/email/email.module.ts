@@ -20,7 +20,7 @@ import {EmailService} from './email.service';
 					port: config.get('EMAIL_PORT'),
 					secure: config.get('EMAIL_SECURE'),
 				},
-				defaults: {from: '"Flair" <no-reply@flair.com>'},
+				defaults: {from: '"Tempo" <no-reply@flair.com>'},
 				template: {
 					dir: join(__dirname, 'templates'),
 					adapter: new HandlebarsAdapter(),

@@ -1,4 +1,4 @@
-name: flair-api-test
+name: tempo-api-test
 
 services:
   mailpit:

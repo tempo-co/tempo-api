@@ -57,7 +57,7 @@ describe('EnableBankingClient', () => {
 
 	it('loads the signing key from a configured file path', () => {
 		const {privateKey} = generateKeyPairSync('rsa', {modulusLength: 2048});
-		const directory = mkdtempSync(join(tmpdir(), 'flair-enable-banking-'));
+		const directory = mkdtempSync(join(tmpdir(), 'tempo-enable-banking-'));
 		const privateKeyPath = join(directory, 'private.key');
 		writeFileSync(privateKeyPath, privateKey.export({type: 'pkcs8', format: 'pem'}));
 

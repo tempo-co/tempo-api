@@ -70,19 +70,19 @@ export class EmailUtils {
 	) {
 		const ex = ms(ms(expiration as ms.StringValue), {long: true});
 
-		return `Welcome to Flair, ${name}.
+		return `Welcome to Tempo, ${name}.
 Please confirm your email address by clicking the button below.
 Verify email ( ${webUrl}/verify-email?email=${encodeURIComponent(email)}&code=${code} )
 This link and code expire in ${ex}. You can also manually enter the code below.
 ${code}
-If you did not sign up for Flair, please disregard this email.`;
+If you did not sign up for Tempo, please disregard this email.`;
 	}
 
 	static getPasswordResetEmailBody(email: Account['email'], webUrl: string, token: string, expiration: string) {
 		const ex = ms(ms(expiration as ms.StringValue), {long: true});
 
-		return `Reset your Flair password
-You requested a password reset for your Flair account. Click the button below to proceed and set a new password.
+		return `Reset your Tempo password
+You requested a password reset for your Tempo account. Click the button below to proceed and set a new password.
 Reset password ( ${webUrl}/reset-password?email=${encodeURIComponent(email)}&token=${token} )
 This link will expire in ${ex}.
 If you did not request this, please disregard this email.`;
@@ -91,8 +91,8 @@ If you did not request this, please disregard this email.`;
 	static getVerifyNewEmailBody(email: Account['email'], webUrl: string, token: string, expiration: string) {
 		const ex = ms(ms(expiration as ms.StringValue), {long: true});
 
-		return `Verify your new email with Flair
-You requested to change the the email address associated with your Flair account. Please confirm this change by clicking the button below.
+		return `Verify your new email with Tempo
+You requested to change the the email address associated with your Tempo account. Please confirm this change by clicking the button below.
 Verify email ( ${webUrl}/verify-email-change?email=${encodeURIComponent(email)}&token=${token} )
 This link will expire in ${ex}.
 If you did not request this, please disregard this email.`;

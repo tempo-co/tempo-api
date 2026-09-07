@@ -1,18 +1,18 @@
 <p align="center">
-  <a href="https://coveralls.io/github/eduard-cc/flair-api?branch=main" target="_blank">
-    <img src="https://coveralls.io/repos/github/eduard-cc/flair-api/badge.svg?branch=main" alt="Coverage Status" />
+  <a href="https://coveralls.io/github/eduard-cc/tempo-api?branch=main" target="_blank">
+    <img src="https://coveralls.io/repos/github/eduard-cc/tempo-api/badge.svg?branch=main" alt="Coverage Status" />
   </a>
-  <a href="https://github.com/eduard-cc/flair-api/actions" target="_blank">
-    <img src="https://github.com/eduard-cc/flair-api/actions/workflows/ci.yml/badge.svg" alt="Build Status" />
+  <a href="https://github.com/eduard-cc/tempo-api/actions" target="_blank">
+    <img src="https://github.com/eduard-cc/tempo-api/actions/workflows/ci.yml/badge.svg" alt="Build Status" />
   </a>
   <a href="https://nodejs.org/" target="_blank">
     <img src="https://img.shields.io/badge/node.js-20.19%2B-brightgreen" alt="Node.js Version" />
   </a>
 </p>
 
-## Flair
+## Tempo
 
-Flair API is a backend service built with [NestJS](https://nestjs.com) for managing personal finances by allowing users to upload bank statements, view transactions, and categorize spending using AI.
+Tempo API is a backend service built with [NestJS](https://nestjs.com) for managing personal finances by allowing users to upload bank statements, view transactions, and categorize spending using AI.
 
 ## Prerequisites
 

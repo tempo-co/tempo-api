@@ -1,4 +1,4 @@
-name: flair-api-production
+name: tempo-api-production
 
 services:
   postgres:
@@ -9,7 +9,7 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: ${DB_NAME}
     volumes:
-      - flair_production_postgres_data:/var/lib/postgresql/data
+      - tempo_production_postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
       interval: 5s
@@ -28,9 +28,9 @@ services:
   mailpit:
     image: axllent/mailpit
     restart: unless-stopped
-    command: ['--webroot=/flair/mailpit/']
+    command: ['--webroot=/tempo/mailpit/']
     healthcheck:
-      test: ['CMD', '/mailpit', 'readyz', '--webroot', '/flair/mailpit/']
+      test: ['CMD', '/mailpit', 'readyz', '--webroot', '/tempo/mailpit/']
     ports:
       # EMAIL_PORT/EMAIL_UI_PORT are container ports; host ports are separate
       # so test and development can continue using 1025/8025.
@@ -78,9 +78,9 @@ services:
       context: ../flair-web
       dockerfile: Dockerfile.production
       args:
-        VITE_API_URL: /flair/api
+        VITE_API_URL: /tempo/api
         VITE_APP_URL: '${WEB_BASE_URL:?WEB_BASE_URL must be set}'
-        VITE_BASE_PATH: /flair/
+        VITE_BASE_PATH: /tempo/
         VITE_EMAIL_UI_URL: ${EMAIL_UI_URL}
     restart: unless-stopped
     ports:
@@ -90,4 +90,4 @@ services:
         condition: service_healthy
 
 volumes:
-  flair_production_postgres_data:
+  tempo_production_postgres_data:
