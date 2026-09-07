@@ -77,7 +77,7 @@ describe('AuthController - Signup', () => {
 			);
 
 			expect(recipientEmail).toEqual(signUpDto.email);
-			expect(subject).toBe('Welcome to Flair - Please confirm your email');
+			expect(subject).toBe('Welcome to Tempo - Please confirm your email');
 			expect(body).toEqual(expectedBody);
 		});
 
@@ -257,7 +257,7 @@ describe('AuthController - Signup', () => {
 			);
 
 			expect(recipientEmail).toEqual(UNVERIFIED_ACCOUNT_EMAIL);
-			expect(subject).toBe('Welcome to Flair - Please confirm your email');
+			expect(subject).toBe('Welcome to Tempo - Please confirm your email');
 			expect(body).toEqual(expectedBody);
 		});
 

@@ -176,7 +176,7 @@ describe('AuthController - Change email', () => {
 			const token = EmailUtils.extractToken(body);
 
 			expect(recipientEmail).toEqual(newEmail);
-			expect(subject).toBe('Verify your new email with Flair');
+			expect(subject).toBe('Verify your new email with Tempo');
 			expect(body).toBe(EmailUtils.getVerifyNewEmailBody(newEmail, webUrl, token, emailVerificationExpiration));
 			expect(token).toMatch(UUID_REGEX);
 		});

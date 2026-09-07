@@ -4,6 +4,10 @@ export class RenameExternalBankingTables20260906134449 implements MigrationInter
 	name = 'RenameExternalBankingTables20260906134449';
 
 	public async up(queryRunner: QueryRunner): Promise<void> {
+		const hasExternalTables = await queryRunner.hasTable('external_transactions');
+		if (!hasExternalTables) {
+			return;
+		}
 		await queryRunner.renameTable('external_transactions', 'bank_transactions');
 		await queryRunner.renameTable('external_account_balances', 'bank_account_balances');
 		await queryRunner.renameTable('external_accounts', 'bank_accounts');
