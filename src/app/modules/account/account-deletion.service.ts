@@ -9,7 +9,6 @@ import {EmailService} from '@core/email/email.service';
 import {EMAIL_QUEUE} from '@core/queue/queue.constants';
 import {REDIS} from '@core/redis/redis.constants';
 import {Account} from '@modules/account/account.entity';
-import {SessionService} from '@modules/auth/services/session.service';
 import {BankingAuthorizationStateService} from '@modules/banking/services/banking-authorization-state.service';
 
 import {AccountService} from './account.service';
@@ -27,7 +26,6 @@ export class AccountDeletionService {
 
 	constructor(
 		private readonly accountService: AccountService,
-		private readonly sessionService: SessionService,
 		private readonly authorizationStateService: BankingAuthorizationStateService,
 		private readonly dataSource: DataSource,
 		private readonly emailService: EmailService,
@@ -40,7 +38,7 @@ export class AccountDeletionService {
 		const account = await this.accountService.findById(accountId);
 		await this.accountService.verifyPassword(account.password, password);
 
-		await this.sessionService.revokeAllOtherSessions(accountId, null);
+		await this.revokeSessions(accountId);
 
 		const email = account.email;
 		await this.dataSource.transaction(async (manager) => {
@@ -59,9 +57,24 @@ export class AccountDeletionService {
 		return {message: ACCOUNT_DELETED_MESSAGE};
 	}
 
+	/**
+	 * Revokes every session of the account by deleting its Redis session keys.
+	 * Same ownership predicate as SessionService.getSessions (passport.user === accountId).
+	 */
+	private async revokeSessions(accountId: Account['id']): Promise<void> {
+		const sessionKeyPrefix = this.configService.get('SESSION_REDIS_KEY');
+		await this.deleteOwnedKeys(`${sessionKeyPrefix}:*`, (session) => {
+			try {
+				return JSON.parse(session)?.passport?.user === accountId;
+			} catch {
+				return false;
+			}
+		});
+	}
+
 	private async removeOutstandingTokens(accountId: Account['id'], email: Account['email']): Promise<void> {
 		for (const {prefix, owns} of this.ownershipMatchers(accountId, email)) {
-			await this.deleteOwnedKeys(prefix, owns);
+			await this.deleteOwnedKeys(`${prefix}:*`, owns);
 		}
 	}
 
@@ -78,22 +91,24 @@ export class AccountDeletionService {
 		];
 	}
 
-	private async deleteOwnedKeys(prefix: string, owns: (value: string) => Promise<boolean> | boolean): Promise<void> {
+	private async deleteOwnedKeys(
+		matchPattern: string,
+		owns: (value: string) => Promise<boolean> | boolean,
+	): Promise<void> {
 		try {
-			for (const owned of await this.scanOwnedKeys(prefix, owns)) {
+			for (const owned of await this.scanOwnedKeys(matchPattern, owns)) {
 				await this.redis.del(owned.key);
 			}
 		} catch {
-			this.logger.warn(`Failed to clean up keys with prefix "${prefix}" during account deletion.`);
+			this.logger.warn(`Failed to clean up keys matching "${matchPattern}" during account deletion.`);
 		}
 	}
 
 	private async scanOwnedKeys(
-		prefix: string,
+		matchPattern: string,
 		owns: (value: string) => Promise<boolean> | boolean,
 	): Promise<OwnedRedisKey[]> {
 		const ownedKeys: OwnedRedisKey[] = [];
-		const matchPattern = `${prefix}:*`;
 		let cursor = '0';
 
 		while (true) {

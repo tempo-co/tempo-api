@@ -1,10 +1,11 @@
 import {UnauthorizedException} from '@nestjs/common';
 import {Queue} from 'bullmq';
+import Redis from 'ioredis';
 import {DataSource} from 'typeorm';
 
+import {ConfigurationService} from '@core/config/config.service';
 import {EmailService} from '@core/email/email.service';
 import {Account} from '@modules/account/account.entity';
-import {SessionService} from '@modules/auth/services/session.service';
 import {BankingAuthorizationStateService} from '@modules/banking/services/banking-authorization-state.service';
 
 import {AccountDeletionService} from './account-deletion.service';
@@ -25,8 +26,17 @@ function buildService() {
 		findById: jest.fn().mockResolvedValue(account),
 		verifyPassword: jest.fn().mockResolvedValue(undefined),
 	};
-	const sessionService = {
-		revokeAllOtherSessions: jest.fn().mockResolvedValue({message: ''}),
+	const sessionKey = 'sess:owned-session';
+	const otherKey = 'sess:other-session';
+	const redis = {
+		scan: jest.fn().mockResolvedValue(['0', [sessionKey, otherKey]]),
+		mget: jest
+			.fn()
+			.mockResolvedValue([
+				JSON.stringify({passport: {user: account.id}}),
+				JSON.stringify({passport: {user: 'someone-else'}}),
+			]),
+		del: jest.fn().mockResolvedValue(1),
 	};
 	const authorizationStateService = {
 		removeForAccount: jest.fn().mockResolvedValue(0),
@@ -45,49 +55,54 @@ function buildService() {
 	};
 
 	const configService = {
-		get: jest.fn().mockReturnValue('test-key-prefix'),
+		get: jest.fn((key: string) => (key === 'SESSION_REDIS_KEY' ? 'sess' : 'test-key-prefix')),
 	};
 
 	const service = new AccountDeletionService(
 		accountService as unknown as AccountService,
-		sessionService as unknown as SessionService,
 		authorizationStateService as unknown as BankingAuthorizationStateService,
 		dataSource as unknown as DataSource,
 		emailService as unknown as EmailService,
 		emailQueue as unknown as Queue,
-		{} as never,
-		configService as never,
+		redis as unknown as Redis,
+		configService as unknown as ConfigurationService,
 	);
 
 	return {
 		service,
 		account,
 		accountService,
-		sessionService,
+		redis,
+		sessionKey,
+		otherKey,
 		authorizationStateService,
 		transactionManager,
 		dataSource,
 		emailService,
 		emailQueue,
+		configService,
 	};
 }
 
 describe('AccountDeletionService', () => {
 	it('rejects with UnauthorizedException when the password confirmation fails', async () => {
-		const {service, accountService, sessionService, dataSource} = buildService();
+		const {service, accountService, redis, dataSource} = buildService();
 		accountService.verifyPassword.mockRejectedValue(new UnauthorizedException());
 
 		await expect(service.deleteAccount('account-id', 'wrong-password')).rejects.toThrow(UnauthorizedException);
-		expect(sessionService.revokeAllOtherSessions).not.toHaveBeenCalled();
+		expect(redis.del).not.toHaveBeenCalled();
 		expect(dataSource.transaction).not.toHaveBeenCalled();
 	});
 
-	it('revokes every session of the account before deleting', async () => {
-		const {service, account, sessionService} = buildService();
+	it('revokes every session of the account from Redis before deleting', async () => {
+		const {service, account, redis, sessionKey, otherKey} = buildService();
 
 		await service.deleteAccount(account.id, 'correct-password');
 
-		expect(sessionService.revokeAllOtherSessions).toHaveBeenCalledWith(account.id, null);
+		expect(redis.scan).toHaveBeenCalledWith('0', 'MATCH', 'sess:*', 'COUNT', '250');
+		expect(redis.mget).toHaveBeenCalledWith([sessionKey, otherKey]);
+		expect(redis.del).toHaveBeenCalledTimes(1);
+		expect(redis.del).toHaveBeenCalledWith(sessionKey);
 	});
 
 	it('deletes the account row in a transaction and relies on FK cascades for bank data', async () => {
@@ -135,7 +150,8 @@ describe('AccountDeletionService', () => {
 	});
 
 	it('succeeds even when post-deletion cleanup fails', async () => {
-		const {service, account, authorizationStateService, emailService} = buildService();
+		const {service, account, redis, authorizationStateService, emailService} = buildService();
+		redis.scan.mockRejectedValue(new Error('redis down'));
 		authorizationStateService.removeForAccount.mockRejectedValue(new Error('redis down'));
 		emailService.send.mockRejectedValue(new Error('queue down'));
 

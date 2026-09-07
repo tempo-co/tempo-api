@@ -1,4 +1,4 @@
-import {Module, forwardRef} from '@nestjs/common';
+import {Module} from '@nestjs/common';
 import {APP_GUARD} from '@nestjs/core';
 import {PassportModule} from '@nestjs/passport';
 
@@ -17,7 +17,7 @@ import {SessionService} from './services/session.service';
 import {LocalStrategy} from './strategies/local.strategy';
 
 @Module({
-	imports: [RedisModule, forwardRef(() => AccountModule), EmailModule, PassportModule.register({session: true})],
+	imports: [RedisModule, AccountModule, EmailModule, PassportModule.register({session: true})],
 	providers: [
 		AuthService,
 		SessionService,
