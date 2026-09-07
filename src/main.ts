@@ -28,7 +28,7 @@ async function bootstrap() {
 bootstrap();
 
 function setupSwagger(app: NestExpressApplication) {
-	const config = new DocumentBuilder().setTitle('Flair API').build();
+	const config = new DocumentBuilder().setTitle('Tempo API').build();
 	const options: SwaggerDocumentOptions = {
 		operationIdFactory: (_controllerKey: string, methodKey: string) => methodKey,
 	};

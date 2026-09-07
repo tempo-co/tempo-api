@@ -2,8 +2,8 @@ import {createWebUrl} from './web-url';
 
 describe('createWebUrl', () => {
 	it('resolves application paths below a mounted base path', () => {
-		expect(createWebUrl('/bank-connections', 'https://example.ts.net/flair')).toBe(
-			'https://example.ts.net/flair/bank-connections',
+		expect(createWebUrl('/bank-connections', 'https://example.ts.net/tempo')).toBe(
+			'https://example.ts.net/tempo/bank-connections',
 		);
 	});
 

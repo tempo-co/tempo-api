@@ -49,7 +49,7 @@ export class PasswordResetService {
 
 		await this.emailService.send({
 			to: account.email,
-			subject: 'Reset your Flair password',
+			subject: 'Reset your Tempo password',
 			template: 'reset-password',
 			context: {name: account.name, resetUrl, expiration},
 		});
