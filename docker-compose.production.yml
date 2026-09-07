@@ -38,9 +38,7 @@ services:
       - '127.0.0.1:${EMAIL_UI_HOST_PORT:?EMAIL_UI_HOST_PORT must be set}:${EMAIL_UI_PORT}'
 
   api:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ghcr.io/tempo-co/tempo-api:latest
     restart: unless-stopped
     env_file:
       - .env.production.local
