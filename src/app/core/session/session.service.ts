@@ -7,16 +7,16 @@ import {IResult, UAParser} from 'ua-parser-js';
 import {ConfigurationService} from '@core/config/config.service';
 import {REDIS} from '@core/redis/redis.constants';
 import {Account} from '@modules/account/account.entity';
+
 import {
 	ALL_OTHER_SESSIONS_REVOKED,
 	CANNOT_REVOKE_CURRENT_SESSION,
 	INVALID_SESSION,
 	NO_OTHER_SESSIONS_TO_REVOKE,
 	SESSION_REVOKE_SUCCESS,
-} from '@modules/auth/api/constants/api-messages.constants';
-import {SessionResponseDto, UNKNOWN} from '@modules/auth/api/dtos/session-response.dto';
-
+} from './api-messages.constants';
 import {AuthenticatedSession} from './authenticated-session.interface';
+import {SessionResponseDto, UNKNOWN} from './session-response.dto';
 
 @Injectable()
 export class SessionService {
