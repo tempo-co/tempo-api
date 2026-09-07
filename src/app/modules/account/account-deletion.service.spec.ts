@@ -1,5 +1,4 @@
 import {UnauthorizedException} from '@nestjs/common';
-import {Queue} from 'bullmq';
 import Redis from 'ioredis';
 import {DataSource} from 'typeorm';
 
@@ -40,9 +39,7 @@ function buildService() {
 	};
 	const emailService = {
 		send: jest.fn().mockResolvedValue(undefined),
-	};
-	const emailQueue = {
-		getJobs: jest.fn().mockResolvedValue([]),
+		cancelPendingForAccount: jest.fn().mockResolvedValue(undefined),
 	};
 	const redis = {
 		scan: jest.fn().mockResolvedValue(['0', []]),
@@ -59,7 +56,6 @@ function buildService() {
 		authorizationStateService as unknown as BankingAuthorizationStateService,
 		dataSource as unknown as DataSource,
 		emailService as unknown as EmailService,
-		emailQueue as unknown as Queue,
 		redis as unknown as Redis,
 		configService as unknown as ConfigurationService,
 	);
@@ -72,7 +68,6 @@ function buildService() {
 		authorizationStateService,
 		dataSource,
 		emailService,
-		emailQueue,
 		redis,
 	};
 }
@@ -87,17 +82,12 @@ describe('AccountDeletionService', () => {
 		expect(dataSource.transaction).not.toHaveBeenCalled();
 	});
 
-	it('cancels pending emails for the deleted address without touching other emails', async () => {
-		const {service, account, emailQueue} = buildService();
-		const ownedJob = {data: {to: account.email}, remove: jest.fn().mockResolvedValue(undefined)};
-		const otherJob = {data: {to: 'someone-else@test.com'}, remove: jest.fn().mockResolvedValue(undefined)};
-		emailQueue.getJobs.mockResolvedValue([ownedJob, otherJob]);
+	it('cancels pending emails for the deleted account', async () => {
+		const {service, account, emailService} = buildService();
 
 		await service.deleteAccount(account.id, 'correct-password');
 
-		expect(emailQueue.getJobs).toHaveBeenCalledWith(['waiting', 'delayed']);
-		expect(ownedJob.remove).toHaveBeenCalledTimes(1);
-		expect(otherJob.remove).not.toHaveBeenCalled();
+		expect(emailService.cancelPendingForAccount).toHaveBeenCalledWith(account.id);
 	});
 
 	it('succeeds even when post-deletion cleanup fails', async () => {

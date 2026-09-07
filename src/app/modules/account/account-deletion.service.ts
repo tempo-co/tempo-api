@@ -1,12 +1,9 @@
-import {InjectQueue} from '@nestjs/bullmq';
 import {Inject, Injectable, Logger} from '@nestjs/common';
-import {Queue} from 'bullmq';
 import Redis from 'ioredis';
 import {DataSource} from 'typeorm';
 
 import {ConfigurationService} from '@core/config/config.service';
 import {EmailService} from '@core/email/email.service';
-import {EMAIL_QUEUE} from '@core/queue/queue.constants';
 import {REDIS} from '@core/redis/redis.constants';
 import {SessionService} from '@core/session/session.service';
 import {Account} from '@modules/account/account.entity';
@@ -29,7 +26,6 @@ export class AccountDeletionService {
 		private readonly authorizationStateService: BankingAuthorizationStateService,
 		private readonly dataSource: DataSource,
 		private readonly emailService: EmailService,
-		@InjectQueue(EMAIL_QUEUE) private readonly emailQueue: Queue,
 		@Inject(REDIS) private readonly redis: Redis,
 		private readonly configService: ConfigurationService,
 	) {}
@@ -53,7 +49,11 @@ export class AccountDeletionService {
 		} catch {
 			this.logger.warn('Failed to remove pending bank authorization states during account deletion.');
 		}
-		await this.cancelPendingEmails(email);
+		try {
+			await this.emailService.cancelPendingForAccount(accountId);
+		} catch {
+			this.logger.warn('Failed to cancel pending emails during account deletion.');
+		}
 
 		await this.sendFarewellEmail(account);
 		return {message: ACCOUNT_DELETED_MESSAGE};
@@ -113,34 +113,17 @@ export class AccountDeletionService {
 		return ownedKeys;
 	}
 
-	private async cancelPendingEmails(email: Account['email']): Promise<void> {
-		try {
-			const jobs = await this.emailQueue.getJobs(['waiting', 'delayed']);
-			await Promise.all(
-				jobs.filter((job) => this.isEmailJobFor(job?.data?.to, email)).map((job) => job.remove()),
-			);
-		} catch {
-			this.logger.warn('Failed to cancel pending emails during account deletion.');
-		}
-	}
-
-	private isEmailJobFor(to: unknown, email: Account['email']): boolean {
-		if (typeof to === 'string') return to.toLowerCase() === email.toLowerCase();
-		if (Array.isArray(to)) return to.some((recipient) => this.isEmailJobFor(recipient, email));
-		if (to && typeof to === 'object' && 'address' in to) {
-			return this.isEmailJobFor((to as {address: unknown}).address, email);
-		}
-		return false;
-	}
-
 	private async sendFarewellEmail(account: Account): Promise<void> {
 		try {
-			await this.emailService.send({
-				to: account.email,
-				subject: ACCOUNT_DELETED_EMAIL_SUBJECT,
-				template: 'account-deleted',
-				context: {name: account.name},
-			});
+			await this.emailService.send(
+				{
+					to: account.email,
+					subject: ACCOUNT_DELETED_EMAIL_SUBJECT,
+					template: 'account-deleted',
+					context: {name: account.name},
+				},
+				account.id,
+			);
 		} catch {
 			this.logger.warn('Failed to enqueue the account-deleted email.');
 		}

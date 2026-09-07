@@ -47,12 +47,15 @@ export class PasswordResetService {
 		const resetUrl = this._createUrl(account.email, token);
 		const expiration = ms(ms(this.EXPIRATION as ms.StringValue), {long: true});
 
-		await this.emailService.send({
-			to: account.email,
-			subject: 'Reset your Tempo password',
-			template: 'reset-password',
-			context: {name: account.name, resetUrl, expiration},
-		});
+		await this.emailService.send(
+			{
+				to: account.email,
+				subject: 'Reset your Tempo password',
+				template: 'reset-password',
+				context: {name: account.name, resetUrl, expiration},
+			},
+			account.id,
+		);
 		return {message: PASSWORD_RESET_CONFIRMATION};
 	}
 
