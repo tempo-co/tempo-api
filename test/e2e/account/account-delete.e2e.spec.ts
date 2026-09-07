@@ -1,10 +1,12 @@
 import {faker} from '@faker-js/faker';
 import {INestApplication} from '@nestjs/common';
+import Redis from 'ioredis';
 import {Server} from 'node:net';
 import request from 'supertest';
 import {DataSource} from 'typeorm';
 
 import {ConfigurationService} from '@core/config/config.service';
+import {REDIS} from '@core/redis/redis.constants';
 import {ACCOUNT_DELETED_EMAIL_SUBJECT, ACCOUNT_DELETED_MESSAGE} from '@modules/account/account-deletion.service';
 import {EMAIL_NOT_VERIFIED} from '@modules/auth/api/constants/api-messages.constants';
 import {BankAccountBalance} from '@modules/banking/bank-account-balance.entity';
@@ -31,6 +33,7 @@ describe('AccountController - DELETE /accounts/me', () => {
 	let bankAccountRepository: ReturnType<DataSource['getRepository']>;
 	let balanceRepository: ReturnType<DataSource['getRepository']>;
 	let transactionRepository: ReturnType<DataSource['getRepository']>;
+	let redis: Redis;
 
 	beforeAll(async () => {
 		app = getApp();
@@ -42,6 +45,7 @@ describe('AccountController - DELETE /accounts/me', () => {
 		bankAccountRepository = dataSource.getRepository(BankAccount);
 		balanceRepository = dataSource.getRepository(BankAccountBalance);
 		transactionRepository = dataSource.getRepository(BankTransaction);
+		redis = app.get<Redis>(REDIS);
 	});
 
 	beforeEach(async () => {
@@ -117,9 +121,43 @@ describe('AccountController - DELETE /accounts/me', () => {
 		await seedBankingData(accountId);
 		expect(await countOwnedAccounts(connectionRepository, accountId)).toBe(1);
 
+		// A second session of the same account must die with the account too.
+		const secondSessionAgent = request.agent(httpServer);
+		await secondSessionAgent.post('/auth/login').send({email, password}).expect(200);
+		await secondSessionAgent.get('/accounts/me').expect(200);
+
+		// Pending bank authorization states are cleaned up per account, not globally.
+		const ownedStateKey = `banking:authorization:e2e-owned-${accountId}`;
+		const otherStateKey = 'banking:authorization:e2e-other';
+		await redis.set(
+			ownedStateKey,
+			JSON.stringify({
+				accountId,
+				connectionId: 'e2e-connection',
+				aspspName: 'ABN AMRO',
+				aspspCountry: 'NL',
+				expiresAt: Date.now() + 60_000,
+			}),
+			'EX',
+			600,
+		);
+		await redis.set(
+			otherStateKey,
+			JSON.stringify({
+				accountId: 'someone-else',
+				connectionId: 'e2e-connection-2',
+				aspspName: 'Rabobank',
+				aspspCountry: 'NL',
+				expiresAt: Date.now() + 60_000,
+			}),
+			'EX',
+			600,
+		);
+
 		// Wrong password is rejected and the account survives.
 		await agent.delete('/accounts/me').send({password: 'wrong-password'}).expect(401);
 		expect(await countOwnedAccounts(connectionRepository, accountId)).toBe(1);
+		expect(await redis.get(ownedStateKey)).not.toBeNull();
 
 		const deleteResponse = await agent.delete('/accounts/me').send({password}).expect(200);
 		expect(deleteResponse.body.message).toEqual(ACCOUNT_DELETED_MESSAGE);
@@ -134,8 +172,14 @@ describe('AccountController - DELETE /accounts/me', () => {
 			await transactionRepository.count({where: {bankAccount: {bankConnection: {account: {id: accountId}}}}}),
 		).toBe(0);
 
-		// All sessions (including the caller's) were revoked.
+		// The owned pending authorization state is gone; the other account's survives.
+		expect(await redis.get(ownedStateKey)).toBeNull();
+		expect(await redis.get(otherStateKey)).not.toBeNull();
+		await redis.del(otherStateKey);
+
+		// All sessions (including the caller's and the second session's) were revoked.
 		await agent.get('/accounts/me').expect(401);
+		await secondSessionAgent.get('/accounts/me').expect(401);
 
 		// The account can no longer log in.
 		await request(httpServer).post('/auth/login').send({email, password}).expect(401);

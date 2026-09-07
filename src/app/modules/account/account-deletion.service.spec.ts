@@ -30,19 +30,13 @@ function buildService() {
 	const sessionService = {
 		revokeAllOtherSessions: jest.fn().mockResolvedValue({message: ''}),
 	};
-	const redis = {
-		scan: jest.fn().mockResolvedValue(['0', []]),
-		mget: jest.fn().mockResolvedValue([]),
-		del: jest.fn().mockResolvedValue(1),
-	};
 	const authorizationStateService = {
 		removeForAccount: jest.fn().mockResolvedValue(0),
 	};
-	const transactionManager = {
-		delete: jest.fn().mockResolvedValue({affected: 1}),
-	};
 	const dataSource = {
-		transaction: jest.fn(async (callback: (manager: unknown) => Promise<void>) => callback(transactionManager)),
+		transaction: jest.fn(async (callback: (manager: unknown) => Promise<void>) =>
+			callback({delete: jest.fn().mockResolvedValue({affected: 1})}),
+		),
 	};
 	const emailService = {
 		send: jest.fn().mockResolvedValue(undefined),
@@ -50,7 +44,11 @@ function buildService() {
 	const emailQueue = {
 		getJobs: jest.fn().mockResolvedValue([]),
 	};
-
+	const redis = {
+		scan: jest.fn().mockResolvedValue(['0', []]),
+		mget: jest.fn().mockResolvedValue([]),
+		del: jest.fn().mockResolvedValue(1),
+	};
 	const configService = {
 		get: jest.fn().mockReturnValue('test-key-prefix'),
 	};
@@ -71,49 +69,22 @@ function buildService() {
 		account,
 		accountService,
 		sessionService,
-		redis,
 		authorizationStateService,
-		transactionManager,
 		dataSource,
 		emailService,
 		emailQueue,
-		configService,
+		redis,
 	};
 }
 
 describe('AccountDeletionService', () => {
-	it('rejects with UnauthorizedException when the password confirmation fails', async () => {
+	it('rejects with UnauthorizedException when the password confirmation fails and performs no destructive step', async () => {
 		const {service, accountService, sessionService, dataSource} = buildService();
 		accountService.verifyPassword.mockRejectedValue(new UnauthorizedException());
 
 		await expect(service.deleteAccount('account-id', 'wrong-password')).rejects.toThrow(UnauthorizedException);
 		expect(sessionService.revokeAllOtherSessions).not.toHaveBeenCalled();
 		expect(dataSource.transaction).not.toHaveBeenCalled();
-	});
-
-	it('revokes every session of the account (including the current one) before deleting', async () => {
-		const {service, account, sessionService} = buildService();
-
-		await service.deleteAccount(account.id, 'correct-password');
-
-		expect(sessionService.revokeAllOtherSessions).toHaveBeenCalledWith(account.id, null);
-	});
-
-	it('deletes the account row in a transaction and relies on FK cascades for bank data', async () => {
-		const {service, account, dataSource, transactionManager} = buildService();
-
-		await service.deleteAccount(account.id, 'correct-password');
-
-		expect(dataSource.transaction).toHaveBeenCalledTimes(1);
-		expect(transactionManager.delete).toHaveBeenCalledWith(expect.anything(), {id: account.id});
-	});
-
-	it('removes pending bank authorization states owned by the account', async () => {
-		const {service, account, authorizationStateService} = buildService();
-
-		await service.deleteAccount(account.id, 'correct-password');
-
-		expect(authorizationStateService.removeForAccount).toHaveBeenCalledWith(account.id);
 	});
 
 	it('cancels pending emails for the deleted address without touching other emails', async () => {
@@ -127,20 +98,6 @@ describe('AccountDeletionService', () => {
 		expect(emailQueue.getJobs).toHaveBeenCalledWith(['waiting', 'delayed']);
 		expect(ownedJob.remove).toHaveBeenCalledTimes(1);
 		expect(otherJob.remove).not.toHaveBeenCalled();
-	});
-
-	it('enqueues the farewell email for the deleted account', async () => {
-		const {service, account, emailService} = buildService();
-
-		await service.deleteAccount(account.id, 'correct-password');
-
-		expect(emailService.send).toHaveBeenCalledTimes(1);
-		expect(emailService.send).toHaveBeenCalledWith({
-			to: account.email,
-			subject: 'Your Tempo account has been deleted',
-			template: 'account-deleted',
-			context: {name: account.name},
-		});
 	});
 
 	it('succeeds even when post-deletion cleanup fails', async () => {
