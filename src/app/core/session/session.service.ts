@@ -14,9 +14,9 @@ import {
 	INVALID_SESSION,
 	NO_OTHER_SESSIONS_TO_REVOKE,
 	SESSION_REVOKE_SUCCESS,
-} from '../api/constants/api-messages.constants';
-import {SessionResponseDto, UNKNOWN} from '../api/dtos/session-response.dto';
+} from './api-messages.constants';
 import {AuthenticatedSession} from './authenticated-session.interface';
+import {SessionResponseDto, UNKNOWN} from './session-response.dto';
 
 @Injectable()
 export class SessionService {

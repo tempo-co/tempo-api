@@ -8,6 +8,7 @@ import {BankingAuthorizationStateError} from '../errors/banking-authorization-st
 
 const STATE_TTL_SECONDS = 10 * 60;
 const CONSUMED_STATE_TTL_SECONDS = 24 * 60 * 60;
+const SCAN_BATCH_SIZE = '250';
 const STATE_KEY_PREFIX = 'banking:authorization:';
 const CONSUMED_STATE_KEY_SUFFIX = ':consumed';
 const CONSUME_STATE_SCRIPT = [
@@ -110,6 +111,36 @@ export class BankingAuthorizationStateService {
 	async delete(state: string): Promise<void> {
 		// Keep the consumed marker so a callback racing this cleanup is not mistaken for expiry.
 		await this.runRedisOperation(() => this.redis.del(this.getKey(state)));
+	}
+
+	/** Removes every pending authorization state owned by the given account. Returns the number of removed states. */
+	async removeForAccount(accountId: string): Promise<number> {
+		const ownedKeys: string[] = [];
+		const matchPattern = `${STATE_KEY_PREFIX}*`;
+		let cursor = '0';
+
+		while (true) {
+			const reply = await this.runRedisOperation(() =>
+				this.redis.scan(cursor, 'MATCH', matchPattern, 'COUNT', SCAN_BATCH_SIZE),
+			);
+			cursor = reply[0];
+			const keys = reply[1];
+
+			if (keys.length > 0) {
+				const values = await this.runRedisOperation(() => this.redis.mget(keys));
+				for (let i = 0; i < keys.length; i++) {
+					const parsed = this.parse(values[i] ?? '');
+					if (parsed?.accountId === accountId) ownedKeys.push(keys[i]);
+				}
+			}
+
+			if (cursor === '0') break;
+		}
+
+		if (ownedKeys.length > 0) {
+			await this.runRedisOperation(() => this.redis.del(ownedKeys));
+		}
+		return ownedKeys.length;
 	}
 
 	private async runRedisOperation<T>(operation: () => Promise<T>): Promise<T> {

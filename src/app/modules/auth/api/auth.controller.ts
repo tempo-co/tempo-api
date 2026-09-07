@@ -4,6 +4,15 @@ import {Throttle, minutes} from '@nestjs/throttler';
 import {Request, Response} from 'express';
 
 import {TOO_MANY_REQUESTS} from '@core/rate-limit/api-messages.constants';
+import {
+	ALL_OTHER_SESSIONS_REVOKED,
+	CANNOT_REVOKE_CURRENT_SESSION,
+	INVALID_SESSION,
+	NO_OTHER_SESSIONS_TO_REVOKE,
+	SESSION_REVOKE_SUCCESS,
+} from '@core/session/api-messages.constants';
+import {SessionResponseDto} from '@core/session/session-response.dto';
+import {SessionService} from '@core/session/session.service';
 import {Account} from '@modules/account/account.entity';
 
 import {CurrentAccount} from '../decorators/current-user.decorator';
@@ -13,10 +22,7 @@ import {LocalLogInGuard} from '../guards/local-login.guard';
 import {AuthService} from '../services/auth.service';
 import {EmailVerifierService} from '../services/email-verifier.service';
 import {PasswordResetService} from '../services/password-reset.service';
-import {SessionService} from '../services/session.service';
 import {
-	ALL_OTHER_SESSIONS_REVOKED,
-	CANNOT_REVOKE_CURRENT_SESSION,
 	EMAIL_ALREADY_IN_USE,
 	EMAIL_ALREADY_VERIFIED,
 	EMAIL_CHANGE_SUCCESS,
@@ -25,15 +31,12 @@ import {
 	EMAIL_VERIFICATION_SENT,
 	EMAIL_VERIFICATION_SUCCESS,
 	INVALID_CREDENTIALS,
-	INVALID_SESSION,
 	LOGIN_SUCCESS,
 	LOGOUT_SUCCESS,
-	NO_OTHER_SESSIONS_TO_REVOKE,
 	PASSWORD_CHANGE_SUCCESS,
 	PASSWORD_RESET_CONFIRMATION,
 	PASSWORD_RESET_INVALID_TOKEN,
 	PASSWORD_RESET_SUCCESS,
-	SESSION_REVOKE_SUCCESS,
 	UNAUTHORIZED,
 } from './constants/api-messages.constants';
 import {EmailChangeVerifyDto} from './dtos/email-change-verify.dto';
@@ -44,7 +47,6 @@ import {LogInDto} from './dtos/login.dto';
 import {PasswordChangeDto} from './dtos/password-change.dto';
 import {PasswordResetRequestDto} from './dtos/password-reset-request.dto';
 import {PasswordResetVerifyDto} from './dtos/password-reset-verify.dto';
-import {SessionResponseDto} from './dtos/session-response.dto';
 import {SessionRevokeDto} from './dtos/session-revoke.dto';
 import {SignUpDto} from './dtos/signup.dto';
 

@@ -9,9 +9,13 @@ import {ConfigurationService} from '@core/config/config.service';
 import {REDIS} from '@core/redis/redis.constants';
 import {RedisModule} from '@core/redis/redis.module';
 import {SessionMiddleware} from '@core/session/session.middleware';
-import {AuthModule} from '@modules/auth/auth.module';
+import {SessionService} from '@core/session/session.service';
 
-@Module({imports: [RedisModule, AuthModule]})
+@Module({
+	imports: [RedisModule],
+	providers: [SessionService],
+	exports: [SessionService],
+})
 export class SessionModule implements NestModule {
 	constructor(
 		@Inject(REDIS) private readonly redisClient: Redis,

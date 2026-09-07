@@ -3,6 +3,7 @@ import argon2 from 'argon2';
 import {plainToInstance} from 'class-transformer';
 import {Request} from 'express';
 
+import {SessionService} from '@core/session/session.service';
 import {Account} from '@modules/account/account.entity';
 import {AccountService} from '@modules/account/account.service';
 
@@ -10,7 +11,6 @@ import {LOGIN_SUCCESS, LOGOUT_SUCCESS, PASSWORD_CHANGE_SUCCESS} from '../api/con
 import {PasswordChangeDto} from '../api/dtos/password-change.dto';
 import {SignUpDto} from '../api/dtos/signup.dto';
 import {EmailVerifierService} from './email-verifier.service';
-import {SessionService} from './session.service';
 
 @Injectable()
 export class AuthService {

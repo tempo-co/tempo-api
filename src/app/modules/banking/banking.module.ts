@@ -13,7 +13,7 @@ import {BankSyncRun} from './bank-sync-run.entity';
 import {BankTransaction} from './bank-transaction.entity';
 import {BankingService} from './banking.service';
 import {BankTransactionService} from './services/bank-transaction.service';
-import {BankingAuthorizationStateService} from './services/banking-authorization-state.service';
+import {BankingAuthorizationStateModule} from './services/banking-authorization-state.module';
 import {BankingEncryptionService} from './services/banking-encryption.service';
 import {BankingSyncService} from './services/banking-sync.service';
 import {EnableBankingClient} from './services/enable-banking.client';
@@ -23,13 +23,13 @@ import {EnableBankingClient} from './services/enable-banking.client';
 		TypeOrmModule.forFeature([BankConnection, BankAccount, BankSyncRun, BankAccountBalance, BankTransaction]),
 		AccountModule,
 		RedisModule,
+		BankingAuthorizationStateModule,
 	],
 	providers: [
 		BankingService,
 		BankingSyncService,
 		BankTransactionService,
 		EnableBankingClient,
-		BankingAuthorizationStateService,
 		BankingEncryptionService,
 	],
 	controllers: [BankConnectionController, BankTransactionController],

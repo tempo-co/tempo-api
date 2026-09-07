@@ -74,12 +74,15 @@ export class EmailVerifierService {
 		const verificationUrl = this._createUrl('/verify-email', {email, code});
 		const expiration = ms(ms(this.EXPIRATION as ms.StringValue), {long: true});
 
-		await this.emailService.send({
-			to: email,
-			subject: 'Welcome to Tempo - Please confirm your email',
-			template: 'welcome',
-			context: {name, verificationUrl, code, expiration},
-		});
+		await this.emailService.send(
+			{
+				to: email,
+				subject: 'Welcome to Tempo - Please confirm your email',
+				template: 'welcome',
+				context: {name, verificationUrl, code, expiration},
+			},
+			account.id,
+		);
 
 		return {message: EMAIL_VERIFICATION_SENT};
 	}
@@ -91,12 +94,15 @@ export class EmailVerifierService {
 		const verificationUrl = this._createUrl('/verify-email-change', {email: newEmail, token});
 		const expiration = ms(ms(this.EXPIRATION as ms.StringValue), {long: true});
 
-		await this.emailService.send({
-			to: newEmail,
-			subject: 'Verify your new email with Tempo',
-			template: 'verify-new-email',
-			context: {name: account.name, verificationUrl, expiration},
-		});
+		await this.emailService.send(
+			{
+				to: newEmail,
+				subject: 'Verify your new email with Tempo',
+				template: 'verify-new-email',
+				context: {name: account.name, verificationUrl, expiration},
+			},
+			account.id,
+		);
 		return {message: EMAIL_VERIFICATION_SENT};
 	}
 

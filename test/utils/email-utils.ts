@@ -10,7 +10,7 @@ export class EmailUtils {
 		await fetch(`${apiUrl}/api/v1/messages`, {method: 'DELETE'});
 	}
 
-	static async findEmailByRecipient(recipientEmail: string, apiUrl: string) {
+	static async findEmailByRecipient(recipientEmail: string, apiUrl: string, subject?: string) {
 		let retries = 10;
 		const delayMs = 200;
 
@@ -18,9 +18,10 @@ export class EmailUtils {
 		while (retries > 0) {
 			const res = await fetch(`${apiUrl}/api/v1/messages`);
 			const data: MailpitResponse = await res.json();
-			const email = data.messages.find((msg) =>
-				msg.To.some((r) => r.Address.toLowerCase() === recipientEmail.toLowerCase()),
-			);
+			const email = data.messages.find((msg) => {
+				const isRecipient = msg.To.some((r) => r.Address.toLowerCase() === recipientEmail.toLowerCase());
+				return isRecipient && (!subject || msg.Subject === subject);
+			});
 
 			if (email) {
 				const res = await fetch(`${apiUrl}/api/v1/message/${email.ID}`);

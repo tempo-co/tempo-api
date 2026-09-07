@@ -1,7 +1,7 @@
 import {CanActivate, ExecutionContext, Injectable} from '@nestjs/common';
 import {AuthGuard} from '@nestjs/passport';
 
-import {SessionService} from '../services/session.service';
+import {SessionService} from '@core/session/session.service';
 
 @Injectable()
 export class LocalLogInGuard extends AuthGuard('local') implements CanActivate {

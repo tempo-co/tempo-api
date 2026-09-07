@@ -5,12 +5,12 @@ import TestAgent from 'supertest/lib/agent';
 import {
 	ALL_OTHER_SESSIONS_REVOKED,
 	CANNOT_REVOKE_CURRENT_SESSION,
-	EMAIL_NOT_VERIFIED,
 	INVALID_SESSION,
 	NO_OTHER_SESSIONS_TO_REVOKE,
 	SESSION_REVOKE_SUCCESS,
-} from '@modules/auth/api/constants/api-messages.constants';
-import {SessionResponseDto} from '@modules/auth/api/dtos/session-response.dto';
+} from '@core/session/api-messages.constants';
+import {SessionResponseDto} from '@core/session/session-response.dto';
+import {EMAIL_NOT_VERIFIED} from '@modules/auth/api/constants/api-messages.constants';
 
 import {
 	PW_CHANGE_ACCOUNT_EMAIL,

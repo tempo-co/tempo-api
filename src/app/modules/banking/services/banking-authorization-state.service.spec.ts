@@ -9,6 +9,8 @@ describe('BankingAuthorizationStateService', () => {
 		ttl: jest.Mock;
 		eval: jest.Mock;
 		del: jest.Mock;
+		scan: jest.Mock;
+		mget: jest.Mock;
 	};
 	let service: BankingAuthorizationStateService;
 
@@ -19,6 +21,8 @@ describe('BankingAuthorizationStateService', () => {
 			ttl: jest.fn(),
 			eval: jest.fn(),
 			del: jest.fn(),
+			scan: jest.fn().mockResolvedValue(['0', []]),
+			mget: jest.fn().mockResolvedValue([]),
 		};
 		service = new BankingAuthorizationStateService(redis as unknown as Redis);
 	});
@@ -165,5 +169,48 @@ describe('BankingAuthorizationStateService', () => {
 			500,
 			'XX',
 		);
+	});
+
+	describe('removeForAccount', () => {
+		it('deletes pending authorization states owned by the given account', async () => {
+			redis.scan
+				.mockResolvedValueOnce(['2', ['banking:authorization:state-one', 'banking:authorization:state-two']])
+				.mockResolvedValueOnce(['0', ['banking:authorization:state-three']]);
+			redis.mget
+				.mockResolvedValueOnce([
+					JSON.stringify({
+						accountId: 'account-id',
+						connectionId: 'connection-one',
+						aspspName: 'A',
+						aspspCountry: 'NL',
+						expiresAt: Date.now() + 60_000,
+					}),
+					JSON.stringify({
+						accountId: 'other-account',
+						connectionId: 'connection-two',
+						aspspName: 'A',
+						aspspCountry: 'NL',
+						expiresAt: Date.now() + 60_000,
+					}),
+				])
+				.mockResolvedValueOnce([null]);
+
+			await expect(service.removeForAccount('account-id')).resolves.toBe(1);
+			expect(redis.del).toHaveBeenCalledTimes(1);
+			expect(redis.del).toHaveBeenCalledWith(['banking:authorization:state-one']);
+		});
+
+		it('returns 0 when no owned states are pending and leaves Redis untouched', async () => {
+			redis.scan.mockResolvedValue(['0', []]);
+
+			await expect(service.removeForAccount('account-id')).resolves.toBe(0);
+			expect(redis.del).not.toHaveBeenCalled();
+		});
+
+		it('wraps Redis failures into the typed storage error', async () => {
+			redis.scan.mockRejectedValue(new Error('Redis is unavailable'));
+
+			await expect(service.removeForAccount('account-id')).rejects.toMatchObject({code: 'storage_unavailable'});
+		});
 	});
 });
