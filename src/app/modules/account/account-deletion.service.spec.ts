@@ -6,6 +6,7 @@ import {DataSource} from 'typeorm';
 import {ConfigurationService} from '@core/config/config.service';
 import {EmailService} from '@core/email/email.service';
 import {Account} from '@modules/account/account.entity';
+import {SessionService} from '@modules/auth/services/session.service';
 import {BankingAuthorizationStateService} from '@modules/banking/services/banking-authorization-state.service';
 
 import {AccountDeletionService} from './account-deletion.service';
@@ -26,16 +27,12 @@ function buildService() {
 		findById: jest.fn().mockResolvedValue(account),
 		verifyPassword: jest.fn().mockResolvedValue(undefined),
 	};
-	const sessionKey = 'sess:owned-session';
-	const otherKey = 'sess:other-session';
+	const sessionService = {
+		revokeAllOtherSessions: jest.fn().mockResolvedValue({message: ''}),
+	};
 	const redis = {
-		scan: jest.fn().mockResolvedValue(['0', [sessionKey, otherKey]]),
-		mget: jest
-			.fn()
-			.mockResolvedValue([
-				JSON.stringify({passport: {user: account.id}}),
-				JSON.stringify({passport: {user: 'someone-else'}}),
-			]),
+		scan: jest.fn().mockResolvedValue(['0', []]),
+		mget: jest.fn().mockResolvedValue([]),
 		del: jest.fn().mockResolvedValue(1),
 	};
 	const authorizationStateService = {
@@ -55,11 +52,12 @@ function buildService() {
 	};
 
 	const configService = {
-		get: jest.fn((key: string) => (key === 'SESSION_REDIS_KEY' ? 'sess' : 'test-key-prefix')),
+		get: jest.fn().mockReturnValue('test-key-prefix'),
 	};
 
 	const service = new AccountDeletionService(
 		accountService as unknown as AccountService,
+		sessionService as unknown as SessionService,
 		authorizationStateService as unknown as BankingAuthorizationStateService,
 		dataSource as unknown as DataSource,
 		emailService as unknown as EmailService,
@@ -72,9 +70,8 @@ function buildService() {
 		service,
 		account,
 		accountService,
+		sessionService,
 		redis,
-		sessionKey,
-		otherKey,
 		authorizationStateService,
 		transactionManager,
 		dataSource,
@@ -86,23 +83,20 @@ function buildService() {
 
 describe('AccountDeletionService', () => {
 	it('rejects with UnauthorizedException when the password confirmation fails', async () => {
-		const {service, accountService, redis, dataSource} = buildService();
+		const {service, accountService, sessionService, dataSource} = buildService();
 		accountService.verifyPassword.mockRejectedValue(new UnauthorizedException());
 
 		await expect(service.deleteAccount('account-id', 'wrong-password')).rejects.toThrow(UnauthorizedException);
-		expect(redis.del).not.toHaveBeenCalled();
+		expect(sessionService.revokeAllOtherSessions).not.toHaveBeenCalled();
 		expect(dataSource.transaction).not.toHaveBeenCalled();
 	});
 
-	it('revokes every session of the account from Redis before deleting', async () => {
-		const {service, account, redis, sessionKey, otherKey} = buildService();
+	it('revokes every session of the account (including the current one) before deleting', async () => {
+		const {service, account, sessionService} = buildService();
 
 		await service.deleteAccount(account.id, 'correct-password');
 
-		expect(redis.scan).toHaveBeenCalledWith('0', 'MATCH', 'sess:*', 'COUNT', '250');
-		expect(redis.mget).toHaveBeenCalledWith([sessionKey, otherKey]);
-		expect(redis.del).toHaveBeenCalledTimes(1);
-		expect(redis.del).toHaveBeenCalledWith(sessionKey);
+		expect(sessionService.revokeAllOtherSessions).toHaveBeenCalledWith(account.id, null);
 	});
 
 	it('deletes the account row in a transaction and relies on FK cascades for bank data', async () => {

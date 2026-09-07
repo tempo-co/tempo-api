@@ -9,6 +9,7 @@ import {EmailService} from '@core/email/email.service';
 import {EMAIL_QUEUE} from '@core/queue/queue.constants';
 import {REDIS} from '@core/redis/redis.constants';
 import {Account} from '@modules/account/account.entity';
+import {SessionService} from '@modules/auth/services/session.service';
 import {BankingAuthorizationStateService} from '@modules/banking/services/banking-authorization-state.service';
 
 import {AccountService} from './account.service';
@@ -26,6 +27,7 @@ export class AccountDeletionService {
 
 	constructor(
 		private readonly accountService: AccountService,
+		private readonly sessionService: SessionService,
 		private readonly authorizationStateService: BankingAuthorizationStateService,
 		private readonly dataSource: DataSource,
 		private readonly emailService: EmailService,
@@ -38,7 +40,9 @@ export class AccountDeletionService {
 		const account = await this.accountService.findById(accountId);
 		await this.accountService.verifyPassword(account.password, password);
 
-		await this.revokeSessions(accountId);
+		// null for the current session id: revoke ALL of the account's sessions,
+		// including the caller's own (same primitive the password-reset flow uses).
+		await this.sessionService.revokeAllOtherSessions(accountId, null);
 
 		const email = account.email;
 		await this.dataSource.transaction(async (manager) => {
@@ -55,21 +59,6 @@ export class AccountDeletionService {
 
 		await this.sendFarewellEmail(account);
 		return {message: ACCOUNT_DELETED_MESSAGE};
-	}
-
-	/**
-	 * Revokes every session of the account by deleting its Redis session keys.
-	 * Same ownership predicate as SessionService.getSessions (passport.user === accountId).
-	 */
-	private async revokeSessions(accountId: Account['id']): Promise<void> {
-		const sessionKeyPrefix = this.configService.get('SESSION_REDIS_KEY');
-		await this.deleteOwnedKeys(`${sessionKeyPrefix}:*`, (session) => {
-			try {
-				return JSON.parse(session)?.passport?.user === accountId;
-			} catch {
-				return false;
-			}
-		});
 	}
 
 	private async removeOutstandingTokens(accountId: Account['id'], email: Account['email']): Promise<void> {
