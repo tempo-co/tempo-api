@@ -305,6 +305,18 @@ describe('BankTransactionController', () => {
 		expect(paginatedResponse.body.total).toBe(4);
 		expect(paginatedResponse.body.transactions).toHaveLength(4);
 		expect(paginatedResponse.body.transactions[0].amount).toBe('-30.00000000');
+
+		const bookingDateAscendingResponse = await verifiedAgent
+			.get('/bank-transactions')
+			.query({
+				'pagination[pageIndex]': '0',
+				'pagination[pageSize]': '10',
+				'sort[by]': 'bookingDate',
+				'sort[order]': 'ASC',
+			})
+			.expect(200);
+
+		expect(bookingDateAscendingResponse.body.transactions[0].bookingDate).toBe('2026-08-10');
 	});
 
 	it('applies date, account, and search filters', async () => {
