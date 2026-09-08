@@ -4,11 +4,11 @@ This directory contains the reviewed, host-side deployment entrypoint and system
 
 ## Flow
 
-Successful `main` workflows publish immutable full-commit-SHA images to GHCR. The host timer runs the selected `tempo-production-deploy@<host-user>` instance every five minutes. The script resolves both public `main` refs, prepares exact SHA tags for changed repositories, resolves their digests, and updates only the `api` and `web` services. It checks API/web health and the served routes, retains one rollback pair, and never runs migrations, seeds, `down`, `rm`, `--volumes`, or `build`.
+Successful `main` workflows publish immutable full-commit-SHA images to GHCR. The host timer runs the selected `tempo-production-deploy@<host-user>` instance every five minutes. The script resolves both public `main` refs, prepares exact SHA tags for changed repositories, resolves their digests, and updates only the `api` and `web` services. It checks API/web health and the served routes, retains one rollback pair, never invokes migration or seed commands itself, and never runs `down`, `rm`, `--volumes`, or `build`. In production, the API process runs pending TypeORM migrations during startup, so a migration included in the deployed API image is applied before the API becomes healthy.
 
 The API and web repositories can advance independently. The host therefore converges on the latest successful image available for each repository; it does not promise an atomic cross-repository release pair. The updater passes only the two candidate image references through a temporary mode-600 Compose env file; production secrets stay in the separate env file and are never exported by the updater.
 
-Automatic rollback restores application images only. The API currently runs TypeORM migrations during production startup, so releases with incompatible schema changes require a separately reviewed migration and rollback plan.
+The API currently runs pending TypeORM migrations during production startup. A migration included in a published API image is therefore applied when that image starts. If startup migration or health verification fails, the updater attempts an application-only rollback; it does not undo an already-applied database migration. Keep migrations backward-compatible with the previous application during rollout, and separately review and back up any destructive or incompatible schema change before production deployment.
 
 ## One-time installation
 
