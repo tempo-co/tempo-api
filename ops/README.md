@@ -4,7 +4,7 @@ This directory contains the reviewed, host-side deployment entrypoint and system
 
 ## Flow
 
-Successful `main` workflows publish immutable full-commit-SHA images to GHCR. The host timer runs `tempo-production-deploy` every five minutes. The script resolves both public `main` refs, prepares exact SHA tags for changed repositories, resolves their digests, and updates only the `api` and `web` services. It checks API/web health and the served routes, retains one rollback pair, and never runs migrations, seeds, `down`, `rm`, `--volumes`, or `build`.
+Successful `main` workflows publish immutable full-commit-SHA images to GHCR. The host timer runs the selected `tempo-production-deploy@<host-user>` instance every five minutes. The script resolves both public `main` refs, prepares exact SHA tags for changed repositories, resolves their digests, and updates only the `api` and `web` services. It checks API/web health and the served routes, retains one rollback pair, and never runs migrations, seeds, `down`, `rm`, `--volumes`, or `build`.
 
 The API and web repositories can advance independently. The host therefore converges on the latest successful image available for each repository; it does not promise an atomic cross-repository release pair. The updater passes only the two candidate image references through a temporary mode-600 Compose env file; production secrets stay in the separate env file and are never exported by the updater.
 
@@ -15,42 +15,52 @@ Automatic rollback restores application images only. The API currently runs Type
 Perform these steps only after reviewing and merging the API and web PRs, and after separately approving the production host change. Run them from this repository at the reviewed commit:
 
 ```text
-sudo useradd --system --home-dir /var/lib/tempo --create-home --shell /usr/sbin/nologin tempo
-sudo usermod --append --groups docker tempo
+DEPLOY_USER="$(id -un)"
+DEPLOY_GROUP="$(id -gn)"
+sudo usermod --append --groups docker "$DEPLOY_USER"
 sudo install -d -o root -g root -m 0755 /etc/tempo
-sudo install -d -o tempo -g tempo -m 0750 /var/lib/tempo-deploy
+sudo install -d -o "$DEPLOY_USER" -g "$DEPLOY_GROUP" -m 0750 /var/lib/tempo-deploy
 sudo install -o root -g root -m 0644 docker-compose.production.yml /etc/tempo/production.compose.yml
 sudo install -o root -g root -m 0755 ops/tempo-production-deploy.sh /usr/local/libexec/tempo-production-deploy
-sudo install -o root -g root -m 0644 ops/systemd/tempo-production-deploy.service /etc/systemd/system/tempo-production-deploy.service
-sudo install -o root -g root -m 0644 ops/systemd/tempo-production-deploy.timer /etc/systemd/system/tempo-production-deploy.timer
-sudo install -o tempo -g tempo -m 0600 /path/to/existing/production.env /etc/tempo/production.env
+sudo install -o root -g root -m 0644 ops/systemd/tempo-production-deploy@.service /etc/systemd/system/tempo-production-deploy@.service
+sudo install -o root -g root -m 0644 ops/systemd/tempo-production-deploy@.timer /etc/systemd/system/tempo-production-deploy@.timer
+sudo install -o "$DEPLOY_USER" -g "$DEPLOY_GROUP" -m 0600 /path/to/existing/production.env /etc/tempo/production.env
 sudo systemctl daemon-reload
 ```
 
-The service runs as the dedicated `tempo` account. Docker-group membership is required for the Docker CLI and is effectively privileged, so do not reuse a personal account. The production environment file and Enable Banking private key stay outside Git and retain mode `600`. Ensure the key path in the production environment is readable by `tempo`. The installed Compose manifest is a root-owned snapshot; it is not automatically replaced by later public repository changes.
+The service is a systemd template. `%i` is replaced with the instance name, so the timer runs under the existing host account selected during activation; no dedicated `tempo` account is created. The selected account must belong to `docker`; membership in that group is effectively privileged. The production environment file and Enable Banking private key stay outside Git and retain mode `600`. Ensure the key path in the production environment is readable by the selected account. The installed Compose manifest is a root-owned snapshot; it is not automatically replaced by later public repository changes.
 
-If GHCR packages are private, authenticate Docker as `tempo` with a GitHub classic personal access token limited to `read:packages`. Never put that token in this repository or a systemd unit. Public GHCR container packages can be pulled without a registry credential.
+If GHCR packages are private, authenticate Docker as the selected host account with a GitHub classic personal access token limited to `read:packages`:
+
+```text
+DEPLOY_USER="$(id -un)"
+printf '%s\n' "$GHCR_TOKEN" | docker login ghcr.io --username "$DEPLOY_USER" --password-stdin
+unset GHCR_TOKEN
+```
+
+Never put that token in this repository or a systemd unit. Public GHCR container packages can be pulled without a registry credential.
 
 Before enabling the timer, initialize rollback state from the currently running application containers. This writes only `/var/lib/tempo-deploy/images.env`; it does not restart containers or touch volumes:
 
 ```text
-sudo -u tempo /usr/local/libexec/tempo-production-deploy --initialize
+sudo -u "$DEPLOY_USER" /usr/local/libexec/tempo-production-deploy --initialize
 sudo chmod 600 /var/lib/tempo-deploy/images.env
 ```
 
-Review the generated image references and then, as a separate approved action, enable the timer:
+Review the generated image references and then, as a separate approved action, enable the timer for the existing account:
 
 ```text
-sudo systemctl enable --now tempo-production-deploy.timer
-systemctl status tempo-production-deploy.timer
+sudo systemctl enable --now "tempo-production-deploy@${DEPLOY_USER}.timer"
+sudo systemctl status --no-pager "tempo-production-deploy@${DEPLOY_USER}.timer"
 ```
 
 ## Operations
 
 ```text
-systemctl list-timers tempo-production-deploy.timer
-journalctl -u tempo-production-deploy.service
-sudo systemctl start tempo-production-deploy.service
+DEPLOY_USER="$(id -un)"
+sudo systemctl list-timers "tempo-production-deploy@${DEPLOY_USER}.timer"
+sudo journalctl -u "tempo-production-deploy@${DEPLOY_USER}.service"
+sudo systemctl start "tempo-production-deploy@${DEPLOY_USER}.service"
 ```
 
 A no-op run should report that both current main SHAs are already deployed and should not invoke Compose. A rollout should show only `api` and `web` being recreated. Verify the API health endpoint, `http://127.0.0.1:8080/tempo/`, and `http://127.0.0.1:8080/tempo/api/health` after the first approved rollout.

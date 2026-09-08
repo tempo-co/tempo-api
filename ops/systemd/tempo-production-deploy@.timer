@@ -7,7 +7,7 @@ OnUnitActiveSec=5min
 Persistent=true
 RandomizedDelaySec=30s
 AccuracySec=1min
-Unit=tempo-production-deploy.service
+Unit=tempo-production-deploy@%i.service
 
 [Install]
 WantedBy=timers.target

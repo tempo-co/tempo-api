@@ -7,8 +7,7 @@ Requires=docker.service
 [Service]
 Type=oneshot
 TimeoutStartSec=10min
-User=tempo
-Group=tempo
+User=%i
 SupplementaryGroups=docker
 Environment=TEMPO_DEPLOY_COMPOSE_FILE=/etc/tempo/production.compose.yml
 Environment=TEMPO_DEPLOY_STATE_FILE=/var/lib/tempo-deploy/images.env
