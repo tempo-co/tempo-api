@@ -137,6 +137,12 @@ run_bootstrap_cleanup_test() {
     bash "$SCRIPT" --initialize
 
     set_target; bash "$SCRIPT"
+    assert_contains "$TEMPO_DEPLOY_STATE_FILE.rollback" 'TEMPO_API_SHA=bootstrap'
+    assert_contains "$TEMPO_DEPLOY_STATE_FILE.rollback" 'TEMPO_API_IMAGE=ghcr.io/tempo-co/tempo-api:latest'
+    assert_contains "$TEMPO_DEPLOY_STATE_FILE.rollback" 'TEMPO_WEB_IMAGE=tempo-api-production-web:latest'
+    local first_log; first_log=$(<"$DOCKER_LOG")
+    [[ $first_log != *'image rm ghcr.io/tempo-co/tempo-api:latest'* ]] || fail 'first deployment removed API bootstrap rollback image'
+    [[ $first_log != *'image rm tempo-api-production-web:latest'* ]] || fail 'first deployment removed web bootstrap rollback image'
     TEST_API_SHA=$SHA_A; TEST_WEB_SHA=$SHA_D; TEST_API_DIGEST=$(printf '5%.0s' {1..64})
     export TEST_API_SHA TEST_WEB_SHA TEST_API_DIGEST
     bash "$SCRIPT"

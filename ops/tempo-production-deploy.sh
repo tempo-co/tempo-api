@@ -221,13 +221,14 @@ cleanup_candidate_images() {
 }
 
 prune_old_image() {
-    local repository=$1 sha=$2 image=$3 protected_one=$4 protected_two=$5
+    local repository=$1 sha=$2 image=$3 protected_one=$4 protected_two=$5 bootstrap_prunable=$6
     [[ $image != "$protected_one" && $image != "$protected_two" ]] || return 0
     if [[ $image == "$repository"@sha256:* ]]; then
-        [[ $sha != bootstrap ]] || return 0
+        [[ $sha != bootstrap || $bootstrap_prunable == 1 ]] || return 0
         remove_image_ref "$repository:$sha"
         remove_image_ref "$image"
     elif [[ $image == "$repository":* || ($repository == "$WEB_IMAGE_REPOSITORY" && $image == tempo-api-production-web:latest) ]]; then
+        [[ $sha != bootstrap || $bootstrap_prunable == 1 ]] || return 0
         remove_image_ref "$image"
     fi
 }
@@ -241,6 +242,7 @@ deploy() {
     local stale_api_sha='' stale_web_sha='' stale_api_image='' stale_web_image=''
     local target_api_sha target_web_sha target_api_image target_web_image
     local api_changed=0 web_changed=0 web_recreate=0
+    local api_bootstrap_prunable=0 web_bootstrap_prunable=0
 
     if [[ -f $ROLLBACK_FILE ]]; then
         read_state "$ROLLBACK_FILE"
@@ -255,6 +257,8 @@ deploy() {
     fi
     [[ $target_api_sha == "$current_api_sha" ]] || api_changed=1
     [[ $target_web_sha == "$current_web_sha" ]] || web_changed=1
+    if [[ $current_api_sha != bootstrap ]]; then api_bootstrap_prunable=1; fi
+    if [[ $current_web_sha != bootstrap ]]; then web_bootstrap_prunable=1; fi
     # Nginx resolves the API service name when the web container starts.
     web_recreate=$((api_changed || web_changed))
     log "new main refs: API $target_api_sha, web $target_web_sha"
@@ -293,8 +297,8 @@ deploy() {
         fi
         return 1
     fi
-    prune_old_image "$API_IMAGE_REPOSITORY" "$stale_api_sha" "$stale_api_image" "$target_api_image" "$target_web_image"
-    prune_old_image "$WEB_IMAGE_REPOSITORY" "$stale_web_sha" "$stale_web_image" "$target_api_image" "$target_web_image"
+    prune_old_image "$API_IMAGE_REPOSITORY" "$stale_api_sha" "$stale_api_image" "$target_api_image" "$target_web_image" "$api_bootstrap_prunable"
+    prune_old_image "$WEB_IMAGE_REPOSITORY" "$stale_web_sha" "$stale_web_image" "$target_api_image" "$target_web_image" "$web_bootstrap_prunable"
     log "deployed API $target_api_sha and web $target_web_sha"
 }
 
