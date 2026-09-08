@@ -11,7 +11,7 @@ This directory contains the reviewed, host-side deployer. The production host do
 
 ## Database changes
 
-Production API startup runs pending TypeORM migrations. A migration included in a published API image is applied when that image starts. The updater itself never invokes migration, seed, or schema-bootstrap commands. If startup or health verification fails, rollback restores application images only; it cannot undo an applied database migration. Keep migrations backward-compatible with the previous application, and separately review and back up destructive or incompatible schema changes. A fresh production database needs a separate, reviewed schema initialization before the timer is enabled.
+Production API startup runs pending TypeORM migrations. A migration included in a published API image is applied when that image starts. The updater itself never invokes migration, seed, or schema-bootstrap commands. If startup or health verification fails, rollback restores application images only; it cannot undo an applied database migration. Keep migrations backward-compatible with the previous application, and separately review and back up destructive or incompatible schema changes.
 
 ## Safety and host boundary
 
@@ -20,19 +20,4 @@ Production API startup runs pending TypeORM migrations. A migration included in 
 - Monitor host disk usage with `df -h /` and `docker system df`; the updater has no global Docker quota or low-disk guard.
 - Keep the installed updater and Compose manifest as reviewed host-local snapshots; do not execute a moving public checkout.
 - Keep `/etc/tempo/production.env`, the banking key, deployment state, and any private-GHCR Docker config outside Git. The service uses `/var/lib/tempo-deploy/docker-config` because `ProtectHome=true` hides account home directories.
-- The service runs under the existing host account selected by the systemd template (`User=%i`); no dedicated `tempo` account is required. Docker-group membership is effectively privileged.
-
-## Host setup
-
-Install and activate the reviewed `ops/` snapshot only after both repository PRs are merged and the production host change is separately approved. Initialize deployment state from the running application containers before enabling the timer; initialization writes state only and does not restart containers or touch volumes.
-
-## Operations
-
-```text
-DEPLOY_USER="$(id -un)"
-sudo systemctl list-timers "tempo-production-deploy@${DEPLOY_USER}.timer"
-sudo journalctl -u "tempo-production-deploy@${DEPLOY_USER}.service"
-sudo systemctl start "tempo-production-deploy@${DEPLOY_USER}.service"
-```
-
-A no-op should report matching API/web SHAs without invoking Compose. After an approved rollout, verify the API health endpoint, `http://127.0.0.1:8080/tempo/`, and `http://127.0.0.1:8080/tempo/api/health`. Inspect Docker's reclaimable objects before cleanup; never use broad cleanup commands while production data or unrelated local work is present.
+- The service runs under the host account selected by the systemd template (`User=%i`). Docker-group membership is effectively privileged.
