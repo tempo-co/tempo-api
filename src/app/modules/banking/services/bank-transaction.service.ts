@@ -69,9 +69,11 @@ export class BankTransactionService {
 		const sortOrder = queryParams.sort?.order ?? BankTransactionSortOrder.DESC;
 		const sortColumn =
 			sortField === BankTransactionSortField.AMOUNT ? 'transaction.amount' : 'transaction.bookingDate';
+		query.orderBy(sortColumn, sortOrder, 'NULLS LAST');
+		if (sortField !== BankTransactionSortField.BOOKING_DATE) {
+			query.addOrderBy('transaction.bookingDate', 'DESC', 'NULLS LAST');
+		}
 		query
-			.orderBy(sortColumn, sortOrder, 'NULLS LAST')
-			.addOrderBy('transaction.bookingDate', 'DESC', 'NULLS LAST')
 			.addOrderBy('transaction.valueDate', 'DESC', 'NULLS LAST')
 			.addOrderBy('transaction.id', 'DESC')
 			.skip(pageIndex * pageSize)
