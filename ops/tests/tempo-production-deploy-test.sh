@@ -160,6 +160,26 @@ run_failed_pull_test() {
     assert_no_stateful_compose
 }
 
+run_failed_pull_cleanup_test() {
+    setup_fixture failed-pull-cleanup; set_target; write_active_state
+    export FAIL_PULL=ghcr.io/tempo-co/tempo-web:$TEST_WEB_SHA
+    if bash "$SCRIPT"; then fail 'failed web pull unexpectedly succeeded'; fi
+    assert_contains "$DOCKER_LOG" "image rm ghcr.io/tempo-co/tempo-api:$TEST_API_SHA"
+    assert_contains "$DOCKER_LOG" "image rm ghcr.io/tempo-co/tempo-api@sha256:$TEST_API_DIGEST"
+    assert_no_stateful_compose
+}
+
+run_failed_rollout_cleanup_test() {
+    setup_fixture failed-rollout-cleanup; set_target; write_active_state
+    export FAIL_COMPOSE_ONCE=web
+    if bash "$SCRIPT"; then fail 'failed rollout unexpectedly succeeded'; fi
+    assert_contains "$DOCKER_LOG" "image rm ghcr.io/tempo-co/tempo-api:$TEST_API_SHA"
+    assert_contains "$DOCKER_LOG" "image rm ghcr.io/tempo-co/tempo-api@sha256:$TEST_API_DIGEST"
+    assert_contains "$DOCKER_LOG" "image rm ghcr.io/tempo-co/tempo-web:$TEST_WEB_SHA"
+    assert_contains "$DOCKER_LOG" "image rm ghcr.io/tempo-co/tempo-web@sha256:$TEST_WEB_DIGEST"
+    assert_no_stateful_compose
+}
+
 run_success_test() {
     setup_fixture success; set_target; write_active_state; cp "$TEMPO_DEPLOY_STATE_FILE" "$TEMPO_DEPLOY_STATE_FILE.rollback"; bash "$SCRIPT"
     assert_contains "$DOCKER_LOG" '--env-file'; assert_contains "$CURL_LOG" '/tempo/'
@@ -215,5 +235,5 @@ run_rollback_test() {
     assert_no_stateful_compose
 }
 
-run_initialize_test; run_bootstrap_cleanup_test; run_noop_test; run_failed_pull_test; run_success_test; run_api_only_test; run_api_only_rollback_test; run_web_only_test; run_rollback_test
+run_initialize_test; run_bootstrap_cleanup_test; run_noop_test; run_failed_pull_test; run_failed_pull_cleanup_test; run_failed_rollout_cleanup_test; run_success_test; run_api_only_test; run_api_only_rollback_test; run_web_only_test; run_rollback_test
 printf 'PASS: tempo production deploy script tests\n'

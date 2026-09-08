@@ -203,6 +203,23 @@ remove_image_ref() {
     log "could not remove old image $reference: ${output:-unknown error}" >&2
 }
 
+cleanup_candidate_image() {
+    local repository=$1 sha=$2 image=$3 protected_one=$4 protected_two=$5
+    [[ $sha =~ ^[0-9a-f]{40}$ && $image == "$repository"@sha256:* ]] || return 0
+    [[ $image != "$protected_one" && $image != "$protected_two" ]] || return 0
+    remove_image_ref "$repository:$sha"
+    remove_image_ref "$image"
+}
+
+cleanup_candidate_images() {
+    local api_changed=$1 web_changed=$2 api_sha=$3 api_image=$4 web_sha=$5 web_image=$6
+    local current_api_image=$7 current_web_image=$8 stale_api_image=$9 stale_web_image=${10}
+    [[ $api_changed != 1 ]] || cleanup_candidate_image \
+        "$API_IMAGE_REPOSITORY" "$api_sha" "$api_image" "$current_api_image" "$stale_api_image"
+    [[ $web_changed != 1 ]] || cleanup_candidate_image \
+        "$WEB_IMAGE_REPOSITORY" "$web_sha" "$web_image" "$current_web_image" "$stale_web_image"
+}
+
 prune_old_image() {
     local repository=$1 sha=$2 image=$3 protected_one=$4 protected_two=$5
     [[ $image != "$protected_one" && $image != "$protected_two" ]] || return 0
@@ -242,16 +259,38 @@ deploy() {
     web_recreate=$((api_changed || web_changed))
     log "new main refs: API $target_api_sha, web $target_web_sha"
     target_api_image=$(resolve_image "$API_IMAGE_REPOSITORY" "$target_api_sha" "$current_api_sha" "$current_api_image") || die 'could not prepare API image'
-    target_web_image=$(resolve_image "$WEB_IMAGE_REPOSITORY" "$target_web_sha" "$current_web_sha" "$current_web_image") || die 'could not prepare web image'
-    snapshot_stateful || die 'could not snapshot production stateful containers'
-    cp "$STATE_FILE" "$ROLLBACK_FILE" && chmod 600 "$ROLLBACK_FILE" || die 'could not save rollback state'
+    if ! target_web_image=$(resolve_image "$WEB_IMAGE_REPOSITORY" "$target_web_sha" "$current_web_sha" "$current_web_image"); then
+        cleanup_candidate_images "$api_changed" 0 "$target_api_sha" "$target_api_image" "$target_web_sha" '' \
+            "$current_api_image" "$current_web_image" "$stale_api_image" "$stale_web_image"
+        die 'could not prepare web image'
+    fi
+    if ! snapshot_stateful; then
+        cleanup_candidate_images "$api_changed" "$web_changed" "$target_api_sha" "$target_api_image" "$target_web_sha" "$target_web_image" \
+            "$current_api_image" "$current_web_image" "$stale_api_image" "$stale_web_image"
+        die 'could not snapshot production stateful containers'
+    fi
+    if ! cp "$STATE_FILE" "$ROLLBACK_FILE" || ! chmod 600 "$ROLLBACK_FILE"; then
+        cleanup_candidate_images "$api_changed" "$web_changed" "$target_api_sha" "$target_api_image" "$target_web_sha" "$target_web_image" \
+            "$current_api_image" "$current_web_image" "$stale_api_image" "$stale_web_image"
+        die 'could not save rollback state'
+    fi
 
     if ! rollout "$target_api_image" "$target_web_image" "$api_changed" "$web_recreate"; then
-        rollback "$current_api_image" "$current_web_image" "$api_changed" "$web_recreate" || log 'ERROR: rollback did not complete' >&2
+        if rollback "$current_api_image" "$current_web_image" "$api_changed" "$web_recreate"; then
+            cleanup_candidate_images "$api_changed" "$web_changed" "$target_api_sha" "$target_api_image" "$target_web_sha" "$target_web_image" \
+                "$current_api_image" "$current_web_image" "$stale_api_image" "$stale_web_image"
+        else
+            log 'ERROR: rollback did not complete' >&2
+        fi
         return 1
     fi
     if ! write_state "$target_api_sha" "$target_web_sha" "$target_api_image" "$target_web_image"; then
-        rollback "$current_api_image" "$current_web_image" "$api_changed" "$web_recreate" || log 'ERROR: rollback did not complete after state write failure' >&2
+        if rollback "$current_api_image" "$current_web_image" "$api_changed" "$web_recreate"; then
+            cleanup_candidate_images "$api_changed" "$web_changed" "$target_api_sha" "$target_api_image" "$target_web_sha" "$target_web_image" \
+                "$current_api_image" "$current_web_image" "$stale_api_image" "$stale_web_image"
+        else
+            log 'ERROR: rollback did not complete after state write failure' >&2
+        fi
         return 1
     fi
     prune_old_image "$API_IMAGE_REPOSITORY" "$stale_api_sha" "$stale_api_image" "$target_api_image" "$target_web_image"

@@ -16,7 +16,8 @@ Production API startup runs pending TypeORM migrations. A migration included in 
 ## Safety and host boundary
 
 - Postgres, Redis, Mailpit, their volumes, and production data are never recreated by this deployer.
-- The updater never runs `down`, `rm`, `--volumes`, or `build`; it recreates only application containers and keeps one rollback pair. Successful deployments remove stale application image references, but do not prune unrelated images or build cache.
+- The updater never runs `down`, `rm`, `--volumes`, or `build`; it recreates only application containers and keeps one rollback pair. Successful deployments remove stale application image references, and verified rollbacks remove pulled candidates, but a failed rollback leaves candidates for safety. Unrelated images and build cache are not pruned.
+- Monitor host disk usage with `df -h /` and `docker system df`; the updater has no global Docker quota or low-disk guard.
 - Keep the installed updater and Compose manifest as reviewed host-local snapshots; do not execute a moving public checkout.
 - Keep `/etc/tempo/production.env`, the banking key, deployment state, and any private-GHCR Docker config outside Git. The service uses `/var/lib/tempo-deploy/docker-config` because `ProtectHome=true` hides account home directories.
 - The service runs under the existing host account selected by the systemd template (`User=%i`); no dedicated `tempo` account is required. Docker-group membership is effectively privileged.
