@@ -38,10 +38,10 @@ services:
       - '127.0.0.1:${EMAIL_UI_HOST_PORT:?EMAIL_UI_HOST_PORT must be set}:${EMAIL_UI_PORT}'
 
   api:
-    image: ghcr.io/tempo-co/tempo-api:latest
+    image: ${TEMPO_API_IMAGE:?TEMPO_API_IMAGE must be set}
     restart: unless-stopped
     env_file:
-      - .env.production.local
+      - ${TEMPO_PRODUCTION_ENV_FILE:-/etc/tempo/production.env}
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
@@ -72,20 +72,19 @@ services:
       start_period: 15s
 
   web:
-    build:
-      context: ../tempo-web
-      dockerfile: Dockerfile.production
-      args:
-        VITE_API_URL: /tempo/api
-        VITE_APP_URL: '${WEB_BASE_URL:?WEB_BASE_URL must be set}'
-        VITE_BASE_PATH: /tempo/
-        VITE_EMAIL_UI_URL: ${EMAIL_UI_URL}
+    image: ${TEMPO_WEB_IMAGE:?TEMPO_WEB_IMAGE must be set}
     restart: unless-stopped
     ports:
       - '127.0.0.1:8080:8080'
     depends_on:
       api:
         condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:8080/tempo/']
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
 
 volumes:
   tempo_production_postgres_data:

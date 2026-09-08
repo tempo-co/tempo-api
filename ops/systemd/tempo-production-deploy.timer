@@ -1,0 +1,13 @@
+[Unit]
+Description=Poll for new Tempo production images
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=5min
+Persistent=true
+RandomizedDelaySec=30s
+AccuracySec=1min
+Unit=tempo-production-deploy.service
+
+[Install]
+WantedBy=timers.target
