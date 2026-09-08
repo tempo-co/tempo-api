@@ -204,11 +204,15 @@ remove_image_ref() {
 }
 
 prune_old_image() {
-    local repository=$1 sha=$2 digest=$3 protected_one=$4 protected_two=$5
-    [[ $digest == "$repository"@sha256:* && $digest != "$protected_one" && $digest != "$protected_two" ]] || return 0
-    [[ $sha != bootstrap ]] || return 0
-    remove_image_ref "$repository:$sha"
-    remove_image_ref "$digest"
+    local repository=$1 sha=$2 image=$3 protected_one=$4 protected_two=$5
+    [[ $image != "$protected_one" && $image != "$protected_two" ]] || return 0
+    if [[ $image == "$repository"@sha256:* ]]; then
+        [[ $sha != bootstrap ]] || return 0
+        remove_image_ref "$repository:$sha"
+        remove_image_ref "$image"
+    elif [[ $image == "$repository":* || ($repository == "$WEB_IMAGE_REPOSITORY" && $image == tempo-api-production-web:latest) ]]; then
+        remove_image_ref "$image"
+    fi
 }
 
 deploy() {

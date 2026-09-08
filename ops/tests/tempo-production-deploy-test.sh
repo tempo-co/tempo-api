@@ -130,6 +130,22 @@ run_initialize_test() {
     [[ $log != *' pull '* && $log != *compose* ]] || fail 'initialization changed application containers'
 }
 
+run_bootstrap_cleanup_test() {
+    setup_fixture bootstrap-cleanup
+    TEST_CURRENT_API_IMAGE=ghcr.io/tempo-co/tempo-api:latest; TEST_CURRENT_WEB_IMAGE=$WEB_RUNNING_IMAGE
+    export TEST_CURRENT_API_IMAGE TEST_CURRENT_WEB_IMAGE
+    bash "$SCRIPT" --initialize
+
+    set_target; bash "$SCRIPT"
+    TEST_API_SHA=$SHA_A; TEST_WEB_SHA=$SHA_D; TEST_API_DIGEST=$(printf '5%.0s' {1..64})
+    export TEST_API_SHA TEST_WEB_SHA TEST_API_DIGEST
+    bash "$SCRIPT"
+
+    assert_contains "$DOCKER_LOG" 'image rm ghcr.io/tempo-co/tempo-api:latest'
+    assert_contains "$DOCKER_LOG" 'image rm tempo-api-production-web:latest'
+    assert_no_stateful_compose
+}
+
 run_noop_test() {
     setup_fixture noop; TEST_API_SHA=$SHA_A; TEST_WEB_SHA=$SHA_B; export TEST_API_SHA TEST_WEB_SHA
     write_active_state; bash "$SCRIPT"
@@ -199,5 +215,5 @@ run_rollback_test() {
     assert_no_stateful_compose
 }
 
-run_initialize_test; run_noop_test; run_failed_pull_test; run_success_test; run_api_only_test; run_api_only_rollback_test; run_web_only_test; run_rollback_test
+run_initialize_test; run_bootstrap_cleanup_test; run_noop_test; run_failed_pull_test; run_success_test; run_api_only_test; run_api_only_rollback_test; run_web_only_test; run_rollback_test
 printf 'PASS: tempo production deploy script tests\n'
