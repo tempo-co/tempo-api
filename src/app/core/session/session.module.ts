@@ -28,7 +28,10 @@ export class SessionModule implements NestModule {
 		consumer
 			.apply(
 				session({
-					store: new RedisStore({client: this.redisClient}),
+					store: new RedisStore({
+						client: this.redisClient,
+						prefix: `${this.config.get('SESSION_REDIS_KEY')}:`,
+					}),
 					name: 'session',
 					secret: this.config.get('SESSION_SECRET'),
 					resave: false,
