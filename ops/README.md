@@ -20,6 +20,7 @@ DEPLOY_GROUP="$(id -gn)"
 sudo usermod --append --groups docker "$DEPLOY_USER"
 sudo install -d -o root -g root -m 0755 /etc/tempo
 sudo install -d -o "$DEPLOY_USER" -g "$DEPLOY_GROUP" -m 0750 /var/lib/tempo-deploy
+sudo install -d -o "$DEPLOY_USER" -g "$DEPLOY_GROUP" -m 0700 /var/lib/tempo-deploy/docker-config
 sudo install -o root -g root -m 0644 docker-compose.production.yml /etc/tempo/production.compose.yml
 sudo install -o root -g root -m 0755 ops/tempo-production-deploy.sh /usr/local/libexec/tempo-production-deploy
 sudo install -o root -g root -m 0644 ops/systemd/tempo-production-deploy@.service /etc/systemd/system/tempo-production-deploy@.service
@@ -33,8 +34,8 @@ The service is a systemd template. `%i` is replaced with the instance name, so t
 If GHCR packages are private, authenticate Docker as the selected host account with a GitHub classic personal access token limited to `read:packages`:
 
 ```text
-DEPLOY_USER="$(id -un)"
-printf '%s\n' "$GHCR_TOKEN" | docker login ghcr.io --username "$DEPLOY_USER" --password-stdin
+GHCR_USERNAME="your-github-username"
+printf '%s\n' "$GHCR_TOKEN" | DOCKER_CONFIG=/var/lib/tempo-deploy/docker-config docker login ghcr.io --username "$GHCR_USERNAME" --password-stdin
 unset GHCR_TOKEN
 ```
 
@@ -65,4 +66,4 @@ sudo systemctl start "tempo-production-deploy@${DEPLOY_USER}.service"
 
 A no-op run should report that both current main SHAs are already deployed and should not invoke Compose. A rollout should show only `api` and `web` being recreated. Verify the API health endpoint, `http://127.0.0.1:8080/tempo/`, and `http://127.0.0.1:8080/tempo/api/health` after the first approved rollout.
 
-Keep the active image and one rollback image per service. Inspect Docker's reclaimable objects before any cleanup; do not use broad cleanup commands while production data or unrelated local work is present. This deployment mechanism never performs database migrations or schema bootstrap.
+Keep the active image and one rollback image per service. Inspect Docker's reclaimable objects before any cleanup; do not use broad cleanup commands while production data or unrelated local work is present. This deployment mechanism never invokes migration or schema-bootstrap commands directly; production API startup does run pending migrations. A fresh production database must be initialized through a separate, reviewed operation before enabling the timer.

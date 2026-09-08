@@ -49,6 +49,15 @@ valid_image() {
     fi
 }
 
+canonical_image() {
+    case $1 in
+        "$API_IMAGE_REPOSITORY"|"$WEB_IMAGE_REPOSITORY"|tempo-api-production-web)
+            printf '%s:latest\n' "$1" ;;
+        *)
+            printf '%s\n' "$1" ;;
+    esac
+}
+
 main_sha() {
     local repository=$1 line
     line=$(git ls-remote "$repository" refs/heads/main) || die "could not resolve main from $repository"
@@ -102,6 +111,8 @@ initialize_state() {
     local api_image web_image
     api_image=$(container_image "$API_CONTAINER") || die 'could not inspect the running API container'
     web_image=$(container_image "$WEB_CONTAINER") || die 'could not inspect the running web container'
+    api_image=$(canonical_image "$api_image")
+    web_image=$(canonical_image "$web_image")
     valid_image "$API_IMAGE_REPOSITORY" "$api_image" || die 'running API image is not an allowed reference'
     valid_image "$WEB_IMAGE_REPOSITORY" "$web_image" || die 'running web image is not an allowed reference'
     write_state bootstrap bootstrap "$api_image" "$web_image" || die 'could not write deployment state'
@@ -139,7 +150,7 @@ compose_up() {
     # Compose env_file supplies container variables; this file supplies interpolation.
     if docker compose --project-name "$COMPOSE_PROJECT" --file "$COMPOSE_FILE" \
         --env-file "$PRODUCTION_ENV_FILE" --env-file "$candidate_env" \
-        up -d --no-deps --wait "$service"; then
+        up -d --no-deps --force-recreate --wait "$service"; then
         status=0
     else
         status=$?
@@ -208,7 +219,7 @@ deploy() {
     local current_api_image=$API_IMAGE current_web_image=$WEB_IMAGE
     local stale_api_sha='' stale_web_sha='' stale_api_image='' stale_web_image=''
     local target_api_sha target_web_sha target_api_image target_web_image
-    local api_changed=0 web_changed=0
+    local api_changed=0 web_changed=0 web_recreate=0
 
     if [[ -f $ROLLBACK_FILE ]]; then
         read_state "$ROLLBACK_FILE"
@@ -223,18 +234,20 @@ deploy() {
     fi
     [[ $target_api_sha == "$current_api_sha" ]] || api_changed=1
     [[ $target_web_sha == "$current_web_sha" ]] || web_changed=1
+    # Nginx resolves the API service name when the web container starts.
+    web_recreate=$((api_changed || web_changed))
     log "new main refs: API $target_api_sha, web $target_web_sha"
     target_api_image=$(resolve_image "$API_IMAGE_REPOSITORY" "$target_api_sha" "$current_api_sha" "$current_api_image") || die 'could not prepare API image'
     target_web_image=$(resolve_image "$WEB_IMAGE_REPOSITORY" "$target_web_sha" "$current_web_sha" "$current_web_image") || die 'could not prepare web image'
     snapshot_stateful || die 'could not snapshot production stateful containers'
     cp "$STATE_FILE" "$ROLLBACK_FILE" && chmod 600 "$ROLLBACK_FILE" || die 'could not save rollback state'
 
-    if ! rollout "$target_api_image" "$target_web_image" "$api_changed" "$web_changed"; then
-        rollback "$current_api_image" "$current_web_image" "$api_changed" "$web_changed" || log 'ERROR: rollback did not complete' >&2
+    if ! rollout "$target_api_image" "$target_web_image" "$api_changed" "$web_recreate"; then
+        rollback "$current_api_image" "$current_web_image" "$api_changed" "$web_recreate" || log 'ERROR: rollback did not complete' >&2
         return 1
     fi
     if ! write_state "$target_api_sha" "$target_web_sha" "$target_api_image" "$target_web_image"; then
-        rollback "$current_api_image" "$current_web_image" "$api_changed" "$web_changed" || log 'ERROR: rollback did not complete after state write failure' >&2
+        rollback "$current_api_image" "$current_web_image" "$api_changed" "$web_recreate" || log 'ERROR: rollback did not complete after state write failure' >&2
         return 1
     fi
     prune_old_image "$API_IMAGE_REPOSITORY" "$stale_api_sha" "$stale_api_image" "$target_api_image" "$target_web_image"

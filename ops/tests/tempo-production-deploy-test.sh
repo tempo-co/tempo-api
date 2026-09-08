@@ -10,6 +10,7 @@ SHA_A=$(printf 'a%.0s' {1..40}); SHA_B=$(printf 'b%.0s' {1..40})
 SHA_C=$(printf 'c%.0s' {1..40}); SHA_D=$(printf 'd%.0s' {1..40})
 API_OLD_IMAGE=ghcr.io/tempo-co/tempo-api@sha256:1111111111111111111111111111111111111111111111111111111111111111
 WEB_OLD_IMAGE=tempo-api-production-web:latest
+WEB_RUNNING_IMAGE=tempo-api-production-web
 API_NEW_DIGEST=$(printf '3%.0s' {1..64})
 WEB_NEW_DIGEST=$(printf '4%.0s' {1..64})
 
@@ -119,10 +120,11 @@ set_target() {
 
 run_initialize_test() {
     setup_fixture initialize
-    TEST_CURRENT_API_IMAGE=ghcr.io/tempo-co/tempo-api:latest; TEST_CURRENT_WEB_IMAGE=$WEB_OLD_IMAGE
+    TEST_CURRENT_API_IMAGE=ghcr.io/tempo-co/tempo-api:latest; TEST_CURRENT_WEB_IMAGE=$WEB_RUNNING_IMAGE
     export TEST_CURRENT_API_IMAGE TEST_CURRENT_WEB_IMAGE
     bash "$SCRIPT" --initialize
     assert_contains "$TEMPO_DEPLOY_STATE_FILE" 'TEMPO_API_SHA=bootstrap'
+    assert_contains "$TEMPO_DEPLOY_STATE_FILE" 'TEMPO_WEB_IMAGE=tempo-api-production-web:latest'
     assert_contains "$TEMPO_DEPLOY_STATE_FILE.rollback" 'TEMPO_WEB_SHA=bootstrap'
     local log; log=$(<"$DOCKER_LOG")
     [[ $log != *' pull '* && $log != *compose* ]] || fail 'initialization changed application containers'
@@ -153,6 +155,30 @@ run_success_test() {
     assert_no_stateful_compose
 }
 
+run_api_only_test() {
+    setup_fixture api-only
+    TEST_API_SHA=$SHA_C; TEST_WEB_SHA=$SHA_B
+    TEST_API_DIGEST=$API_NEW_DIGEST; TEST_WEB_DIGEST=$WEB_NEW_DIGEST
+    TEST_CURRENT_API_IMAGE=$API_OLD_IMAGE; TEST_CURRENT_WEB_IMAGE=$WEB_OLD_IMAGE
+    export TEST_API_SHA TEST_WEB_SHA TEST_API_DIGEST TEST_WEB_DIGEST TEST_CURRENT_API_IMAGE TEST_CURRENT_WEB_IMAGE
+    write_active_state; bash "$SCRIPT"
+    local log; log=$(<"$DOCKER_LOG")
+    [[ $log == *' up -d --no-deps --force-recreate --wait api'* ]] || fail 'API-only update did not invoke API Compose service'
+    [[ $log == *' up -d --no-deps --force-recreate --wait web'* ]] || fail 'API-only update did not recreate web proxy'
+    assert_no_stateful_compose
+}
+
+run_api_only_rollback_test() {
+    setup_fixture api-only-rollback; set_target; TEST_WEB_SHA=$SHA_B
+    TEST_CURRENT_WEB_IMAGE=$WEB_OLD_IMAGE
+    export TEST_WEB_SHA TEST_CURRENT_WEB_IMAGE
+    write_active_state; export FAIL_COMPOSE_ONCE=web
+    if bash "$SCRIPT"; then fail 'API-only web failure unexpectedly succeeded'; fi
+    assert_exact "$RUNTIME_API_FILE" "$API_OLD_IMAGE"
+    assert_exact "$RUNTIME_WEB_FILE" "$WEB_OLD_IMAGE"
+    assert_no_stateful_compose
+}
+
 run_web_only_test() {
     setup_fixture web-only; TEST_API_SHA=$SHA_A; TEST_WEB_SHA=$SHA_D
     TEST_API_DIGEST=$API_NEW_DIGEST; TEST_WEB_DIGEST=$WEB_NEW_DIGEST
@@ -160,8 +186,8 @@ run_web_only_test() {
     export TEST_API_SHA TEST_WEB_SHA TEST_API_DIGEST TEST_WEB_DIGEST TEST_CURRENT_API_IMAGE TEST_CURRENT_WEB_IMAGE
     write_active_state; bash "$SCRIPT"
     local log; log=$(<"$DOCKER_LOG")
-    [[ $log == *' up -d --no-deps --wait web'* ]] || fail 'web-only update did not invoke web Compose service'
-    [[ $log != *' up -d --no-deps --wait api'* ]] || fail 'web-only update invoked API Compose service'
+    [[ $log == *' up -d --no-deps --force-recreate --wait web'* ]] || fail 'web-only update did not invoke web Compose service'
+    [[ $log != *' up -d --no-deps --force-recreate --wait api'* ]] || fail 'web-only update invoked API Compose service'
     assert_no_stateful_compose
 }
 
@@ -173,5 +199,5 @@ run_rollback_test() {
     assert_no_stateful_compose
 }
 
-run_initialize_test; run_noop_test; run_failed_pull_test; run_success_test; run_web_only_test; run_rollback_test
+run_initialize_test; run_noop_test; run_failed_pull_test; run_success_test; run_api_only_test; run_api_only_rollback_test; run_web_only_test; run_rollback_test
 printf 'PASS: tempo production deploy script tests\n'

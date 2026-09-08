@@ -11,6 +11,7 @@ User=%i
 SupplementaryGroups=docker
 Environment=TEMPO_DEPLOY_COMPOSE_FILE=/etc/tempo/production.compose.yml
 Environment=TEMPO_DEPLOY_STATE_FILE=/var/lib/tempo-deploy/images.env
+Environment=DOCKER_CONFIG=/var/lib/tempo-deploy/docker-config
 ExecStart=/usr/local/libexec/tempo-production-deploy
 NoNewPrivileges=true
 PrivateTmp=true
