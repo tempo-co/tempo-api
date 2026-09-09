@@ -155,6 +155,19 @@ describe('BankingSyncService synchronization lock', () => {
 		getAccountBalances: jest.Mock;
 		getAccountTransactions: jest.Mock;
 	};
+	let bankSyncRunRepository: {
+		create: jest.Mock;
+		save: jest.Mock;
+		findOne: jest.Mock;
+		findOneBy: jest.Mock;
+		update: jest.Mock;
+	};
+	let transactionRepository: {
+		insert: jest.Mock;
+		upsert: jest.Mock;
+		update: jest.Mock;
+		createQueryBuilder: jest.Mock;
+	};
 
 	beforeEach(() => {
 		jest.useFakeTimers();
@@ -219,17 +232,18 @@ describe('BankingSyncService synchronization lock', () => {
 			find: jest.fn().mockResolvedValue([bankAccount]),
 			update: jest.fn().mockResolvedValue(undefined),
 		};
-		const bankSyncRunRepository = {
+		bankSyncRunRepository = {
 			create: jest.fn().mockReturnValue(run),
 			save: jest.fn().mockResolvedValue(run),
 			findOne: jest.fn().mockResolvedValue(null),
 			findOneBy: jest.fn().mockResolvedValue(completedRun),
 			update: jest.fn().mockResolvedValue(undefined),
 		};
-		const transactionRepository = {
+		transactionRepository = {
 			insert: jest.fn().mockResolvedValue(undefined),
 			upsert: jest.fn().mockResolvedValue(undefined),
 			update: jest.fn().mockResolvedValue(undefined),
+			createQueryBuilder: jest.fn(),
 		};
 		const dataSource = {
 			transaction: jest.fn(async (callback: (manager: unknown) => Promise<void>) =>
@@ -256,6 +270,43 @@ describe('BankingSyncService synchronization lock', () => {
 			enableBankingClient as unknown as EnableBankingClient,
 			encryptionService as unknown as BankingEncryptionService,
 		);
+	});
+
+	it('reports only transactions that were added during synchronization', async () => {
+		const transactions = [
+			{providerTransactionId: 'existing-transaction', amount: '10.00', currency: 'EUR'},
+			{providerTransactionId: 'new-transaction', amount: '20.00', currency: 'EUR'},
+		];
+		const insertQueryBuilder = {
+			insert: jest.fn().mockReturnThis(),
+			into: jest.fn().mockReturnThis(),
+			values: jest.fn().mockReturnThis(),
+			orIgnore: jest.fn().mockReturnThis(),
+			returning: jest.fn().mockReturnThis(),
+			execute: jest.fn().mockResolvedValue({raw: [{id: 'new-transaction-id'}]}),
+		};
+		transactionRepository.createQueryBuilder.mockReturnValue(insertQueryBuilder);
+		enableBankingClient.getAccountTransactions.mockResolvedValue(transactions);
+		bankSyncRunRepository.findOneBy.mockResolvedValue({
+			id: 'run-id',
+			status: 'SUCCEEDED',
+			startedAt: new Date(),
+			finishedAt: new Date(),
+			requestedFrom: null,
+			requestedTo: '2026-09-09',
+			accountsFetched: 1,
+			balancesFetched: 0,
+			transactionsFetched: 2,
+			errorMessage: null,
+		} as unknown as BankSyncRun);
+
+		await expect(service.synchronize('account-id', 'connection-id')).resolves.toMatchObject({
+			status: 'SUCCEEDED',
+			transactionsFetched: 2,
+			transactionsAdded: 1,
+		});
+		expect(insertQueryBuilder.orIgnore).toHaveBeenCalledTimes(1);
+		expect(insertQueryBuilder.returning).toHaveBeenCalledWith('id');
 	});
 
 	afterEach(() => {
