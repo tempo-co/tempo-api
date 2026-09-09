@@ -159,8 +159,9 @@ export class BankingSyncService {
 			const status = this.getRunStatus(fetchResult);
 			const finishedAt = new Date();
 
+			let transactionsAdded: number;
 			try {
-				await this.persistSync(connection, run, fetchResult, status, finishedAt);
+				transactionsAdded = await this.persistSync(connection, run, fetchResult, status, finishedAt);
 			} catch {
 				await this.markPersistenceFailure(connection.id, run.id);
 				throw new InternalServerErrorException(BANKING_PERSISTENCE_SYNC_ERROR);
@@ -171,7 +172,7 @@ export class BankingSyncService {
 			if (!completedRun) throw new InternalServerErrorException(BANKING_PERSISTENCE_SYNC_ERROR);
 			lockLease.assertHealthy();
 
-			return this.toSyncRunResponse(completedRun, fetchResult.rateLimit);
+			return this.toSyncRunResponse(completedRun, transactionsAdded, fetchResult.rateLimit);
 		} finally {
 			lockLease.stop();
 			try {
@@ -349,8 +350,9 @@ export class BankingSyncService {
 		fetchResult: SyncFetchResult,
 		status: string,
 		finishedAt: Date,
-	): Promise<void> {
+	): Promise<number> {
 		let errorMessage: string | null = null;
+		let transactionsAdded = 0;
 		if (fetchResult.connectionExpired) {
 			errorMessage = BANKING_CONSENT_EXPIRED;
 		} else if (status === PARTIAL) {
@@ -386,12 +388,24 @@ export class BankingSyncService {
 				}
 
 				if (accountResult.transactionsSucceeded && accountResult.transactions.length > 0) {
-					await bankTransactionRepository.upsert(
-						accountResult.transactions.map((transaction) =>
-							this.toBankTransactionValues(accountResult.bankAccount, transaction),
-						),
-						['bankAccountId', 'dedupeKey'],
+					const transactionValues = accountResult.transactions.map((transaction) =>
+						this.toBankTransactionValues(accountResult.bankAccount, transaction),
 					);
+					const insertResult = await bankTransactionRepository
+						.createQueryBuilder()
+						.insert()
+						.into(BankTransaction)
+						.values(transactionValues)
+						.orIgnore()
+						.returning('id')
+						.execute();
+					transactionsAdded += Array.isArray(insertResult.raw)
+						? insertResult.raw.length
+						: insertResult.raw
+							? 1
+							: 0;
+
+					await bankTransactionRepository.upsert(transactionValues, ['bankAccountId', 'dedupeKey']);
 				}
 
 				if (accountResult.balancesSucceeded && accountResult.balances.length > 0) {
@@ -438,6 +452,8 @@ export class BankingSyncService {
 				},
 			);
 		});
+
+		return transactionsAdded;
 	}
 
 	private async markPersistenceFailure(connectionId: string, runId: string): Promise<void> {
@@ -534,7 +550,11 @@ export class BankingSyncService {
 		};
 	}
 
-	private toSyncRunResponse(run: BankSyncRun, rateLimit?: SyncRateLimit): BankSyncRunResponseDto {
+	private toSyncRunResponse(
+		run: BankSyncRun,
+		transactionsAdded: number,
+		rateLimit?: SyncRateLimit,
+	): BankSyncRunResponseDto {
 		return {
 			id: run.id,
 			status: run.status,
@@ -545,6 +565,7 @@ export class BankingSyncService {
 			accountsFetched: run.accountsFetched,
 			balancesFetched: run.balancesFetched,
 			transactionsFetched: run.transactionsFetched,
+			transactionsAdded,
 			errorMessage: run.errorMessage,
 			rateLimitSource: rateLimit?.source ?? null,
 			retryAfterSeconds: rateLimit?.retryAfterSeconds ?? null,
