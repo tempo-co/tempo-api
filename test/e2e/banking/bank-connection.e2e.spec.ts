@@ -544,6 +544,7 @@ describe('BankConnectionController', () => {
 				accountsFetched: 1,
 				balancesFetched: 2,
 				transactionsFetched: 5,
+				transactionsAdded: 5,
 			}),
 		);
 
@@ -622,6 +623,7 @@ describe('BankConnectionController', () => {
 				status: 'SUCCEEDED',
 				requestedFrom: expect.any(String),
 				requestedTo: expect.any(String),
+				transactionsAdded: 0,
 			}),
 		);
 		expect(await bankTransactionRepository.count({where: {bankAccountId: bankAccount.id}})).toBe(5);

@@ -65,6 +65,7 @@ export class BankSyncRunResponseDto {
 	accountsFetched: number;
 	balancesFetched: number;
 	transactionsFetched: number;
+	transactionsAdded: number;
 	errorMessage: string | null;
 	rateLimitSource: 'enable-banking' | null;
 	retryAfterSeconds: number | null;
