@@ -7,6 +7,7 @@ import {BankAccountBalance} from '@modules/banking/bank-account-balance.entity';
 import {BankAccount} from '@modules/banking/bank-account.entity';
 import {BankConnection} from '@modules/banking/bank-connection.entity';
 import {BankSyncRun} from '@modules/banking/bank-sync-run.entity';
+import {getBankTransactionDisplayDescription} from '@modules/banking/bank-transaction-display';
 import {BANK_TRANSACTION_TYPES} from '@modules/banking/bank-transaction-type';
 import {BankTransaction} from '@modules/banking/bank-transaction.entity';
 
@@ -226,5 +227,9 @@ function createSeedTransactions(bankAccount: BankAccount) {
 		providerTransactionId: transaction.id,
 		entryReference: transaction.id,
 		...transaction,
+		displayDescription: getBankTransactionDisplayDescription({
+			description: transaction.description,
+			counterpartyName: transaction.counterpartyName,
+		}),
 	}));
 }

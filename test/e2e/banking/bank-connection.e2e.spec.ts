@@ -571,6 +571,7 @@ describe('BankConnectionController', () => {
 			bankTransactionCode: 'PMNT',
 			bankTransactionSubCode: 'CARD',
 			bankTransactionDescription: 'Card payment',
+			displayDescription: 'Provider description 0',
 			balanceAfterAmount: '110.95000000',
 			balanceAfterCurrency: 'EUR',
 			instructedAmount: '12.00000000',
@@ -611,6 +612,8 @@ describe('BankConnectionController', () => {
 		const updatedTransactions = makeTransactions('sync');
 		updatedTransactions[0] = {
 			...updatedTransactions[0],
+			description: 'A'.repeat(81),
+			counterpartyName: 'Updated Counterparty',
 			bankTransactionDescription: 'Updated card payment',
 			balanceAfterAmount: '111.95',
 			referenceNumber: 'reference-sync-0-updated',
@@ -633,6 +636,9 @@ describe('BankConnectionController', () => {
 			providerTransactionId: 'provider-transaction-sync-0',
 		});
 		expect(updatedTransaction).toMatchObject({
+			description: 'A'.repeat(81),
+			displayDescription: 'Updated Counterparty',
+			counterpartyName: 'Updated Counterparty',
 			bankTransactionDescription: 'Updated card payment',
 			balanceAfterAmount: '111.95000000',
 			referenceNumber: 'reference-sync-0-updated',
@@ -678,6 +684,7 @@ describe('BankConnectionController', () => {
 						creditDebitIndicator: 'CRDT',
 						transactionStatus: 'BOOK',
 						description: `Default limit transaction ${index}`,
+						displayDescription: `Default limit transaction ${index}`,
 					}),
 				),
 			);

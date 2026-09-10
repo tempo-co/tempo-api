@@ -71,6 +71,9 @@ export class BankTransaction {
 	@Column({type: 'varchar', length: 500, nullable: true})
 	description: string | null;
 
+	@Column({type: 'varchar', length: 500})
+	displayDescription: string;
+
 	@Column({type: 'varchar', length: 255, nullable: true})
 	counterpartyName: string | null;
 
