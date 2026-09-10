@@ -32,6 +32,7 @@ import {BankAccountBalance} from '../bank-account-balance.entity';
 import {BankAccount} from '../bank-account.entity';
 import {BankConnection} from '../bank-connection.entity';
 import {BankSyncRun} from '../bank-sync-run.entity';
+import {getBankTransactionDisplayDescription} from '../bank-transaction-display';
 import {normalizeBankTransactionType} from '../bank-transaction-type';
 import {BankTransaction} from '../bank-transaction.entity';
 import {selectPreferredBalance, truncate} from '../banking.utils';
@@ -489,6 +490,7 @@ export class BankingSyncService {
 		const currency = transaction.currency.toUpperCase();
 		const description = truncate(transaction.description, 500);
 		const counterpartyName = truncate(transaction.counterpartyName, 255);
+		const displayDescription = getBankTransactionDisplayDescription({description, counterpartyName});
 		const remittanceInformation = truncate(transaction.remittanceInformation, 10_000);
 		const transactionDate = this.toDateOnly(transaction.transactionDate);
 		const bookingDate = this.toDateOnly(transaction.bookingDate);
@@ -535,6 +537,7 @@ export class BankingSyncService {
 			bankTransactionSubCode,
 			bankTransactionDescription,
 			description,
+			displayDescription,
 			counterpartyName,
 			merchantCategoryCode: truncate(transaction.merchantCategoryCode, 16),
 			remittanceInformation,

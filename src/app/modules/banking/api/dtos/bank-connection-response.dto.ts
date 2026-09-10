@@ -45,6 +45,7 @@ export class BankConnectionTransactionResponseDto {
 	creditDebitIndicator: string | null;
 	transactionStatus: string | null;
 	description: string | null;
+	displayDescription: string;
 	counterpartyName: string | null;
 	merchantCategoryCode: string | null;
 	remittanceInformation: string | null;
