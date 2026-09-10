@@ -280,6 +280,7 @@ export class BankingService {
 					authorizationStateHash,
 					account: {id: accountId},
 				},
+				lock: {mode: 'pessimistic_write'},
 			});
 			if (!pendingConnection) {
 				throw new BankingAuthorizationStateError('state_superseded');

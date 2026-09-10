@@ -111,7 +111,15 @@ describe('BankingService authorization state lifecycle', () => {
 
 		await expect(service.handleCallback({state: callbackState, code: 'provider-code'})).resolves.toBe('error');
 
-		expect(transactionConnectionRepository.findOne).toHaveBeenCalled();
+		expect(transactionConnectionRepository.findOne).toHaveBeenCalledWith({
+			where: {
+				id: state.connectionId,
+				status: 'PENDING_AUTHORIZATION',
+				authorizationStateHash: hashState(callbackState),
+				account: {id: state.accountId},
+			},
+			lock: {mode: 'pessimistic_write'},
+		});
 		expect(bankConnectionRepository.update).toHaveBeenCalledWith(
 			{id: state.connectionId, status: 'PENDING_AUTHORIZATION', authorizationStateHash: hashState(callbackState)},
 			{status: 'FAILED', authorizationStateHash: null},
