@@ -1,4 +1,4 @@
-import {Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Query, Res} from '@nestjs/common';
+import {Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Query, Res} from '@nestjs/common';
 import {ApiTags} from '@nestjs/swagger';
 import {Throttle, minutes} from '@nestjs/throttler';
 import {Response} from 'express';
@@ -36,6 +36,15 @@ export class BankConnectionController {
 	@Get()
 	async getConnections(@CurrentAccount() account: Account) {
 		return this.bankingService.findAll(account.id);
+	}
+
+	@Delete(':connectionId')
+	@HttpCode(204)
+	async removeConnection(
+		@Param('connectionId', new ParseUUIDPipe({version: '4'})) connectionId: string,
+		@CurrentAccount() account: Account,
+	) {
+		await this.bankingService.removeConnection(account.id, connectionId);
 	}
 
 	@Post(':connectionId/sync')

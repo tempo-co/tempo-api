@@ -1,10 +1,12 @@
 import {
 	BadGatewayException,
 	BadRequestException,
+	ConflictException,
 	HttpException,
 	Injectable,
 	InternalServerErrorException,
 	Logger,
+	NotFoundException,
 	ServiceUnavailableException,
 } from '@nestjs/common';
 import {InjectRepository} from '@nestjs/typeorm';
@@ -17,6 +19,8 @@ import {AccountService} from '@modules/account/account.service';
 
 import {
 	BANKING_AUTHORIZATION_START_FAILED,
+	BANKING_CONNECTION_NOT_FOUND,
+	BANKING_CONNECTION_NOT_REMOVABLE,
 	BANKING_SELECTED_BANK_UNAVAILABLE,
 	BANKING_SERVICE_UNAVAILABLE,
 	BANKING_SUPPORTED_BANKS_UNAVAILABLE,
@@ -42,6 +46,7 @@ const AUTHORIZED = 'AUTHORIZED';
 const CANCELLED = 'CANCELLED';
 const FAILED = 'FAILED';
 const EXPIRED = 'EXPIRED';
+const REMOVABLE_CONNECTION_STATUSES = [PENDING_AUTHORIZATION, CANCELLED, FAILED] as const;
 
 @Injectable()
 export class BankingService {
@@ -170,6 +175,31 @@ export class BankingService {
 				};
 			}),
 		);
+	}
+
+	async removeConnection(accountId: Account['id'], connectionId: BankConnection['id']): Promise<void> {
+		await this.dataSource.transaction(async (manager) => {
+			const connectionRepository = manager.getRepository(BankConnection);
+			const bankAccountRepository = manager.getRepository(BankAccount);
+			const connection = await connectionRepository.findOne({
+				where: {id: connectionId, account: {id: accountId}},
+				lock: {mode: 'pessimistic_write'},
+			});
+
+			if (!connection) throw new NotFoundException(BANKING_CONNECTION_NOT_FOUND);
+			if (
+				!REMOVABLE_CONNECTION_STATUSES.includes(
+					connection.status as (typeof REMOVABLE_CONNECTION_STATUSES)[number],
+				)
+			) {
+				throw new ConflictException(BANKING_CONNECTION_NOT_REMOVABLE);
+			}
+			if ((await bankAccountRepository.count({where: {bankConnection: {id: connection.id}}})) > 0) {
+				throw new ConflictException(BANKING_CONNECTION_NOT_REMOVABLE);
+			}
+
+			await connectionRepository.remove(connection);
+		});
 	}
 
 	async handleCallback(query: BankConnectionCallbackDto): Promise<BankConnectionCallbackResult> {

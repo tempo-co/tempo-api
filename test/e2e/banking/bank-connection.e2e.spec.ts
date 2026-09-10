@@ -140,6 +140,35 @@ describe('BankConnectionController', () => {
 		await unverifiedAgent.get('/bank-connections').expect(403);
 	});
 
+	it('removes an owned incomplete connection without allowing authorized data deletion', async () => {
+		const pendingConnection = await bankConnectionRepository.save(
+			bankConnectionRepository.create({
+				account,
+				provider: 'enable-banking',
+				aspspName: 'ABN AMRO',
+				aspspCountry: 'NL',
+				status: 'PENDING_AUTHORIZATION',
+			}),
+		);
+		let authorizedConnection: BankConnection | undefined;
+
+		try {
+			await verifiedAgent.delete(`/bank-connections/${pendingConnection.id}`).expect(204);
+			expect(await bankConnectionRepository.findOneBy({id: pendingConnection.id})).toBeNull();
+
+			({connection: authorizedConnection} = await createAuthorizedConnection('delete-authorized-session'));
+			await verifiedAgent.delete(`/bank-connections/${authorizedConnection.id}`).expect(409);
+			expect(await bankConnectionRepository.findOneBy({id: authorizedConnection.id})).toMatchObject({
+				status: 'AUTHORIZED',
+			});
+			expect(await bankAccountRepository.count({where: {bankConnection: {id: authorizedConnection.id}}})).toBe(1);
+			await otherVerifiedAgent.delete(`/bank-connections/${authorizedConnection.id}`).expect(404);
+		} finally {
+			await bankConnectionRepository.delete(pendingConnection.id);
+			if (authorizedConnection) await bankConnectionRepository.delete(authorizedConnection.id);
+		}
+	});
+
 	it('validates the requested ASPSP', async () => {
 		await verifiedAgent
 			.post('/bank-connections/authorize')
