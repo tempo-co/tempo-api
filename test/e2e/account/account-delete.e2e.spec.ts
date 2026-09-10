@@ -93,6 +93,7 @@ describe('AccountController - DELETE /accounts/me', () => {
 				bankAccountId: bankAccount.id,
 				dedupeKey: 'dedupe-1',
 				amount: '-10.00',
+				displayDescription: 'Transaction',
 				currency: 'EUR',
 			}),
 		);
