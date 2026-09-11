@@ -115,7 +115,16 @@ export class BankingAuthorizationStateService {
 
 	/** Removes every pending authorization state owned by the given account. Returns the number of removed states. */
 	async removeForAccount(accountId: string): Promise<number> {
-		const ownedKeys: string[] = [];
+		return this.removeMatchingStates((state) => state.accountId === accountId);
+	}
+
+	/** Removes the pending authorization state for the given connection. Returns the number of removed states. */
+	async removeForConnection(connectionId: string): Promise<number> {
+		return this.removeMatchingStates((state) => state.connectionId === connectionId);
+	}
+
+	private async removeMatchingStates(matches: (state: BankingAuthorizationState) => boolean): Promise<number> {
+		const matchingKeys: string[] = [];
 		const matchPattern = `${STATE_KEY_PREFIX}*`;
 		let cursor = '0';
 
@@ -130,17 +139,17 @@ export class BankingAuthorizationStateService {
 				const values = await this.runRedisOperation(() => this.redis.mget(keys));
 				for (let i = 0; i < keys.length; i++) {
 					const parsed = this.parse(values[i] ?? '');
-					if (parsed?.accountId === accountId) ownedKeys.push(keys[i]);
+					if (parsed && matches(parsed)) matchingKeys.push(keys[i]);
 				}
 			}
 
 			if (cursor === '0') break;
 		}
 
-		if (ownedKeys.length > 0) {
-			await this.runRedisOperation(() => this.redis.del(ownedKeys));
+		if (matchingKeys.length > 0) {
+			await this.runRedisOperation(() => this.redis.del(matchingKeys));
 		}
-		return ownedKeys.length;
+		return matchingKeys.length;
 	}
 
 	private async runRedisOperation<T>(operation: () => Promise<T>): Promise<T> {

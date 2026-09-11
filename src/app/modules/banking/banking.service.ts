@@ -200,6 +200,12 @@ export class BankingService {
 
 			await connectionRepository.remove(connection);
 		});
+
+		try {
+			await this.authorizationStateService.removeForConnection(connectionId);
+		} catch (error) {
+			this.logger.warn(`Banking authorization cleanup failed: ${this.getSafeErrorCode(error)}`);
+		}
 	}
 
 	async handleCallback(query: BankConnectionCallbackDto): Promise<BankConnectionCallbackResult> {
