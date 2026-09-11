@@ -270,12 +270,10 @@ export class BankingService {
 			deletionCommitted = true;
 		} finally {
 			if (deletionCommitted) {
-				for (const authorizationConnectionId of authorizationConnectionIdsToClean) {
-					try {
-						await this.authorizationStateService.removeForConnection(authorizationConnectionId);
-					} catch (error) {
-						this.logger.warn(`Banking authorization cleanup failed: ${this.getSafeErrorCode(error)}`);
-					}
+				try {
+					await this.authorizationStateService.removeForConnections(authorizationConnectionIdsToClean);
+				} catch (error) {
+					this.logger.warn(`Banking authorization cleanup failed: ${this.getSafeErrorCode(error)}`);
 				}
 			}
 

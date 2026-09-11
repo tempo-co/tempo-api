@@ -128,4 +128,68 @@ describe('BankingService authorization state lifecycle', () => {
 			{status: 'FAILED', authorizationStateHash: null},
 		);
 	});
+
+	it('cleans all affected authorization states once after connection deletion commits', async () => {
+		const connection = {
+			id: 'authorized-connection',
+			account: {id: 'account-id'},
+			provider: 'enable-banking',
+			aspspName: 'ABN AMRO',
+			aspspCountry: 'NL',
+			status: 'AUTHORIZED',
+		};
+		const pendingConnections = [{id: 'pending-connection-one'}, {id: 'pending-connection-two'}];
+		const events: string[] = [];
+		const transactionConnectionRepository = {
+			findOne: jest.fn().mockResolvedValue(connection),
+			find: jest.fn().mockResolvedValue(pendingConnections),
+			update: jest.fn().mockResolvedValue(undefined),
+			remove: jest.fn().mockResolvedValue(undefined),
+		};
+		const bankConnectionRepository = {
+			findOne: jest.fn().mockResolvedValue(connection),
+		};
+		const authorizationStateService = {
+			removeForConnection: jest.fn().mockResolvedValue(1),
+			removeForConnections: jest.fn().mockImplementation(async () => {
+				events.push('cleanup');
+				return 3;
+			}),
+		};
+		const dataSource = {
+			transaction: jest.fn(async (callback: (manager: unknown) => Promise<void>) => {
+				events.push('transaction-start');
+				const result = await callback({
+					getRepository: jest.fn((entity: unknown) =>
+						entity === BankConnection ? transactionConnectionRepository : {count: jest.fn()},
+					),
+				});
+				events.push('transaction-commit');
+				return result;
+			}),
+		};
+		const service = new BankingService(
+			bankConnectionRepository as never,
+			{} as never,
+			{} as never,
+			{} as never,
+			{} as never,
+			dataSource as never,
+			{} as never,
+			authorizationStateService as never,
+			{} as never,
+			{acquireConnectionMutationLock: jest.fn().mockResolvedValue(jest.fn())} as never,
+		);
+
+		await service.removeConnection('account-id', connection.id, 'DELETE');
+
+		expect(events).toEqual(['transaction-start', 'transaction-commit', 'cleanup']);
+		expect(authorizationStateService.removeForConnections).toHaveBeenCalledTimes(1);
+		expect(authorizationStateService.removeForConnections).toHaveBeenCalledWith([
+			'authorized-connection',
+			'pending-connection-one',
+			'pending-connection-two',
+		]);
+		expect(authorizationStateService.removeForConnection).not.toHaveBeenCalled();
+	});
 });

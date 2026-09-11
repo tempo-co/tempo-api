@@ -186,6 +186,46 @@ describe('BankConnectionController', () => {
 		await bankConnectionRepository.delete(pendingConnection.id);
 	});
 
+	it('cleans all pending reauthorizations when removing an existing connection', async () => {
+		const {connection} = await createAuthorizedConnection('delete-multiple-reauthorizations');
+		const states: string[] = [];
+		let pendingConnections: BankConnection[] = [];
+
+		try {
+			for (const suffix of ['one', 'two']) {
+				await verifiedAgent
+					.post('/bank-connections/authorize')
+					.send({aspspName: 'ABN AMRO', aspspCountry: 'NL'})
+					.expect(201);
+				const state = startAuthorization.mock.calls.at(-1)?.[0].state;
+				if (!state) throw new Error(`Authorization state ${suffix} was not created.`);
+				states.push(state);
+			}
+
+			pendingConnections = await bankConnectionRepository.find({
+				where: {account: {id: account.id}, status: 'PENDING_AUTHORIZATION'},
+				order: {createdAt: 'ASC'},
+			});
+			expect(pendingConnections).toHaveLength(2);
+
+			await verifiedAgent.delete(`/bank-connections/${connection.id}`).send({confirmation: 'DELETE'}).expect(204);
+
+			expect(await bankConnectionRepository.findOneBy({id: connection.id})).toBeNull();
+			for (const pendingConnection of pendingConnections) {
+				expect(await bankConnectionRepository.findOneBy({id: pendingConnection.id})).toMatchObject({
+					status: 'CANCELLED',
+					authorizationStateHash: null,
+				});
+			}
+			for (const state of states) expect(await redis.exists(`banking:authorization:${state}`)).toBe(0);
+		} finally {
+			for (const pendingConnection of pendingConnections)
+				await bankConnectionRepository.delete(pendingConnection.id);
+			await bankConnectionRepository.delete(connection.id);
+			for (const state of states) await redis.del(`banking:authorization:${state}`);
+		}
+	});
+
 	it('removes owned incomplete connections without allowing unauthorized data deletion', async () => {
 		const incompleteConnections: BankConnection[] = [];
 		let pendingWithAccount: BankConnection | undefined;
