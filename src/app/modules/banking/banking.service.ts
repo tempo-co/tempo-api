@@ -38,8 +38,8 @@ import {EnableBankingAccount, EnableBankingSession} from './enable-banking.types
 import {BankingAuthorizationStateError} from './errors/banking-authorization-state.error';
 import {BankingEncryptionError} from './errors/banking-encryption.error';
 import {BankingAuthorizationStateService} from './services/banking-authorization-state.service';
+import {BankingConnectionLockService} from './services/banking-connection-lock.service';
 import {BankingEncryptionService} from './services/banking-encryption.service';
-import {BankingSyncService} from './services/banking-sync.service';
 import {EnableBankingClient, EnableBankingClientError} from './services/enable-banking.client';
 
 const PROVIDER = 'enable-banking';
@@ -73,7 +73,7 @@ export class BankingService {
 		private readonly enableBankingClient: EnableBankingClient,
 		private readonly authorizationStateService: BankingAuthorizationStateService,
 		private readonly encryptionService: BankingEncryptionService,
-		private readonly bankingSyncService: BankingSyncService,
+		private readonly connectionLockService: BankingConnectionLockService,
 	) {}
 
 	async startAuthorization(
@@ -201,7 +201,7 @@ export class BankingService {
 		});
 		if (!ownedConnection) throw new NotFoundException(BANKING_CONNECTION_NOT_FOUND);
 
-		const releaseConnectionLock = await this.bankingSyncService.acquireConnectionMutationLock(connectionId);
+		const connectionLock = await this.connectionLockService.acquire(connectionId);
 		let deletionCommitted = false;
 		let authorizationConnectionIdsToClean = [connectionId];
 
@@ -279,8 +279,9 @@ export class BankingService {
 				}
 			}
 
+			connectionLock.stop();
 			try {
-				await releaseConnectionLock();
+				await connectionLock.release();
 			} catch (error) {
 				this.logger.warn(`Banking synchronization lock release failed: ${this.getSafeErrorCode(error)}`);
 			}
