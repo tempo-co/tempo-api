@@ -7,6 +7,7 @@ import {BankAccount} from '../bank-account.entity';
 import {BankConnection} from '../bank-connection.entity';
 import {BankSyncRun} from '../bank-sync-run.entity';
 import {BankTransaction} from '../bank-transaction.entity';
+import {BankingConnectionLockService} from './banking-connection-lock.service';
 import {BankingEncryptionService} from './banking-encryption.service';
 import {BankingSyncService} from './banking-sync.service';
 import {EnableBankingClient} from './enable-banking.client';
@@ -104,10 +105,10 @@ describe('BankingSyncService', () => {
 			bankConnectionRepositoryMock as unknown as Repository<BankConnection>,
 			bankAccountRepositoryMock as unknown as Repository<BankAccount>,
 			bankSyncRunRepositoryMock as unknown as Repository<BankSyncRun>,
-			redisMock as unknown as Redis,
 			dataSourceMock as unknown as DataSource,
 			enableBankingClientMock as unknown as EnableBankingClient,
 			encryptionServiceMock as unknown as BankingEncryptionService,
+			new BankingConnectionLockService(redisMock as unknown as Redis),
 		);
 
 		bankConnectionRepositoryMock.findOne.mockImplementation(async (options: {where: {account: {id: string}}}) => {
@@ -269,10 +270,10 @@ describe('BankingSyncService synchronization lock', () => {
 			bankConnectionRepository as unknown as Repository<BankConnection>,
 			bankAccountRepository as unknown as Repository<BankAccount>,
 			bankSyncRunRepository as unknown as Repository<BankSyncRun>,
-			redis as unknown as Redis,
 			dataSource as unknown as DataSource,
 			enableBankingClient as unknown as EnableBankingClient,
 			encryptionService as unknown as BankingEncryptionService,
+			new BankingConnectionLockService(redis as unknown as Redis),
 		);
 	});
 
