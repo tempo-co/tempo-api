@@ -5,6 +5,9 @@ export const BANKING_AUTHORIZATION_START_FAILED = 'Unable to start bank authoriz
 export const BANKING_SELECTED_BANK_UNAVAILABLE = 'The selected bank is not available.';
 
 export const BANKING_CONNECTION_NOT_FOUND = 'Bank connection not found.';
+export const BANKING_CONNECTION_NOT_REMOVABLE = 'This bank connection cannot be removed in its current state.';
+export const BANKING_CONNECTION_REMOVAL_CONFIRMATION_REQUIRED =
+	'Type DELETE to confirm removal of this connected bank.';
 export const BANKING_CONNECTION_NOT_AUTHORIZED = 'Bank connection is not authorized.';
 export const BANKING_CONNECTION_SESSION_UNAVAILABLE = 'Bank connection session is unavailable. Please reconnect.';
 export const BANKING_CONSENT_EXPIRED = 'Bank consent has expired. Please reconnect.';
