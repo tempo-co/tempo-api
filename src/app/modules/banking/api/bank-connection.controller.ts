@@ -1,4 +1,4 @@
-import {Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Query, Res} from '@nestjs/common';
+import {Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Query, Res} from '@nestjs/common';
 import {ApiTags} from '@nestjs/swagger';
 import {Throttle, minutes} from '@nestjs/throttler';
 import {Response} from 'express';
@@ -14,6 +14,7 @@ import {BankTransactionService} from '../services/bank-transaction.service';
 import {BankingSyncService} from '../services/banking-sync.service';
 import {BankConnectionAuthorizeDto} from './dtos/bank-connection-authorize.dto';
 import {BankConnectionCallbackDto} from './dtos/bank-connection-callback.dto';
+import {BankConnectionRemoveDto} from './dtos/bank-connection-remove.dto';
 import {BankConnectionTransactionsQueryDto} from './dtos/bank-connection-transactions-query.dto';
 
 @ApiTags('Bank connections')
@@ -36,6 +37,16 @@ export class BankConnectionController {
 	@Get()
 	async getConnections(@CurrentAccount() account: Account) {
 		return this.bankingService.findAll(account.id);
+	}
+
+	@Delete(':connectionId')
+	@HttpCode(204)
+	async removeConnection(
+		@Param('connectionId', new ParseUUIDPipe({version: '4'})) connectionId: string,
+		@Body() dto: BankConnectionRemoveDto,
+		@CurrentAccount() account: Account,
+	) {
+		await this.bankingService.removeConnection(account.id, connectionId, dto.confirmation);
 	}
 
 	@Post(':connectionId/sync')
