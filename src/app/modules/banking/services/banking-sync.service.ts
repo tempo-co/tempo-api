@@ -110,13 +110,20 @@ export class BankingSyncService {
 		private readonly encryptionService: BankingEncryptionService,
 	) {}
 
+	async acquireConnectionMutationLock(connectionId: BankConnection['id']): Promise<() => Promise<void>> {
+		const lockToken = randomUUID();
+		await this.acquireLock(connectionId, lockToken);
+		return async () => this.releaseLock(connectionId, lockToken);
+	}
+
 	async synchronize(accountId: Account['id'], connectionId: BankConnection['id']): Promise<BankSyncRunResponseDto> {
-		const connection = await this.findOwnedConnection(accountId, connectionId);
+		await this.findOwnedConnection(accountId, connectionId);
 		const lockToken = randomUUID();
 		await this.acquireLock(connectionId, lockToken);
 		const lockLease = this.startLockRenewal(connectionId, lockToken);
 
 		try {
+			const connection = await this.findOwnedConnection(accountId, connectionId);
 			const providerSessionId = await this.validateConnection(connection);
 
 			const bankAccounts = await this.bankAccountRepository.find({

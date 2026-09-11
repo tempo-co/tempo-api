@@ -213,4 +213,29 @@ describe('BankingAuthorizationStateService', () => {
 			await expect(service.removeForAccount('account-id')).rejects.toMatchObject({code: 'storage_unavailable'});
 		});
 	});
+
+	describe('removeForConnection', () => {
+		it('deletes only the pending authorization state for the given connection', async () => {
+			redis.scan.mockResolvedValueOnce(['0', ['banking:authorization:***', 'banking:authorization:***']]);
+			redis.mget.mockResolvedValueOnce([
+				JSON.stringify({
+					accountId: 'account-id',
+					connectionId: 'connection-id',
+					aspspName: 'A',
+					aspspCountry: 'NL',
+					expiresAt: Date.now() + 60_000,
+				}),
+				JSON.stringify({
+					accountId: 'account-id',
+					connectionId: 'other-connection',
+					aspspName: 'A',
+					aspspCountry: 'NL',
+					expiresAt: Date.now() + 60_000,
+				}),
+			]);
+
+			await expect(service.removeForConnection('connection-id')).resolves.toBe(1);
+			expect(redis.del).toHaveBeenCalledWith(['banking:authorization:***']);
+		});
+	});
 });
