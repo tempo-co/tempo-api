@@ -91,13 +91,7 @@ export class BankingService {
 
 		const account = await this.accountService.findById(accountId);
 		const reusableConnection = await this.bankConnectionRepository.findOne({
-			where: {
-				account: {id: account.id},
-				provider: PROVIDER,
-				aspspName: aspsp.name,
-				aspspCountry: aspsp.country,
-				status: In(DESTRUCTIVE_CONNECTION_STATUSES),
-			},
+			where: this.getReusableConnectionWhere(account.id, aspsp.name, aspsp.country),
 			order: {createdAt: 'DESC'},
 		});
 		const connection = await this.bankConnectionRepository.save(
@@ -401,23 +395,12 @@ export class BankingService {
 			// Re-authorizing an ASPSP refreshes the existing connection instead of
 			// creating a parallel one with duplicated bank accounts and transactions.
 			const reusableConnection = await connectionRepository.findOne({
-				where:
-					replacesConnectionId === null
-						? {
-								account: {id: accountId},
-								provider: PROVIDER,
-								aspspName: pendingConnection.aspspName,
-								aspspCountry: pendingConnection.aspspCountry,
-								status: In([AUTHORIZED, EXPIRED]),
-							}
-						: {
-								id: replacesConnectionId,
-								account: {id: accountId},
-								provider: PROVIDER,
-								aspspName: pendingConnection.aspspName,
-								aspspCountry: pendingConnection.aspspCountry,
-								status: In([AUTHORIZED, EXPIRED]),
-							},
+				where: this.getReusableConnectionWhere(
+					accountId,
+					pendingConnection.aspspName,
+					pendingConnection.aspspCountry,
+					replacesConnectionId === null ? undefined : replacesConnectionId,
+				),
 				lock: {mode: 'pessimistic_write'},
 				...(replacesConnectionId === null ? {order: {createdAt: 'DESC'}} : {}),
 			});
@@ -501,6 +484,22 @@ export class BankingService {
 
 	private hashAuthorizationState(state: string): string {
 		return createHash('sha256').update(state).digest('hex');
+	}
+
+	private getReusableConnectionWhere(
+		accountId: Account['id'],
+		aspspName: string,
+		aspspCountry: string,
+		connectionId?: BankConnection['id'],
+	) {
+		return {
+			...(connectionId !== undefined ? {id: connectionId} : {}),
+			account: {id: accountId},
+			provider: PROVIDER,
+			aspspName,
+			aspspCountry,
+			status: In(DESTRUCTIVE_CONNECTION_STATUSES),
+		};
 	}
 
 	private toBankAccountValues(account: EnableBankingAccount) {
