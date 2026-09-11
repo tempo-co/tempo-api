@@ -10,6 +10,83 @@ function hashState(state: string): string {
 }
 
 describe('BankingService authorization state lifecycle', () => {
+	it('does not acquire the mutation lock before ownership is confirmed', async () => {
+		const bankConnectionRepository = {
+			findOne: jest.fn().mockResolvedValue(null),
+		};
+		const connectionLockService = {
+			acquire: jest.fn(),
+		};
+		const service = new BankingService(
+			bankConnectionRepository as unknown as Repository<BankConnection>,
+			{} as never,
+			{} as never,
+			{} as never,
+			{} as never,
+			{} as never,
+			{} as never,
+			{} as never,
+			{} as never,
+			connectionLockService as never,
+		);
+
+		await expect(service.removeConnection('owner-account-id', 'connection-id')).rejects.toMatchObject({
+			status: 404,
+		});
+		expect(connectionLockService.acquire).not.toHaveBeenCalled();
+	});
+
+	it('stops and releases the mutation lock when deletion fails', async () => {
+		const connection = {id: 'connection-id', status: 'AUTHORIZED'} as BankConnection;
+		const bankConnectionRepository = {
+			findOne: jest.fn().mockResolvedValue(connection),
+		};
+		const transactionConnectionRepository = {
+			findOne: jest.fn().mockResolvedValue(connection),
+			find: jest.fn().mockResolvedValue([]),
+			remove: jest.fn().mockRejectedValue(new Error('deletion failed')),
+		};
+		const transactionBankAccountRepository = {
+			count: jest.fn().mockResolvedValue(0),
+		};
+		const transactionManager = {
+			getRepository: jest.fn((entity: unknown) =>
+				entity === BankConnection ? transactionConnectionRepository : transactionBankAccountRepository,
+			),
+		};
+		const dataSource = {
+			transaction: jest.fn((callback: (manager: typeof transactionManager) => Promise<void>) =>
+				callback(transactionManager),
+			),
+		};
+		const connectionLock = {
+			stop: jest.fn(),
+			release: jest.fn().mockResolvedValue(undefined),
+		};
+		const connectionLockService = {
+			acquire: jest.fn().mockResolvedValue(connectionLock),
+		};
+		const service = new BankingService(
+			bankConnectionRepository as unknown as Repository<BankConnection>,
+			{} as never,
+			{} as never,
+			{} as never,
+			{} as never,
+			dataSource as never,
+			{} as never,
+			{} as never,
+			{} as never,
+			connectionLockService as never,
+		);
+
+		await expect(service.removeConnection('owner-account-id', connection.id, 'DELETE')).rejects.toThrow(
+			'deletion failed',
+		);
+		expect(connectionLockService.acquire).toHaveBeenCalledWith(connection.id);
+		expect(connectionLock.stop).toHaveBeenCalledTimes(1);
+		expect(connectionLock.release).toHaveBeenCalledTimes(1);
+	});
+
 	it('does not expire a newer authorization state for the same connection', async () => {
 		const expiredState = 'expired-state';
 		const newerState = 'newer-state';
@@ -43,7 +120,7 @@ describe('BankingService authorization state lifecycle', () => {
 			{} as never,
 			authorizationStateService as unknown as BankingAuthorizationStateService,
 			{} as never,
-			{acquireConnectionMutationLock: jest.fn().mockResolvedValue(jest.fn())} as never,
+			{acquire: jest.fn()} as never,
 		);
 
 		await expect(service.handleCallback({state: expiredState, code: 'late-provider-code'})).resolves.toBe('error');
@@ -109,7 +186,7 @@ describe('BankingService authorization state lifecycle', () => {
 			} as never,
 			authorizationStateService as unknown as BankingAuthorizationStateService,
 			{encrypt: jest.fn().mockReturnValue('encrypted-session')} as never,
-			{acquireConnectionMutationLock: jest.fn().mockResolvedValue(jest.fn())} as never,
+			{acquire: jest.fn()} as never,
 		);
 
 		await expect(service.handleCallback({state: callbackState, code: 'provider-code'})).resolves.toBe('error');

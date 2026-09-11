@@ -14,6 +14,7 @@ import {BankTransaction} from './bank-transaction.entity';
 import {BankingService} from './banking.service';
 import {BankTransactionService} from './services/bank-transaction.service';
 import {BankingAuthorizationStateModule} from './services/banking-authorization-state.module';
+import {BankingConnectionLockService} from './services/banking-connection-lock.service';
 import {BankingEncryptionService} from './services/banking-encryption.service';
 import {BankingSyncService} from './services/banking-sync.service';
 import {EnableBankingClient} from './services/enable-banking.client';
@@ -27,6 +28,7 @@ import {EnableBankingClient} from './services/enable-banking.client';
 	],
 	providers: [
 		BankingService,
+		BankingConnectionLockService,
 		BankingSyncService,
 		BankTransactionService,
 		EnableBankingClient,
