@@ -234,6 +234,9 @@ export class BankingService {
 				});
 
 				if (!connection) throw new NotFoundException(BANKING_CONNECTION_NOT_FOUND);
+				const isDestructive = DESTRUCTIVE_CONNECTION_STATUSES.includes(
+					connection.status as (typeof DESTRUCTIVE_CONNECTION_STATUSES)[number],
+				);
 				if (
 					!REMOVABLE_CONNECTION_STATUSES.includes(
 						connection.status as (typeof REMOVABLE_CONNECTION_STATUSES)[number],
@@ -241,35 +244,22 @@ export class BankingService {
 				) {
 					throw new ConflictException(BANKING_CONNECTION_NOT_REMOVABLE);
 				}
-				if (
-					DESTRUCTIVE_CONNECTION_STATUSES.includes(
-						connection.status as (typeof DESTRUCTIVE_CONNECTION_STATUSES)[number],
-					) &&
-					confirmation !== 'DELETE'
-				) {
+				if (isDestructive && confirmation !== 'DELETE') {
 					throw new BadRequestException(BANKING_CONNECTION_REMOVAL_CONFIRMATION_REQUIRED);
 				}
 				if (
-					!DESTRUCTIVE_CONNECTION_STATUSES.includes(
-						connection.status as (typeof DESTRUCTIVE_CONNECTION_STATUSES)[number],
-					) &&
+					!isDestructive &&
 					(await bankAccountRepository.count({where: {bankConnection: {id: connection.id}}})) > 0
 				) {
 					throw new ConflictException(BANKING_CONNECTION_NOT_REMOVABLE);
 				}
 
-				if (
-					DESTRUCTIVE_CONNECTION_STATUSES.includes(
-						connection.status as (typeof DESTRUCTIVE_CONNECTION_STATUSES)[number],
-					)
-				) {
-					authorizationConnectionIdsToClean = [
-						connectionId,
-						...pendingConnections.map((pendingConnection) => pendingConnection.id),
-					];
-					for (const pendingConnection of pendingConnections) {
+				if (isDestructive) {
+					const pendingConnectionIds = pendingConnections.map((pendingConnection) => pendingConnection.id);
+					authorizationConnectionIdsToClean = [connectionId, ...pendingConnectionIds];
+					if (pendingConnectionIds.length > 0) {
 						await connectionRepository.update(
-							{id: pendingConnection.id, status: PENDING_AUTHORIZATION},
+							{id: In(pendingConnectionIds), status: PENDING_AUTHORIZATION},
 							{status: CANCELLED, authorizationStateHash: null},
 						);
 					}
