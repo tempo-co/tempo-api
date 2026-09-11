@@ -155,6 +155,10 @@ describe('BankingSyncService synchronization lock', () => {
 		getAccountBalances: jest.Mock;
 		getAccountTransactions: jest.Mock;
 	};
+	let bankConnectionRepository: {
+		findOne: jest.Mock;
+		update: jest.Mock;
+	};
 	let bankSyncRunRepository: {
 		create: jest.Mock;
 		save: jest.Mock;
@@ -224,7 +228,7 @@ describe('BankingSyncService synchronization lock', () => {
 			errorMessage: null,
 		} as unknown as BankSyncRun;
 
-		const bankConnectionRepository = {
+		bankConnectionRepository = {
 			findOne: jest.fn().mockResolvedValue(connection),
 			update: jest.fn().mockResolvedValue(undefined),
 		};
@@ -270,6 +274,22 @@ describe('BankingSyncService synchronization lock', () => {
 			enableBankingClient as unknown as EnableBankingClient,
 			encryptionService as unknown as BankingEncryptionService,
 		);
+	});
+
+	it('rechecks the connection after acquiring the lock', async () => {
+		bankConnectionRepository.findOne
+			.mockReset()
+			.mockResolvedValueOnce({
+				id: 'connection-id',
+				status: 'AUTHORIZED',
+				providerSessionId: 'encrypted-session',
+				consentValidUntil: new Date(Date.now() + 60 * 60 * 1000),
+			} as BankConnection)
+			.mockResolvedValueOnce(null);
+		enableBankingClient.getAccountTransactions.mockResolvedValueOnce([]);
+
+		await expect(service.synchronize('account-id', 'connection-id')).rejects.toMatchObject({status: 404});
+		expect(enableBankingClient.getSessionAccounts).not.toHaveBeenCalled();
 	});
 
 	it('reports only transactions that were added during synchronization', async () => {

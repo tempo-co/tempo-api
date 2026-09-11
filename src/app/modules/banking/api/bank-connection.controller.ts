@@ -14,6 +14,7 @@ import {BankTransactionService} from '../services/bank-transaction.service';
 import {BankingSyncService} from '../services/banking-sync.service';
 import {BankConnectionAuthorizeDto} from './dtos/bank-connection-authorize.dto';
 import {BankConnectionCallbackDto} from './dtos/bank-connection-callback.dto';
+import {BankConnectionRemoveDto} from './dtos/bank-connection-remove.dto';
 import {BankConnectionTransactionsQueryDto} from './dtos/bank-connection-transactions-query.dto';
 
 @ApiTags('Bank connections')
@@ -42,9 +43,10 @@ export class BankConnectionController {
 	@HttpCode(204)
 	async removeConnection(
 		@Param('connectionId', new ParseUUIDPipe({version: '4'})) connectionId: string,
+		@Body() dto: BankConnectionRemoveDto,
 		@CurrentAccount() account: Account,
 	) {
-		await this.bankingService.removeConnection(account.id, connectionId);
+		await this.bankingService.removeConnection(account.id, connectionId, dto.confirmation);
 	}
 
 	@Post(':connectionId/sync')

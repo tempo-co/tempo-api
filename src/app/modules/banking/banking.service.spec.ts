@@ -43,6 +43,7 @@ describe('BankingService authorization state lifecycle', () => {
 			{} as never,
 			authorizationStateService as unknown as BankingAuthorizationStateService,
 			{} as never,
+			{acquireConnectionMutationLock: jest.fn().mockResolvedValue(jest.fn())} as never,
 		);
 
 		await expect(service.handleCallback({state: expiredState, code: 'late-provider-code'})).resolves.toBe('error');
@@ -64,6 +65,7 @@ describe('BankingService authorization state lifecycle', () => {
 			connectionId: 'connection-id',
 			aspspName: 'ABN AMRO',
 			aspspCountry: 'NL',
+			replacesConnectionId: null,
 			expiresAt: Date.now() + 60_000,
 		};
 		const connection = {
@@ -107,6 +109,7 @@ describe('BankingService authorization state lifecycle', () => {
 			} as never,
 			authorizationStateService as unknown as BankingAuthorizationStateService,
 			{encrypt: jest.fn().mockReturnValue('encrypted-session')} as never,
+			{acquireConnectionMutationLock: jest.fn().mockResolvedValue(jest.fn())} as never,
 		);
 
 		await expect(service.handleCallback({state: callbackState, code: 'provider-code'})).resolves.toBe('error');

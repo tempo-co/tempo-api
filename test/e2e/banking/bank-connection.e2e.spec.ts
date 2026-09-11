@@ -140,9 +140,54 @@ describe('BankConnectionController', () => {
 		await unverifiedAgent.get('/bank-connections').expect(403);
 	});
 
-	it('removes owned incomplete connections without allowing unauthorized or authorized data deletion', async () => {
+	it('rejects destructive removal while synchronization owns the connection lock', async () => {
+		const {connection} = await createAuthorizedConnection('delete-while-sync-locked');
+		const lockKey = `banking:sync:${connection.id}`;
+
+		try {
+			await redis.set(lockKey, 'active-sync', 'EX', 60);
+			await verifiedAgent.delete(`/bank-connections/${connection.id}`).send({confirmation: 'DELETE'}).expect(409);
+			expect(await bankConnectionRepository.findOneBy({id: connection.id})).not.toBeNull();
+		} finally {
+			await redis.del(lockKey);
+			await bankConnectionRepository.delete(connection.id);
+		}
+	});
+
+	it('cancels pending reauthorization before removing its existing connection', async () => {
+		const {connection} = await createAuthorizedConnection('delete-reauthorization-race');
+		await verifiedAgent
+			.post('/bank-connections/authorize')
+			.send({aspspName: 'ABN AMRO', aspspCountry: 'NL'})
+			.expect(201);
+		const state = startAuthorization.mock.calls.at(-1)?.[0].state;
+		if (!state) throw new Error('Authorization state was not created.');
+
+		const pendingConnection = await bankConnectionRepository.findOne({
+			where: {account: {id: account.id}, status: 'PENDING_AUTHORIZATION'},
+			order: {createdAt: 'DESC'},
+		});
+		if (!pendingConnection) throw new Error('Pending connection was not persisted.');
+
+		await verifiedAgent.delete(`/bank-connections/${connection.id}`).send({confirmation: 'DELETE'}).expect(204);
+		expect(await bankConnectionRepository.findOneBy({id: pendingConnection.id})).toMatchObject({
+			status: 'CANCELLED',
+			authorizationStateHash: null,
+		});
+		expect(await redis.exists(`banking:authorization:${state}`)).toBe(0);
+
+		const createSessionCallCount = createSession.mock.calls.length;
+		await request(httpServer)
+			.get('/bank-connections/callback')
+			.query({state, code: 'late-reauthorization-code'})
+			.expect(302)
+			.expect('Location', 'http://localhost:5173/bank-connections?result=error');
+		expect(createSession).toHaveBeenCalledTimes(createSessionCallCount);
+		await bankConnectionRepository.delete(pendingConnection.id);
+	});
+
+	it('removes owned incomplete connections without allowing unauthorized data deletion', async () => {
 		const incompleteConnections: BankConnection[] = [];
-		let authorizedConnection: BankConnection | undefined;
 		let pendingWithAccount: BankConnection | undefined;
 
 		try {
@@ -200,19 +245,42 @@ describe('BankConnectionController', () => {
 			);
 			await verifiedAgent.delete(`/bank-connections/${pendingWithAccount.id}`).expect(409);
 			expect(await bankConnectionRepository.findOneBy({id: pendingWithAccount.id})).not.toBeNull();
-
-			({connection: authorizedConnection} = await createAuthorizedConnection('delete-authorized-session'));
-			await verifiedAgent.delete(`/bank-connections/${authorizedConnection.id}`).expect(409);
-			expect(await bankConnectionRepository.findOneBy({id: authorizedConnection.id})).toMatchObject({
-				status: 'AUTHORIZED',
-			});
-			expect(await bankAccountRepository.count({where: {bankConnection: {id: authorizedConnection.id}}})).toBe(1);
-			await otherVerifiedAgent.delete(`/bank-connections/${authorizedConnection.id}`).expect(404);
 		} finally {
 			for (const connection of incompleteConnections) await bankConnectionRepository.delete(connection.id);
 			if (pendingWithAccount) await bankConnectionRepository.delete(pendingWithAccount.id);
-			if (authorizedConnection) await bankConnectionRepository.delete(authorizedConnection.id);
 		}
+	});
+
+	it('permanently removes an authorized connection and cascades its bank data', async () => {
+		const {connection, bankAccount} = await createAuthorizedConnection('delete-authorized-cascade');
+		await bankTransactionRepository.save(
+			bankTransactionRepository.create({
+				bankAccountId: bankAccount.id,
+				providerTransactionId: 'delete-authorized-transaction',
+				dedupeKey: 'delete-authorized-transaction',
+				amount: '10.00',
+				currency: 'EUR',
+				displayDescription: 'Connection deletion test transaction',
+			}),
+		);
+		const syncRun = await bankSyncRunRepository.save(
+			bankSyncRunRepository.create({bankConnection: connection, status: 'SUCCEEDED'}),
+		);
+
+		await otherVerifiedAgent.delete(`/bank-connections/${connection.id}`).expect(404);
+		await verifiedAgent.delete(`/bank-connections/${connection.id}`).expect(400);
+		await verifiedAgent.delete(`/bank-connections/${connection.id}`).send({confirmation: 'DELETE ME'}).expect(400);
+		expect(await bankConnectionRepository.findOneBy({id: connection.id})).not.toBeNull();
+		expect(await bankAccountRepository.findOneBy({id: bankAccount.id})).not.toBeNull();
+
+		await verifiedAgent.delete(`/bank-connections/${connection.id}`).send({confirmation: 'DELETE'}).expect(204);
+
+		expect(await bankConnectionRepository.findOneBy({id: connection.id})).toBeNull();
+		expect(await bankAccountRepository.findOneBy({id: bankAccount.id})).toBeNull();
+		expect(
+			await bankTransactionRepository.findOneBy({providerTransactionId: 'delete-authorized-transaction'}),
+		).toBeNull();
+		expect(await bankSyncRunRepository.findOneBy({id: syncRun.id})).toBeNull();
 	});
 
 	it('removes the pending authorization state with an incomplete connection', async () => {
