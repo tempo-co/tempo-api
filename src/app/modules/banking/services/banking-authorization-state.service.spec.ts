@@ -238,4 +238,66 @@ describe('BankingAuthorizationStateService', () => {
 			expect(redis.del).toHaveBeenCalledWith(['banking:authorization:***']);
 		});
 	});
+
+	describe('removeForConnections', () => {
+		it('returns zero without scanning when no connection ids are provided', async () => {
+			await expect(service.removeForConnections([])).resolves.toBe(0);
+
+			expect(redis.scan).not.toHaveBeenCalled();
+			expect(redis.mget).not.toHaveBeenCalled();
+			expect(redis.del).not.toHaveBeenCalled();
+		});
+
+		it('scans once and deletes matching states for multiple connections', async () => {
+			const keys = [
+				'banking:authorization:state-one',
+				'banking:authorization:state-two',
+				'banking:authorization:unrelated',
+				'banking:authorization:malformed',
+				'banking:authorization:expired',
+				'banking:authorization:state-one:consumed',
+			];
+			redis.scan.mockResolvedValueOnce(['0', keys]);
+			redis.mget.mockResolvedValueOnce([
+				JSON.stringify({
+					accountId: 'account-id',
+					connectionId: 'connection-one',
+					aspspName: 'A',
+					aspspCountry: 'NL',
+					expiresAt: Date.now() + 60_000,
+				}),
+				JSON.stringify({
+					accountId: 'account-id',
+					connectionId: 'connection-two',
+					aspspName: 'A',
+					aspspCountry: 'NL',
+					expiresAt: Date.now() - 1,
+				}),
+				JSON.stringify({
+					accountId: 'account-id',
+					connectionId: 'unrelated-connection',
+					aspspName: 'A',
+					aspspCountry: 'NL',
+					expiresAt: Date.now() + 60_000,
+				}),
+				'{not-json',
+				null,
+				'1',
+			]);
+
+			await expect(service.removeForConnections(['connection-one', 'connection-two'])).resolves.toBe(2);
+
+			expect(redis.scan).toHaveBeenCalledTimes(1);
+			expect(redis.mget).toHaveBeenCalledTimes(1);
+			expect(redis.del).toHaveBeenCalledWith([keys[0], keys[1]]);
+		});
+
+		it('converts Redis failures into a typed storage error', async () => {
+			redis.scan.mockRejectedValue(new Error('Redis is unavailable'));
+
+			await expect(service.removeForConnections(['connection-id'])).rejects.toMatchObject({
+				code: 'storage_unavailable',
+			});
+		});
+	});
 });

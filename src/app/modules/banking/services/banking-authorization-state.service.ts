@@ -121,7 +121,15 @@ export class BankingAuthorizationStateService {
 
 	/** Removes the pending authorization state for the given connection. Returns the number of removed states. */
 	async removeForConnection(connectionId: string): Promise<number> {
-		return this.removeMatchingStates((state) => state.connectionId === connectionId);
+		return this.removeForConnections([connectionId]);
+	}
+
+	/** Removes pending authorization states for the given connections. Returns the number of removed states. */
+	async removeForConnections(connectionIds: string[]): Promise<number> {
+		const connectionIdSet = new Set(connectionIds);
+		if (connectionIdSet.size === 0) return 0;
+
+		return this.removeMatchingStates((state) => connectionIdSet.has(state.connectionId));
 	}
 
 	private async removeMatchingStates(matches: (state: BankingAuthorizationState) => boolean): Promise<number> {
