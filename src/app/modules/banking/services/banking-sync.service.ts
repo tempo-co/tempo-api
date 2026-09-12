@@ -1,7 +1,14 @@
-import {ConflictException, Injectable, InternalServerErrorException, Logger, NotFoundException} from '@nestjs/common';
+import {
+	ConflictException,
+	Injectable,
+	InternalServerErrorException,
+	Logger,
+	NotFoundException,
+	Optional,
+} from '@nestjs/common';
 import {InjectRepository} from '@nestjs/typeorm';
 import {createHash} from 'node:crypto';
-import {DataSource, Repository} from 'typeorm';
+import {DataSource, In, Repository} from 'typeorm';
 
 import {Account} from '@modules/account/account.entity';
 
@@ -24,6 +31,9 @@ import {getBankTransactionDisplayDescription} from '../bank-transaction-display'
 import {normalizeBankTransactionType} from '../bank-transaction-type';
 import {BankTransaction} from '../bank-transaction.entity';
 import {selectPreferredBalance, truncate} from '../banking.utils';
+import {createBankTransactionCategorizationInputHash} from '../categorization/bank-transaction-categorization-input';
+import {toBankTransactionCategorizationInput} from '../categorization/bank-transaction-categorization-input';
+import {BankTransactionCategorizationService} from '../categorization/bank-transaction-categorization.service';
 import {
 	EnableBankingBalance,
 	EnableBankingTransaction,
@@ -67,6 +77,11 @@ type SyncRateLimit = {
 	retryAfterSeconds: number;
 };
 
+type PersistSyncResult = {
+	transactionsAdded: number;
+	persistedTransactionIds: string[];
+};
+
 @Injectable()
 export class BankingSyncService {
 	private readonly logger = new Logger(BankingSyncService.name);
@@ -82,6 +97,7 @@ export class BankingSyncService {
 		private readonly enableBankingClient: EnableBankingClient,
 		private readonly encryptionService: BankingEncryptionService,
 		private readonly connectionLockService: BankingConnectionLockService,
+		@Optional() private readonly categorizationService?: BankTransactionCategorizationService,
 	) {}
 
 	async synchronize(accountId: Account['id'], connectionId: BankConnection['id']): Promise<BankSyncRunResponseDto> {
@@ -133,20 +149,21 @@ export class BankingSyncService {
 			const status = this.getRunStatus(fetchResult);
 			const finishedAt = new Date();
 
-			let transactionsAdded: number;
+			let persistenceResult: PersistSyncResult;
 			try {
-				transactionsAdded = await this.persistSync(connection, run, fetchResult, status, finishedAt);
+				persistenceResult = await this.persistSync(connection, run, fetchResult, status, finishedAt);
 			} catch {
 				await this.markPersistenceFailure(connection.id, run.id);
 				throw new InternalServerErrorException(BANKING_PERSISTENCE_SYNC_ERROR);
 			}
+			await this.enqueuePersistedTransactions(persistenceResult.persistedTransactionIds);
 			lockLease.assertHealthy();
 
 			const completedRun = await this.bankSyncRunRepository.findOneBy({id: run.id});
 			if (!completedRun) throw new InternalServerErrorException(BANKING_PERSISTENCE_SYNC_ERROR);
 			lockLease.assertHealthy();
 
-			return this.toSyncRunResponse(completedRun, transactionsAdded, fetchResult.rateLimit);
+			return this.toSyncRunResponse(completedRun, persistenceResult.transactionsAdded, fetchResult.rateLimit);
 		} finally {
 			lockLease.stop();
 			try {
@@ -324,9 +341,10 @@ export class BankingSyncService {
 		fetchResult: SyncFetchResult,
 		status: string,
 		finishedAt: Date,
-	): Promise<number> {
+	): Promise<PersistSyncResult> {
 		let errorMessage: string | null = null;
 		let transactionsAdded = 0;
+		const persistedTransactionIds: string[] = [];
 		if (fetchResult.connectionExpired) {
 			errorMessage = BANKING_CONSENT_EXPIRED;
 		} else if (status === PARTIAL) {
@@ -362,24 +380,13 @@ export class BankingSyncService {
 				}
 
 				if (accountResult.transactionsSucceeded && accountResult.transactions.length > 0) {
-					const transactionValues = accountResult.transactions.map((transaction) =>
-						this.toBankTransactionValues(accountResult.bankAccount, transaction),
+					const transactionPersistence = await this.persistTransactions(
+						bankTransactionRepository,
+						accountResult.bankAccount,
+						accountResult.transactions,
 					);
-					const insertResult = await bankTransactionRepository
-						.createQueryBuilder()
-						.insert()
-						.into(BankTransaction)
-						.values(transactionValues)
-						.orIgnore()
-						.returning('id')
-						.execute();
-					transactionsAdded += Array.isArray(insertResult.raw)
-						? insertResult.raw.length
-						: insertResult.raw
-							? 1
-							: 0;
-
-					await bankTransactionRepository.upsert(transactionValues, ['bankAccountId', 'dedupeKey']);
+					transactionsAdded += transactionPersistence.transactionsAdded;
+					persistedTransactionIds.push(...transactionPersistence.persistedTransactionIds);
 				}
 
 				if (accountResult.balancesSucceeded && accountResult.balances.length > 0) {
@@ -427,7 +434,91 @@ export class BankingSyncService {
 			);
 		});
 
-		return transactionsAdded;
+		return {transactionsAdded, persistedTransactionIds: [...new Set(persistedTransactionIds)]};
+	}
+
+	private async persistTransactions(
+		repository: Repository<BankTransaction>,
+		bankAccount: BankAccount,
+		transactions: EnableBankingTransaction[],
+	): Promise<PersistSyncResult> {
+		const transactionValues = transactions.map((transaction) =>
+			this.toBankTransactionValues(bankAccount, transaction),
+		);
+		const dedupeKeys = transactionValues.map(({dedupeKey}) => dedupeKey);
+		const existingTransactions =
+			typeof repository.find === 'function'
+				? ((await repository.find({
+						select: ['id', 'dedupeKey', 'categoryInputHash', 'categorySource'],
+						where: {bankAccountId: bankAccount.id, dedupeKey: In(dedupeKeys)},
+					})) ?? [])
+				: [];
+
+		const insertResult = await repository
+			.createQueryBuilder()
+			.insert()
+			.into(BankTransaction)
+			.values(transactionValues)
+			.orIgnore()
+			.returning('id')
+			.execute();
+		const transactionsAdded = Array.isArray(insertResult.raw) ? insertResult.raw.length : insertResult.raw ? 1 : 0;
+
+		await repository.upsert(transactionValues, ['bankAccountId', 'dedupeKey']);
+
+		const transactionByDedupeKey = new Map(transactionValues.map((value) => [value.dedupeKey, value]));
+		for (const existingTransaction of existingTransactions) {
+			const currentValue = transactionByDedupeKey.get(existingTransaction.dedupeKey);
+			if (
+				!currentValue ||
+				existingTransaction.categorySource === 'MANUAL' ||
+				existingTransaction.categoryInputHash === currentValue.categoryInputHash
+			) {
+				continue;
+			}
+
+			await repository
+				.createQueryBuilder()
+				.update(BankTransaction)
+				.set({
+					category: null,
+					categoryStatus: 'PENDING',
+					categorySource: null,
+					categoryConfidence: null,
+					categoryAppliedInputHash: null,
+					categoryProvider: null,
+					categoryModel: null,
+					categoryPromptVersion: null,
+					categoryUpdatedAt: null,
+					categoryLastError: null,
+				})
+				.where('id = :id', {id: existingTransaction.id})
+				.andWhere("categorySource IS DISTINCT FROM 'MANUAL'")
+				.execute();
+		}
+
+		const persistedRows =
+			typeof repository.find === 'function'
+				? ((await repository.find({
+						select: ['id'],
+						where: {bankAccountId: bankAccount.id, dedupeKey: In(dedupeKeys)},
+					})) ?? [])
+				: [];
+		const persistedTransactionIds =
+			persistedRows.length > 0
+				? persistedRows.map(({id}) => id)
+				: this.getInsertedTransactionIds(insertResult.raw);
+
+		return {transactionsAdded, persistedTransactionIds};
+	}
+
+	private async enqueuePersistedTransactions(transactionIds: readonly string[]): Promise<void> {
+		if (!this.categorizationService || transactionIds.length === 0) return;
+		try {
+			await this.categorizationService.enqueueForTransactions(transactionIds);
+		} catch (error) {
+			this.logger.warn(`Transaction categorization enqueue failed: ${this.safeErrorName(error)}`);
+		}
 	}
 
 	private async markPersistenceFailure(connectionId: string, runId: string): Promise<void> {
@@ -470,10 +561,45 @@ export class BankingSyncService {
 		const valueDate = this.toDateOnly(transaction.valueDate);
 		const providerTransactionId = truncate(transaction.providerTransactionId, 255);
 		const entryReference = truncate(transaction.entryReference, 255);
-		const creditDebitIndicator = truncate(transaction.creditDebitIndicator, 8);
+		const creditDebitIndicator = truncate(transaction.creditDebitIndicator, 8)?.toUpperCase() ?? null;
 		const bankTransactionCode = truncate(transaction.bankTransactionCode, 64);
 		const bankTransactionSubCode = truncate(transaction.bankTransactionSubCode, 64);
 		const bankTransactionDescription = truncate(transaction.bankTransactionDescription, 255);
+		const transactionType = normalizeBankTransactionType({
+			code: bankTransactionCode ?? undefined,
+			subCode: bankTransactionSubCode ?? undefined,
+			description: bankTransactionDescription ?? undefined,
+		});
+		const merchantCategoryCode = truncate(transaction.merchantCategoryCode, 16);
+		const dedupeKey = this.createDedupeKey({
+			providerTransactionId,
+			entryReference,
+			bookingDate,
+			valueDate,
+			amount,
+			currency,
+			creditDebitIndicator,
+			description,
+			counterpartyName,
+			remittanceInformation,
+		});
+		const categoryInputHash = createBankTransactionCategorizationInputHash(
+			toBankTransactionCategorizationInput({
+				id: dedupeKey,
+				transactionDate,
+				bookingDate,
+				valueDate,
+				amount,
+				currency,
+				creditDebitIndicator,
+				transactionType,
+				description,
+				counterpartyName,
+				bankTransactionDescription,
+				merchantCategoryCode,
+				remittanceInformation,
+			}),
+		);
 		const hasBalanceAfter = Boolean(transaction.balanceAfterAmount && transaction.balanceAfterCurrency);
 		const hasInstructedAmount = Boolean(transaction.instructedAmount && transaction.instructedCurrency);
 		const hasExchangeRate = Boolean(transaction.exchangeRate && transaction.exchangeRateUnitCurrency);
@@ -482,29 +608,14 @@ export class BankingSyncService {
 			bankAccountId: bankAccount.id,
 			providerTransactionId,
 			entryReference,
-			dedupeKey: this.createDedupeKey({
-				providerTransactionId,
-				entryReference,
-				bookingDate,
-				valueDate,
-				amount,
-				currency,
-				creditDebitIndicator,
-				description,
-				counterpartyName,
-				remittanceInformation,
-			}),
+			dedupeKey,
 			transactionDate,
 			bookingDate,
 			valueDate,
 			amount,
 			currency,
 			creditDebitIndicator,
-			transactionType: normalizeBankTransactionType({
-				code: bankTransactionCode ?? undefined,
-				subCode: bankTransactionSubCode ?? undefined,
-				description: bankTransactionDescription ?? undefined,
-			}),
+			transactionType,
 			transactionStatus: truncate(transaction.status, 32),
 			bankTransactionCode,
 			bankTransactionSubCode,
@@ -512,8 +623,9 @@ export class BankingSyncService {
 			description,
 			displayDescription,
 			counterpartyName,
-			merchantCategoryCode: truncate(transaction.merchantCategoryCode, 16),
+			merchantCategoryCode,
 			remittanceInformation,
+			categoryInputHash,
 			balanceAfterAmount: hasBalanceAfter ? transaction.balanceAfterAmount : null,
 			balanceAfterCurrency: hasBalanceAfter ? transaction.balanceAfterCurrency?.toUpperCase() : null,
 			instructedAmount: hasInstructedAmount ? transaction.instructedAmount : null,
@@ -524,6 +636,15 @@ export class BankingSyncService {
 			referenceNumber: truncate(transaction.referenceNumber, 255),
 			referenceNumberScheme: truncate(transaction.referenceNumberScheme, 32),
 		};
+	}
+
+	private getInsertedTransactionIds(raw: unknown): string[] {
+		const rows = Array.isArray(raw) ? raw : raw ? [raw] : [];
+		return rows.flatMap((row) => {
+			if (!row || typeof row !== 'object') return [];
+			const id = (row as {id?: unknown}).id;
+			return typeof id === 'string' ? [id] : [];
+		});
 	}
 
 	private toSyncRunResponse(
@@ -584,11 +705,12 @@ export class BankingSyncService {
 
 	private toSignedAmount(amount: string, creditDebitIndicator?: string): string {
 		const normalizedAmount = amount.trim();
+		const normalizedIndicator = creditDebitIndicator?.trim().toUpperCase();
 		const isNegative = normalizedAmount.startsWith('-');
 		const unsignedAmount = normalizedAmount.replace(/^[+-]/, '');
 
-		if (creditDebitIndicator === 'DBIT' && !isNegative) return `-${unsignedAmount}`;
-		if (creditDebitIndicator === 'CRDT' && isNegative) return unsignedAmount;
+		if (normalizedIndicator === 'DBIT' && !isNegative) return `-${unsignedAmount}`;
+		if (normalizedIndicator === 'CRDT' && isNegative) return unsignedAmount;
 		return normalizedAmount;
 	}
 
@@ -626,5 +748,9 @@ export class BankingSyncService {
 			code.includes('revok') ||
 			code.includes('expired')
 		);
+	}
+
+	private safeErrorName(error: unknown): string {
+		return error instanceof Error && error.name.length > 0 ? error.name : 'UnknownError';
 	}
 }

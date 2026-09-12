@@ -36,6 +36,15 @@ export const configSchema = z
 		REDIS_HOST: z.string().min(1),
 		REDIS_INSIGHT_PORT: portSchema,
 
+		// --- AI categorization ---
+		AI_CATEGORIZATION_ENABLED: z.coerce.boolean().default(false),
+		AI_CATEGORIZATION_PROVIDER: z
+			.string()
+			.regex(/^[a-z][a-z0-9-]*$/)
+			.default('openai'),
+		AI_CATEGORIZATION_MODEL: z.string().min(1).max(128).default('gpt-5.6-luna'),
+		OPENAI_API_KEY: z.string().min(1).optional(),
+
 		// --- APIs ---
 		ENABLE_BANKING_API_URL: z.string().url(),
 		ENABLE_BANKING_APPLICATION_ID: z.string().min(1),
@@ -70,6 +79,18 @@ export const configSchema = z
 				code: 'custom',
 				path: ['ENABLE_BANKING_PRIVATE_KEY_B64'],
 				message: 'Configure exactly one of ENABLE_BANKING_PRIVATE_KEY_B64 or ENABLE_BANKING_PRIVATE_KEY_PATH.',
+			});
+		}
+
+		if (
+			config.AI_CATEGORIZATION_ENABLED &&
+			config.AI_CATEGORIZATION_PROVIDER === 'openai' &&
+			!config.OPENAI_API_KEY
+		) {
+			context.addIssue({
+				code: 'custom',
+				path: ['OPENAI_API_KEY'],
+				message: 'OPENAI_API_KEY is required when OpenAI categorization is enabled.',
 			});
 		}
 	});

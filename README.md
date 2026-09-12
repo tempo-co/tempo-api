@@ -31,6 +31,15 @@ $ npm ci
 
 The development environment uses variables from `.env.development`. To override these locally (for API keys or secrets), define them in a `.env.development.local` file, which takes precedence.
 
+AI transaction categorization is disabled by default. Enable it only through local or deployment configuration; never commit the API key:
+
+```text
+AI_CATEGORIZATION_ENABLED=false
+AI_CATEGORIZATION_PROVIDER=openai
+AI_CATEGORIZATION_MODEL=gpt-5.6-luna
+OPENAI_API_KEY=<set outside the repository when enabled>
+```
+
 ## Development
 
 ```bash

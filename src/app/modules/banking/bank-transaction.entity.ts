@@ -83,6 +83,39 @@ export class BankTransaction {
 	@Column({type: 'text', nullable: true})
 	remittanceInformation: string | null;
 
+	@Column({type: 'varchar', length: 32, nullable: true})
+	category: string | null;
+
+	@Column({type: 'varchar', length: 16, default: 'PENDING'})
+	categoryStatus: string;
+
+	@Column({type: 'varchar', length: 16, nullable: true})
+	categorySource: string | null;
+
+	@Column({type: 'numeric', precision: 4, scale: 3, nullable: true})
+	categoryConfidence: string | null;
+
+	@Column({type: 'varchar', length: 64, nullable: true})
+	categoryInputHash: string | null;
+
+	@Column({type: 'varchar', length: 64, nullable: true})
+	categoryAppliedInputHash: string | null;
+
+	@Column({type: 'varchar', length: 32, nullable: true})
+	categoryProvider: string | null;
+
+	@Column({type: 'varchar', length: 128, nullable: true})
+	categoryModel: string | null;
+
+	@Column({type: 'varchar', length: 32, nullable: true})
+	categoryPromptVersion: string | null;
+
+	@Column({type: 'timestamptz', nullable: true})
+	categoryUpdatedAt: Date | null;
+
+	@Column({type: 'text', nullable: true})
+	categoryLastError: string | null;
+
 	@Column({type: 'numeric', precision: 20, scale: 8, nullable: true})
 	balanceAfterAmount: string | null;
 
