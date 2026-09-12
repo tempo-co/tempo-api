@@ -245,6 +245,13 @@ describe('BankingService authorization state lifecycle', () => {
 				return result;
 			}),
 		};
+		const connectionLock = {
+			stop: jest.fn(),
+			release: jest.fn().mockResolvedValue(undefined),
+		};
+		const connectionLockService = {
+			acquire: jest.fn().mockResolvedValue(connectionLock),
+		};
 		const service = new BankingService(
 			bankConnectionRepository as never,
 			{} as never,
@@ -255,7 +262,7 @@ describe('BankingService authorization state lifecycle', () => {
 			{} as never,
 			authorizationStateService as never,
 			{} as never,
-			{acquireConnectionMutationLock: jest.fn().mockResolvedValue(jest.fn())} as never,
+			connectionLockService as never,
 		);
 
 		await service.removeConnection('account-id', connection.id, 'DELETE');
