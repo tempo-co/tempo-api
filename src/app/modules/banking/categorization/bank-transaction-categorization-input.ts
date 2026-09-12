@@ -2,6 +2,7 @@ import {createHash} from 'node:crypto';
 
 import {BANK_TRANSACTION_TYPES} from '../bank-transaction-type';
 import {BankTransaction} from '../bank-transaction.entity';
+import {truncate} from '../banking.utils';
 import {BankTransactionCategorizationInput} from './bank-transaction-categorization.types';
 
 const MAX_REMITTANCE_INFORMATION_LENGTH = 2_000;
@@ -92,10 +93,6 @@ function normalizeRequiredText(value: string | null | undefined): string {
 function normalizeUppercase(value: string | null | undefined): string | null {
 	const normalized = normalizeNullableText(value);
 	return normalized?.toUpperCase() ?? null;
-}
-
-function truncate(value: string | null, maxLength: number): string | null {
-	return value === null ? null : value.slice(0, maxLength);
 }
 
 function toDirection(indicator: string | null): BankTransactionCategorizationInput['direction'] {

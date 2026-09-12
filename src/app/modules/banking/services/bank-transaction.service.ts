@@ -151,7 +151,7 @@ export class BankTransactionService {
 		if (result.affected === 0) throw new NotFoundException(BANKING_TRANSACTION_NOT_FOUND);
 		Object.assign(transaction, values);
 
-		return this.findById(accountId, id);
+		return this.toResponse(transaction);
 	}
 
 	private async findOwnedConnection(accountId: Account['id'], connectionId: BankConnection['id']) {

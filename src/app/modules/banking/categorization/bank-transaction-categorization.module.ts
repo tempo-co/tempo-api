@@ -6,6 +6,7 @@ import {ConfigurationService} from '@core/config/config.service';
 import {BANK_TRANSACTION_CATEGORIZATION_QUEUE} from '@core/queue/queue.constants';
 
 import {BankTransaction} from '../bank-transaction.entity';
+import {BANK_TRANSACTION_CATEGORIZATION_PROVIDER_NAME} from './bank-transaction-categorization.constants';
 import {BankTransactionCategorizationProcessor} from './bank-transaction-categorization.processor';
 import {
 	BANK_TRANSACTION_CATEGORIZATION_PROVIDER,
@@ -29,7 +30,7 @@ import {OpenAiBankTransactionCategorizationProvider} from './providers/openai-ba
 				openAiProvider: OpenAiBankTransactionCategorizationProvider,
 			): BankTransactionCategorizationProvider => {
 				const provider = configurationService.get('AI_CATEGORIZATION_PROVIDER');
-				if (provider === 'openai') return openAiProvider;
+				if (provider === BANK_TRANSACTION_CATEGORIZATION_PROVIDER_NAME) return openAiProvider;
 				throw new Error(`Unsupported AI categorization provider: ${provider}`);
 			},
 		},

@@ -133,8 +133,14 @@ describe('BankTransactionCategorizationService queue scheduling', () => {
 		expect(queue.add).toHaveBeenCalledTimes(2);
 		expect(queue.add.mock.calls[0][0]).toBe(CATEGORIZE_BANK_TRANSACTIONS_JOB);
 		expect(queue.add.mock.calls[1][0]).toBe(CATEGORIZE_BANK_TRANSACTIONS_JOB);
-		expect(queue.add.mock.calls[0][2].jobId).toEqual(expect.any(String));
-		expect(queue.add.mock.calls[1][2].jobId).toEqual(expect.any(String));
+		expect(queue.add.mock.calls[0][2]).toEqual({
+			jobId: expect.any(String),
+			removeOnFail: true,
+		});
+		expect(queue.add.mock.calls[1][2]).toEqual({
+			jobId: expect.any(String),
+			removeOnFail: true,
+		});
 		expect(queue.add.mock.calls[0][1].transactionIds).toHaveLength(50);
 		expect(queue.add.mock.calls[1][1].transactionIds).toHaveLength(1);
 		expect(

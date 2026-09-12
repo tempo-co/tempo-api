@@ -80,7 +80,7 @@ export class BankTransactionCategorizationService {
 			await this.queue.add(
 				CATEGORIZE_BANK_TRANSACTIONS_JOB,
 				{transactionIds: batch},
-				{jobId: this.createJobId(batch)},
+				{jobId: this.createJobId(batch), removeOnFail: true},
 			);
 		}
 	}
