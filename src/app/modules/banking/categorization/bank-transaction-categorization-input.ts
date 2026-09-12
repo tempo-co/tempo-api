@@ -58,7 +58,7 @@ export function createBankTransactionCategorizationInputHash(
 		transactionDate: input.transactionDate,
 		bookingDate: input.bookingDate,
 		valueDate: input.valueDate,
-		amount: input.amount,
+		amount: normalizeAmountForHash(input.amount),
 		currency: input.currency,
 		creditDebitIndicator: input.creditDebitIndicator,
 		direction: input.direction,
@@ -93,6 +93,18 @@ function normalizeRequiredText(value: string | null | undefined): string {
 function normalizeUppercase(value: string | null | undefined): string | null {
 	const normalized = normalizeNullableText(value);
 	return normalized?.toUpperCase() ?? null;
+}
+
+function normalizeAmountForHash(value: string): string {
+	const normalized = normalizeRequiredText(value);
+	const match = normalized.match(/^([+-]?)(\d+)(?:\.(\d+))?$/);
+	if (!match) return normalized;
+
+	const [, sign, integerPart, fractionPart = ''] = match;
+	const integer = integerPart.replace(/^0+(?=\d)/, '');
+	const fraction = fractionPart.replace(/0+$/, '');
+	const normalizedSign = sign === '-' && (integer !== '0' || fraction.length > 0) ? '-' : '';
+	return `${normalizedSign}${integer}${fraction.length > 0 ? `.${fraction}` : ''}`;
 }
 
 function toDirection(indicator: string | null): BankTransactionCategorizationInput['direction'] {

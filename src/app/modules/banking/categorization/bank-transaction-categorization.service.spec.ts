@@ -148,6 +148,18 @@ describe('BankTransactionCategorizationService queue scheduling', () => {
 		).toEqual(ids.sort());
 	});
 
+	it('changes the job ID when the categorization input hash changes', async () => {
+		const transaction = createTransaction({categoryInputHash: 'hash-a'});
+		const {service, queue} = createService({rows: [transaction]});
+
+		await service.enqueueForTransactions([transaction.id]);
+		transaction.categoryInputHash = 'hash-b';
+		await service.enqueueForTransactions([transaction.id]);
+
+		expect(queue.add).toHaveBeenCalledTimes(2);
+		expect(queue.add.mock.calls[0][2].jobId).not.toBe(queue.add.mock.calls[1][2].jobId);
+	});
+
 	it('does not enqueue when AI categorization is disabled or IDs are empty', async () => {
 		const disabled = createService({enabled: false});
 		await disabled.service.enqueueForTransactions(['transaction-1']);
@@ -201,10 +213,20 @@ describe('BankTransactionCategorizationService worker', () => {
 
 		expect(provider.categorize).not.toHaveBeenCalled();
 		expect(repository.update).toHaveBeenCalledWith(
-			{id: transaction.id},
+			expect.objectContaining({id: transaction.id, categoryInputHash: expect.anything()}),
 			expect.objectContaining({categoryInputHash: expect.any(String)}),
 		);
 		expect(repository.update.mock.calls.some(([, values]) => values.categorySource === 'AI')).toBe(false);
+	});
+
+	it('does not categorize when a concurrent input hash update wins the race', async () => {
+		const transaction = createTransaction();
+		const {service, provider, repository} = createService({rows: [transaction]});
+		repository.update.mockResolvedValueOnce({affected: 0});
+
+		await service.processTransactionJob([transaction.id]);
+
+		expect(provider.categorize).not.toHaveBeenCalled();
 	});
 
 	it('does not apply a provider result after the claimed input hash changes', async () => {

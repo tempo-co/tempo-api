@@ -3,7 +3,7 @@ import {Inject, Injectable, Logger} from '@nestjs/common';
 import {InjectRepository} from '@nestjs/typeorm';
 import {Queue} from 'bullmq';
 import {createHash} from 'node:crypto';
-import {In, Repository} from 'typeorm';
+import {In, IsNull, Repository} from 'typeorm';
 
 import {ConfigurationService} from '@core/config/config.service';
 import {
@@ -75,12 +75,19 @@ export class BankTransactionCategorizationService {
 		if (!this.isEnabled()) return;
 
 		const uniqueIds = [...new Set(transactionIds.filter((id) => id.length > 0))].sort();
+		if (uniqueIds.length === 0) return;
+
+		const transactions = await this.repository.find({
+			select: ['id', 'categoryInputHash'],
+			where: {id: In(uniqueIds)},
+		});
+		const inputHashes = new Map(transactions.map(({id, categoryInputHash}) => [id, categoryInputHash]));
 		for (let index = 0; index < uniqueIds.length; index += BANK_TRANSACTION_CATEGORIZATION_BATCH_SIZE) {
 			const batch = uniqueIds.slice(index, index + BANK_TRANSACTION_CATEGORIZATION_BATCH_SIZE);
 			await this.queue.add(
 				CATEGORIZE_BANK_TRANSACTIONS_JOB,
 				{transactionIds: batch},
-				{jobId: this.createJobId(batch), removeOnFail: true},
+				{jobId: this.createJobId(batch, inputHashes), removeOnFail: true},
 			);
 		}
 	}
@@ -101,7 +108,7 @@ export class BankTransactionCategorizationService {
 
 			const input = toBankTransactionCategorizationInput(transaction);
 			const inputHash = createBankTransactionCategorizationInputHash(input);
-			await this.refreshInputHashAndResetStaleClassification(transaction, inputHash);
+			if (!(await this.refreshInputHashAndResetStaleClassification(transaction, inputHash))) continue;
 			if (transaction.categorySource === 'MANUAL') continue;
 
 			const ruleResult = applyBankTransactionCategorizationRule(input);
@@ -237,20 +244,27 @@ export class BankTransactionCategorizationService {
 	private async refreshInputHashAndResetStaleClassification(
 		transaction: BankTransaction,
 		inputHash: string,
-	): Promise<void> {
+	): Promise<boolean> {
 		const previousHash = transaction.categoryInputHash;
 		const hashChanged = previousHash !== inputHash;
 		if (hashChanged) {
-			await this.repository.update({id: transaction.id}, {categoryInputHash: inputHash});
+			const result = await this.repository.update(
+				{
+					id: transaction.id,
+					categoryInputHash: previousHash == null ? IsNull() : previousHash,
+				},
+				{categoryInputHash: inputHash},
+			);
+			if ((result.affected ?? 0) === 0) return false;
 			transaction.categoryInputHash = inputHash;
 		}
 
-		if (transaction.categorySource === 'MANUAL') return;
+		if (transaction.categorySource === 'MANUAL') return true;
 		const appliedHashIsStale =
 			transaction.categoryAppliedInputHash !== null && transaction.categoryAppliedInputHash !== inputHash;
 		const completedHashIsStale =
 			transaction.categoryStatus === 'COMPLETED' && transaction.categoryAppliedInputHash !== inputHash;
-		if (!appliedHashIsStale && !(hashChanged && completedHashIsStale)) return;
+		if (!appliedHashIsStale && !(hashChanged && completedHashIsStale)) return true;
 
 		const reset = await this.updateCategorizationWithGuard(transaction.id, inputHash, {
 			category: null,
@@ -276,6 +290,7 @@ export class BankTransactionCategorizationService {
 				categoryPromptVersion: null,
 				categoryLastError: null,
 			});
+		return true;
 	}
 
 	private async claimTransaction(id: string, inputHash: string): Promise<boolean> {
@@ -399,8 +414,9 @@ export class BankTransactionCategorizationService {
 		Object.assign(transaction, values);
 	}
 
-	private createJobId(transactionIds: readonly string[]): string {
-		return `categorize-${createHash('sha256').update(transactionIds.join('\n')).digest('hex')}`;
+	private createJobId(transactionIds: readonly string[], inputHashes: ReadonlyMap<string, string | null>): string {
+		const jobInput = transactionIds.map((id) => `${id}:${inputHashes.get(id) ?? ''}`).join('\n');
+		return `categorize-${createHash('sha256').update(jobInput).digest('hex')}`;
 	}
 
 	private isEnabled(): boolean {

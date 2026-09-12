@@ -83,6 +83,12 @@ describe('bank transaction categorization input', () => {
 		);
 	});
 
+	it('keeps the hash stable across database numeric scale normalization', () => {
+		expect(createBankTransactionCategorizationInputHash(createTransaction({amount: '2.50'}))).toBe(
+			createBankTransactionCategorizationInputHash(createTransaction({amount: '2.50000000'})),
+		);
+	});
+
 	it.each([
 		['amount', {amount: '-12.51'}],
 		['direction indicator', {creditDebitIndicator: 'CRDT'}],

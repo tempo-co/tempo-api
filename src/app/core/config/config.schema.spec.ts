@@ -48,8 +48,15 @@ describe('configSchema AI categorization settings', () => {
 		expect(config.AI_CATEGORIZATION_MODEL).toBe('gpt-5.6-luna');
 	});
 
-	it('allows disabled categorization without an OpenAI key', () => {
-		expect(() => configSchema.parse(createBaseConfig({AI_CATEGORIZATION_ENABLED: false}))).not.toThrow();
+	it('parses string boolean environment values without enabling disabled categorization', () => {
+		const disabled = configSchema.parse(createBaseConfig({AI_CATEGORIZATION_ENABLED: 'false'}));
+		expect(disabled.AI_CATEGORIZATION_ENABLED).toBe(false);
+
+		expect(() => configSchema.parse(createBaseConfig({AI_CATEGORIZATION_ENABLED: 'true'}))).toThrow();
+		const enabled = configSchema.parse(
+			createBaseConfig({AI_CATEGORIZATION_ENABLED: 'true', OPENAI_API_KEY: 'test-openai-key'}),
+		);
+		expect(enabled.AI_CATEGORIZATION_ENABLED).toBe(true);
 	});
 
 	it('requires an OpenAI key only when enabled for OpenAI', () => {

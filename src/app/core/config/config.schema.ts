@@ -4,6 +4,13 @@ const portSchema = z.coerce.number().int().min(0).max(65535);
 
 const durationPattern = /^[0-9]+(s|m|h|d|w)$/;
 const durationSchema = z.string().regex(durationPattern);
+const strictBooleanEnvSchema = z.preprocess((value) => {
+	if (typeof value !== 'string') return value;
+	const normalized = value.trim().toLowerCase();
+	if (normalized === 'true') return true;
+	if (normalized === 'false') return false;
+	return value;
+}, z.boolean());
 
 export const ENV_VALUES = ['development', 'production', 'test'] as const;
 export type NodeEnv = (typeof ENV_VALUES)[number];
@@ -37,7 +44,7 @@ export const configSchema = z
 		REDIS_INSIGHT_PORT: portSchema,
 
 		// --- AI categorization ---
-		AI_CATEGORIZATION_ENABLED: z.coerce.boolean().default(false),
+		AI_CATEGORIZATION_ENABLED: strictBooleanEnvSchema.default(false),
 		AI_CATEGORIZATION_PROVIDER: z
 			.string()
 			.regex(/^[a-z][a-z0-9-]*$/)
