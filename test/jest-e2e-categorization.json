@@ -11,5 +11,5 @@
 		"^@modules/(.*)$": "<rootDir>/src/app/modules/$1"
 	},
 	"setupFiles": ["<rootDir>/test/setup/e2e-categorization.env.ts"],
-	"setupFilesAfterEnv": ["<rootDir>/test/setup/e2e.setup.ts"]
+	"setupFilesAfterEnv": ["<rootDir>/test/setup/e2e.setup.ts", "<rootDir>/test/setup/e2e-categorization.setup.ts"]
 }

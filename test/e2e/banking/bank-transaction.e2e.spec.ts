@@ -442,5 +442,18 @@ describe('BankTransactionController', () => {
 		]) {
 			expect(response.body).not.toHaveProperty(field);
 		}
+
+		const persisted = await bankTransactionRepository.findOneByOrFail({id: fixtureTransaction.id});
+		expect(persisted).toMatchObject({
+			category: 'FOOD_AND_DRINK',
+			categoryStatus: 'COMPLETED',
+			categorySource: 'MANUAL',
+			categoryConfidence: null,
+			categoryAppliedInputHash: expect.any(String),
+			categoryProvider: null,
+			categoryModel: null,
+			categoryPromptVersion: null,
+			categoryLastError: null,
+		});
 	});
 });
