@@ -20,8 +20,11 @@ import {
 	CATEGORIZATION_E2E_AI_TRANSACTION_ID,
 	CATEGORIZATION_E2E_FAILURE_TRANSACTION_ID,
 	CATEGORIZATION_E2E_RULE_TRANSACTION_ID,
+	seedBankTransactionCategorizationData,
 } from '../../setup/e2e-categorization-data';
-import {getApp} from '../../setup/e2e.setup';
+import {enableAiCategorizationE2e, getApp} from '../../setup/e2e.setup';
+
+enableAiCategorizationE2e();
 
 const AI_CATEGORY = 'FOOD_AND_DRINK' as const;
 const AI_CONFIDENCE = 0.875;
@@ -66,6 +69,7 @@ describe('Bank transaction categorization integration', () => {
 
 	beforeAll(async () => {
 		app = getApp();
+		await seedBankTransactionCategorizationData(app);
 		httpServer = app.getHttpServer();
 
 		const configurationService = app.get(ConfigurationService);
