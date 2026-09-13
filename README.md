@@ -74,7 +74,13 @@ $ npm run test:e2e
 
 # generate coverage report
 $ npm run test:e2e:cov
+
+# run the enabled categorization flow with a deterministic mocked provider
+# (run after the test containers are up; no real OpenAI key is used)
+$ npm run test:e2e:categorization
 ```
+
+The categorization E2E profile forces `NODE_ENV=test`, enables AI only for that Jest process, and injects a non-secret placeholder key. It mocks the provider boundary while exercising the real Nest HTTP app, PostgreSQL persistence, BullMQ/Redis queue, worker, response DTOs, and provider-failure handling. The normal E2E profile explicitly excludes this file and keeps AI categorization disabled.
 
 This script runs e2e tests sequentially using the test config (`NODE_ENV=test`, loading `.env.test`), running its own disposable Docker test containers that are removed after each run.
 

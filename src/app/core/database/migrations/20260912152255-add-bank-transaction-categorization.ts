@@ -54,7 +54,7 @@ const CATEGORIZATION_COLUMNS = [
 	new TableColumn({
 		name: 'categoryPromptVersion',
 		type: 'varchar',
-		length: '32',
+		length: '64',
 		isNullable: true,
 	}),
 	new TableColumn({

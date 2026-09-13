@@ -20,7 +20,7 @@ describe('BankTransaction categorization schema', () => {
 		expect(byName.get('categoryAppliedInputHash')).toMatchObject({type: 'varchar', length: 64, nullable: true});
 		expect(byName.get('categoryProvider')).toMatchObject({type: 'varchar', length: 32, nullable: true});
 		expect(byName.get('categoryModel')).toMatchObject({type: 'varchar', length: 128, nullable: true});
-		expect(byName.get('categoryPromptVersion')).toMatchObject({type: 'varchar', length: 32, nullable: true});
+		expect(byName.get('categoryPromptVersion')).toMatchObject({type: 'varchar', length: 64, nullable: true});
 		expect(byName.get('categoryUpdatedAt')).toMatchObject({type: 'timestamptz', nullable: true});
 		expect(byName.get('categoryLastError')).toMatchObject({type: 'text', nullable: true});
 	});

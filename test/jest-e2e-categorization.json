@@ -2,8 +2,7 @@
 	"moduleFileExtensions": ["js", "json", "ts"],
 	"rootDir": "..",
 	"testEnvironment": "node",
-	"testRegex": ".e2e.spec.ts$",
-	"testPathIgnorePatterns": ["/bank-transaction-categorization\\.e2e\\.spec\\.ts$"],
+	"testRegex": "bank-transaction-categorization\\.e2e\\.spec\\.ts$",
 	"transform": {
 		"^.+\\.(t|j)s$": "ts-jest"
 	},
@@ -11,5 +10,6 @@
 		"^@core/(.*)$": "<rootDir>/src/app/core/$1",
 		"^@modules/(.*)$": "<rootDir>/src/app/modules/$1"
 	},
+	"setupFiles": ["<rootDir>/test/setup/e2e-categorization.env.ts"],
 	"setupFilesAfterEnv": ["<rootDir>/test/setup/e2e.setup.ts"]
 }

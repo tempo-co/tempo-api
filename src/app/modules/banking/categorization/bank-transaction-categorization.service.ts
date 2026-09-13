@@ -160,17 +160,17 @@ export class BankTransactionCategorizationService {
 			const rows = await this.repository
 				.createQueryBuilder('transaction')
 				.select('transaction.id', 'id')
-				.where("transaction.categorySource IS DISTINCT FROM 'MANUAL'")
+				.where(`transaction."categorySource" IS DISTINCT FROM 'MANUAL'`)
 				.andWhere(
 					`(
-						transaction.categoryStatus IN (:...claimableStatuses)
-						OR transaction.categoryInputHash IS NULL
-						OR transaction.categoryAppliedInputHash IS DISTINCT FROM transaction.categoryInputHash
+						transaction."categoryStatus" IN (:...claimableStatuses)
+						OR transaction."categoryInputHash" IS NULL
+						OR transaction."categoryAppliedInputHash" IS DISTINCT FROM transaction."categoryInputHash"
 						OR (
-							transaction.categoryStatus = :processingStatus
+							transaction."categoryStatus" = :processingStatus
 							AND (
-								transaction.categoryUpdatedAt IS NULL
-								OR transaction.categoryUpdatedAt < :staleBefore
+								transaction."categoryUpdatedAt" IS NULL
+								OR transaction."categoryUpdatedAt" < :staleBefore
 							)
 						)
 					)`,
@@ -299,14 +299,14 @@ export class BankTransactionCategorizationService {
 			.update(BankTransaction)
 			.set({categoryStatus: 'PROCESSING', categoryUpdatedAt: new Date()})
 			.where('id = :id', {id})
-			.andWhere("categorySource IS DISTINCT FROM 'MANUAL'")
-			.andWhere('categoryInputHash = :inputHash', {inputHash})
+			.andWhere(`"categorySource" IS DISTINCT FROM 'MANUAL'`)
+			.andWhere('"categoryInputHash" = :inputHash', {inputHash})
 			.andWhere(
 				`(
-					categoryStatus IN (:...claimableStatuses)
+					"categoryStatus" IN (:...claimableStatuses)
 					OR (
-						categoryStatus = :processingStatus
-						AND (categoryUpdatedAt IS NULL OR categoryUpdatedAt < :staleBefore)
+						"categoryStatus" = :processingStatus
+						AND ("categoryUpdatedAt" IS NULL OR "categoryUpdatedAt" < :staleBefore)
 					)
 				)`,
 				{
@@ -331,9 +331,9 @@ export class BankTransactionCategorizationService {
 			.update(BankTransaction)
 			.set(values)
 			.where('id = :id', {id})
-			.andWhere("categorySource IS DISTINCT FROM 'MANUAL'")
-			.andWhere('categoryInputHash = :inputHash', {inputHash});
-		if (status) query.andWhere('categoryStatus = :expectedStatus', {expectedStatus: status});
+			.andWhere(`"categorySource" IS DISTINCT FROM 'MANUAL'`)
+			.andWhere('"categoryInputHash" = :inputHash', {inputHash});
+		if (status) query.andWhere('"categoryStatus" = :expectedStatus', {expectedStatus: status});
 		const result = await query.execute();
 		return (result.affected ?? 0) > 0;
 	}

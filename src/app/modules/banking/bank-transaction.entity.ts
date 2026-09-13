@@ -107,7 +107,7 @@ export class BankTransaction {
 	@Column({type: 'varchar', length: 128, nullable: true})
 	categoryModel: string | null;
 
-	@Column({type: 'varchar', length: 32, nullable: true})
+	@Column({type: 'varchar', length: 64, nullable: true})
 	categoryPromptVersion: string | null;
 
 	@Column({type: 'timestamptz', nullable: true})
