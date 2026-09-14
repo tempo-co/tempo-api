@@ -58,16 +58,17 @@ $ npm run test:cov
 
 ### E2E tests
 
-Jest is used for end-to-end tests. Before each test file, a new application instance is created, the test database schema is reset (`dropSchema: true`), and the database is seeded with initial data.
+Jest is used for end-to-end tests. The shared setup starts a real application and seeds the test accounts. The dedicated categorization profile additionally seeds stable, account-scoped bank connection, account, and transaction fixtures before its test cases run.
 
 ```bash
 $ npm run test:e2e
 
 # generate coverage report
 $ npm run test:e2e:cov
+
 ```
 
-This script runs e2e tests sequentially using the test config (`NODE_ENV=test`, loading `.env.test`), running its own disposable Docker test containers that are removed after each run.
+The shared E2E setup keeps AI categorization disabled by default. The categorization spec opts into enabled mode before the shared application bootstrap, injects a non-secret placeholder key, and mocks only the provider boundary. It still exercises the real Nest HTTP app, PostgreSQL persistence, BullMQ/Redis queue, worker, response DTOs, and provider-failure handling; the normal E2E cases remain disabled.
 
 ### Database seeding
 

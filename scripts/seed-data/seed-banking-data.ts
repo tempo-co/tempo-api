@@ -137,6 +137,17 @@ function createSeedTransactions(bankAccount: BankAccount) {
 		exchangeRateType: null,
 		referenceNumber: null,
 		referenceNumberScheme: null,
+		category: null,
+		categoryStatus: 'PENDING',
+		categorySource: null,
+		categoryConfidence: null,
+		categoryInputHash: null,
+		categoryAppliedInputHash: null,
+		categoryProvider: null,
+		categoryModel: null,
+		categoryPromptVersion: null,
+		categoryUpdatedAt: null,
+		categoryLastError: null,
 	};
 
 	const transactions = [
