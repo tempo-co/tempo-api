@@ -54,6 +54,11 @@ export class BankTransactionService {
 				bankAccountIds: filter.bankAccountIds,
 			});
 		}
+		if (filter?.categories && filter.categories.length > 0) {
+			query.andWhere('transaction.category IN (:...categories)', {
+				categories: filter.categories,
+			});
+		}
 
 		const search = filter?.search?.trim();
 		if (search) {

@@ -17,6 +17,8 @@ import {
 import {DEFAULT_PAGE_INDEX, DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS} from '@core/pagination/pagination.constants';
 import {transformStrictDecimalInteger} from '@core/pagination/pagination.transform';
 
+import {BANK_TRANSACTION_CATEGORIES, BankTransactionCategory} from '../../categorization/bank-transaction-category';
+
 export const DEFAULT_BANK_TRANSACTION_PAGE_INDEX = DEFAULT_PAGE_INDEX;
 export const DEFAULT_BANK_TRANSACTION_PAGE_SIZE = DEFAULT_PAGE_SIZE;
 export const BANK_TRANSACTION_PAGE_SIZE_OPTIONS = PAGE_SIZE_OPTIONS;
@@ -82,6 +84,11 @@ export class BankTransactionFilterQueryDto {
 	@IsString()
 	@MaxLength(100)
 	search?: string;
+
+	@IsOptional()
+	@IsArray()
+	@IsEnum(BANK_TRANSACTION_CATEGORIES, {each: true})
+	categories?: BankTransactionCategory[];
 }
 
 export class BankTransactionQueryDto {

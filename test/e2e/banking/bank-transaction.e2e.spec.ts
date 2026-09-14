@@ -37,6 +37,7 @@ describe('BankTransactionController', () => {
 	let fixtureConnection: BankConnection;
 	let fixtureBankAccount: BankAccount;
 	let fixtureTransaction: BankTransaction;
+	let fixtureGroceriesTransaction: BankTransaction;
 	let categorizeSpy: jest.SpyInstance;
 
 	beforeAll(async () => {
@@ -195,6 +196,7 @@ describe('BankTransactionController', () => {
 			}),
 		]);
 		fixtureTransaction = transactions[0];
+		fixtureGroceriesTransaction = transactions[1];
 	});
 
 	afterAll(async () => {
@@ -349,6 +351,34 @@ describe('BankTransactionController', () => {
 		expect(filteredResponse.body.transactions[0].description).toBe('Coffee shop');
 	});
 
+	it('applies one or multiple category filters', async () => {
+		await bankTransactionRepository.update({id: fixtureTransaction.id}, {category: 'FOOD_AND_DRINK'});
+		await bankTransactionRepository.update({id: fixtureGroceriesTransaction.id}, {category: 'SHOPPING'});
+
+		try {
+			const singleCategoryResponse = await verifiedAgent
+				.get('/bank-transactions')
+				.query({'filter[categories][]': 'FOOD_AND_DRINK'})
+				.expect(200);
+
+			expect(singleCategoryResponse.body.total).toBe(1);
+			expect(singleCategoryResponse.body.transactions[0].description).toBe('Coffee shop');
+
+			const multipleCategoriesResponse = await verifiedAgent
+				.get('/bank-transactions')
+				.query({'filter[categories][]': ['FOOD_AND_DRINK', 'SHOPPING']})
+				.expect(200);
+
+			expect(multipleCategoriesResponse.body.total).toBe(2);
+			expect(
+				multipleCategoriesResponse.body.transactions.map(({description}: {description: string}) => description),
+			).toEqual(['Coffee shop', 'Groceries']);
+		} finally {
+			await bankTransactionRepository.update({id: fixtureTransaction.id}, {category: null});
+			await bankTransactionRepository.update({id: fixtureGroceriesTransaction.id}, {category: null});
+		}
+	});
+
 	it.each([
 		['a positive page index', 'pagination[pageIndex]', '1', 200],
 		['the maximum page size', 'pagination[pageSize]', '50', 200],
@@ -368,6 +398,7 @@ describe('BankTransactionController', () => {
 		['an unsupported sort order', {'sort[order]': 'DOWN'}],
 		['an invalid booking date', {'filter[bookingDate][from]': '2026-99-99'}],
 		['a malformed bank account ID', {'filter[bankAccountIds][]': 'not-a-uuid'}],
+		['an unsupported category', {'filter[categories][]': 'NOT_A_CATEGORY'}],
 	])('rejects %s', async (_case, query) => {
 		await verifiedAgent.get('/bank-transactions').query(query).expect(400);
 	});
