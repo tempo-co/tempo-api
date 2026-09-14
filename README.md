@@ -31,15 +31,6 @@ $ npm ci
 
 The development environment uses variables from `.env.development`. To override these locally (for API keys or secrets), define them in a `.env.development.local` file, which takes precedence.
 
-AI transaction categorization is disabled by default. Enable it only through local or deployment configuration; never commit the API key:
-
-```text
-AI_CATEGORIZATION_ENABLED=false
-AI_CATEGORIZATION_PROVIDER=openai
-AI_CATEGORIZATION_MODEL=gpt-5.6-luna
-OPENAI_API_KEY=<set outside the repository when enabled>
-```
-
 ## Development
 
 ```bash
@@ -78,8 +69,6 @@ $ npm run test:e2e:cov
 ```
 
 The shared E2E setup keeps AI categorization disabled by default. The categorization spec opts into enabled mode before the shared application bootstrap, injects a non-secret placeholder key, and mocks only the provider boundary. It still exercises the real Nest HTTP app, PostgreSQL persistence, BullMQ/Redis queue, worker, response DTOs, and provider-failure handling; the normal E2E cases remain disabled.
-
-The E2E commands use the test config (`NODE_ENV=test`, loading `.env.test`) and never contact OpenAI. The categorization flow runs as part of the same E2E command and CI job as the rest of the API suite.
 
 ### Database seeding
 
