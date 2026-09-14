@@ -171,24 +171,25 @@ describe('BankTransactionCategorizationService queue scheduling', () => {
 });
 
 describe('BankTransactionCategorizationService worker', () => {
-	it('applies deterministic rules without calling the provider', async () => {
+	it('sends completed non-AI classifications to the provider', async () => {
 		const transaction = createTransaction({
-			transactionType: 'SALARY',
-			bankTransactionCode: 'SALA',
-			bankTransactionSubCode: null,
-			bankTransactionDescription: 'Salary',
-			amount: '100.00',
-			creditDebitIndicator: 'CRDT',
+			category: 'INCOME',
+			categoryStatus: 'COMPLETED',
+			categorySource: 'LEGACY',
+			categoryConfidence: '1.000',
+			categoryInputHash: 'existing-hash',
+			categoryAppliedInputHash: 'existing-hash',
 		});
-		const {service, provider, repository} = createService({rows: [transaction]});
+		const queryBuilder = createUpdateQueryBuilder();
+		const {service, provider} = createService({rows: [transaction], queryBuilder});
 
 		await service.processTransactionJob([transaction.id]);
 
-		expect(provider.categorize).not.toHaveBeenCalled();
-		const categorizationQueryBuilder = repository.createQueryBuilder.mock.results[0].value;
-		expect(categorizationQueryBuilder.set).toHaveBeenCalledWith(
-			expect.objectContaining({category: 'INCOME', categoryStatus: 'COMPLETED', categorySource: 'RULE'}),
+		expect(provider.categorize).toHaveBeenCalledTimes(1);
+		expect(queryBuilder.set).toHaveBeenCalledWith(
+			expect.objectContaining({categoryStatus: 'COMPLETED', categorySource: 'AI'}),
 		);
+		expect(transaction.categorySource).toBe('AI');
 	});
 
 	it('splits more than 50 unresolved records into bounded provider calls', async () => {

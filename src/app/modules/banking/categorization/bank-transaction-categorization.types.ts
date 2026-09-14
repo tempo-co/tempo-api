@@ -3,7 +3,7 @@ import type {BankTransactionCategory} from './bank-transaction-category';
 export const BANK_TRANSACTION_CATEGORIZATION_STATUSES = ['PENDING', 'PROCESSING', 'COMPLETED', 'FAILED'] as const;
 export type BankTransactionCategorizationStatus = (typeof BANK_TRANSACTION_CATEGORIZATION_STATUSES)[number];
 
-export const BANK_TRANSACTION_CATEGORIZATION_SOURCES = ['RULE', 'AI', 'MANUAL'] as const;
+export const BANK_TRANSACTION_CATEGORIZATION_SOURCES = ['AI', 'MANUAL'] as const;
 export type BankTransactionCategorizationSource = (typeof BANK_TRANSACTION_CATEGORIZATION_SOURCES)[number];
 
 export type BankTransactionCategorizationInput = {

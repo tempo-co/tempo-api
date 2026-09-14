@@ -23,7 +23,6 @@ import {
 	BankTransactionCategorizationProvider,
 	BankTransactionCategorizationProviderError,
 } from './bank-transaction-categorization.provider';
-import {applyBankTransactionCategorizationRule} from './bank-transaction-categorization.rules';
 import {
 	BankTransactionCategorizationInput,
 	BankTransactionCategorizationResult,
@@ -111,35 +110,6 @@ export class BankTransactionCategorizationService {
 			if (!(await this.refreshInputHashAndResetStaleClassification(transaction, inputHash))) continue;
 			if (transaction.categorySource === 'MANUAL') continue;
 
-			const ruleResult = applyBankTransactionCategorizationRule(input);
-			if (ruleResult) {
-				const applied = await this.updateCategorizationWithGuard(transaction.id, inputHash, {
-					category: ruleResult.category,
-					categoryStatus: 'COMPLETED',
-					categorySource: 'RULE',
-					categoryConfidence: String(ruleResult.confidence),
-					categoryAppliedInputHash: inputHash,
-					categoryProvider: null,
-					categoryModel: null,
-					categoryPromptVersion: null,
-					categoryUpdatedAt: new Date(),
-					categoryLastError: null,
-				});
-				if (applied)
-					this.applyLocalUpdate(transaction, {
-						category: ruleResult.category,
-						categoryStatus: 'COMPLETED',
-						categorySource: 'RULE',
-						categoryConfidence: String(ruleResult.confidence),
-						categoryAppliedInputHash: inputHash,
-						categoryProvider: null,
-						categoryModel: null,
-						categoryPromptVersion: null,
-						categoryLastError: null,
-					});
-				continue;
-			}
-
 			if (!this.isClaimable(transaction)) continue;
 			if (await this.claimTransaction(transaction.id, inputHash)) {
 				this.applyLocalUpdate(transaction, {categoryStatus: 'PROCESSING', categoryUpdatedAt: new Date()});
@@ -172,6 +142,10 @@ export class BankTransactionCategorizationService {
 								transaction."categoryUpdatedAt" IS NULL
 								OR transaction."categoryUpdatedAt" < :staleBefore
 							)
+						)
+						OR (
+							transaction."categoryStatus" = 'COMPLETED'
+							AND transaction."categorySource" IS DISTINCT FROM 'AI'
 						)
 					)`,
 					{
@@ -264,7 +238,9 @@ export class BankTransactionCategorizationService {
 			transaction.categoryAppliedInputHash !== null && transaction.categoryAppliedInputHash !== inputHash;
 		const completedHashIsStale =
 			transaction.categoryStatus === 'COMPLETED' && transaction.categoryAppliedInputHash !== inputHash;
-		if (!appliedHashIsStale && !(hashChanged && completedHashIsStale)) return true;
+		const completedByNonAiSource =
+			transaction.categoryStatus === 'COMPLETED' && transaction.categorySource !== 'AI';
+		if (!appliedHashIsStale && !completedByNonAiSource && !(hashChanged && completedHashIsStale)) return true;
 
 		const reset = await this.updateCategorizationWithGuard(transaction.id, inputHash, {
 			category: null,
