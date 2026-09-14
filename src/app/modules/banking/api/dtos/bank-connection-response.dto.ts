@@ -1,3 +1,9 @@
+import type {
+	BankTransactionCategorizationSource,
+	BankTransactionCategorizationStatus,
+} from '../../categorization/bank-transaction-categorization.types';
+import type {BankTransactionCategory} from '../../categorization/bank-transaction-category';
+
 export class BankAccountResponseDto {
 	id: string;
 	name: string | null;
@@ -47,6 +53,10 @@ export class BankConnectionTransactionResponseDto {
 	description: string | null;
 	displayDescription: string;
 	counterpartyName: string | null;
+	category: BankTransactionCategory | null;
+	categoryStatus: BankTransactionCategorizationStatus;
+	categorySource: BankTransactionCategorizationSource | null;
+	categoryConfidence: string | null;
 	merchantCategoryCode: string | null;
 	remittanceInformation: string | null;
 }

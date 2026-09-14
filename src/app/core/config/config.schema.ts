@@ -4,6 +4,13 @@ const portSchema = z.coerce.number().int().min(0).max(65535);
 
 const durationPattern = /^[0-9]+(s|m|h|d|w)$/;
 const durationSchema = z.string().regex(durationPattern);
+const strictBooleanEnvSchema = z.preprocess((value) => {
+	if (typeof value !== 'string') return value;
+	const normalized = value.trim().toLowerCase();
+	if (normalized === 'true') return true;
+	if (normalized === 'false') return false;
+	return value;
+}, z.boolean());
 
 export const ENV_VALUES = ['development', 'production', 'test'] as const;
 export type NodeEnv = (typeof ENV_VALUES)[number];
@@ -35,6 +42,15 @@ export const configSchema = z
 		REDIS_PORT: portSchema,
 		REDIS_HOST: z.string().min(1),
 		REDIS_INSIGHT_PORT: portSchema,
+
+		// --- AI categorization ---
+		AI_CATEGORIZATION_ENABLED: strictBooleanEnvSchema.default(false),
+		AI_CATEGORIZATION_PROVIDER: z
+			.string()
+			.regex(/^[a-z][a-z0-9-]*$/)
+			.default('openai'),
+		AI_CATEGORIZATION_MODEL: z.string().min(1).max(128).default('gpt-5.6-luna'),
+		OPENAI_API_KEY: z.string().min(1).optional(),
 
 		// --- APIs ---
 		ENABLE_BANKING_API_URL: z.string().url(),
@@ -70,6 +86,18 @@ export const configSchema = z
 				code: 'custom',
 				path: ['ENABLE_BANKING_PRIVATE_KEY_B64'],
 				message: 'Configure exactly one of ENABLE_BANKING_PRIVATE_KEY_B64 or ENABLE_BANKING_PRIVATE_KEY_PATH.',
+			});
+		}
+
+		if (
+			config.AI_CATEGORIZATION_ENABLED &&
+			config.AI_CATEGORIZATION_PROVIDER === 'openai' &&
+			!config.OPENAI_API_KEY
+		) {
+			context.addIssue({
+				code: 'custom',
+				path: ['OPENAI_API_KEY'],
+				message: 'OPENAI_API_KEY is required when OpenAI categorization is enabled.',
 			});
 		}
 	});

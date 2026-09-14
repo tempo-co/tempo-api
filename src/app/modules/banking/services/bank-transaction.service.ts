@@ -21,6 +21,8 @@ import {
 import {BankConnection} from '../bank-connection.entity';
 import {BANK_TRANSACTION_TYPES} from '../bank-transaction-type';
 import {BankTransaction} from '../bank-transaction.entity';
+import {createBankTransactionCategorizationInputHash} from '../categorization/bank-transaction-categorization-input';
+import type {BankTransactionCategory} from '../categorization/bank-transaction-category';
 
 @Injectable()
 export class BankTransactionService {
@@ -121,6 +123,37 @@ export class BankTransactionService {
 		return this.toResponse(transaction);
 	}
 
+	async updateCategory(
+		accountId: Account['id'],
+		id: BankTransaction['id'],
+		category: BankTransactionCategory,
+	): Promise<BankTransactionResponseDto> {
+		const transaction = await this.createOwnerScopedQuery(accountId)
+			.andWhere('transaction.id = :transactionId', {transactionId: id})
+			.getOne();
+
+		if (!transaction) throw new NotFoundException(BANKING_TRANSACTION_NOT_FOUND);
+		const inputHash = createBankTransactionCategorizationInputHash(transaction);
+		const values = {
+			category,
+			categoryStatus: 'COMPLETED',
+			categorySource: 'MANUAL',
+			categoryConfidence: null,
+			categoryInputHash: inputHash,
+			categoryAppliedInputHash: inputHash,
+			categoryProvider: null,
+			categoryModel: null,
+			categoryPromptVersion: null,
+			categoryUpdatedAt: new Date(),
+			categoryLastError: null,
+		};
+		const result = await this.bankTransactionRepository.update({id}, values);
+		if (result.affected === 0) throw new NotFoundException(BANKING_TRANSACTION_NOT_FOUND);
+		Object.assign(transaction, values);
+
+		return this.toResponse(transaction);
+	}
+
 	private async findOwnedConnection(accountId: Account['id'], connectionId: BankConnection['id']) {
 		const connection = await this.bankConnectionRepository.findOne({
 			where: {id: connectionId, account: {id: accountId}},
@@ -153,6 +186,10 @@ export class BankTransactionService {
 			direction: this.toDirection(transaction.creditDebitIndicator),
 			transactionType: transaction.transactionType ?? BANK_TRANSACTION_TYPES.OTHER,
 			transactionStatus: transaction.transactionStatus,
+			category: (transaction.category as BankTransactionResponseDto['category']) ?? null,
+			categoryStatus: (transaction.categoryStatus ?? 'PENDING') as BankTransactionResponseDto['categoryStatus'],
+			categorySource: (transaction.categorySource as BankTransactionResponseDto['categorySource']) ?? null,
+			categoryConfidence: transaction.categoryConfidence,
 			providerTransactionDescription: transaction.bankTransactionDescription,
 			merchantCategoryCode: transaction.merchantCategoryCode,
 			remittanceInformation: transaction.remittanceInformation,
@@ -186,6 +223,15 @@ export class BankTransactionService {
 			description: transaction.description,
 			displayDescription: transaction.displayDescription,
 			counterpartyName: transaction.counterpartyName,
+			category:
+				(transaction.category as BankConnectionTransactionsResponseDto['transactions'][number]['category']) ??
+				null,
+			categoryStatus: (transaction.categoryStatus ??
+				'PENDING') as BankConnectionTransactionsResponseDto['transactions'][number]['categoryStatus'],
+			categorySource:
+				(transaction.categorySource as BankConnectionTransactionsResponseDto['transactions'][number]['categorySource']) ??
+				null,
+			categoryConfidence: transaction.categoryConfidence,
 			merchantCategoryCode: transaction.merchantCategoryCode,
 			remittanceInformation: transaction.remittanceInformation,
 		};

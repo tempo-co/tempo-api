@@ -12,6 +12,7 @@ import {BankConnection} from './bank-connection.entity';
 import {BankSyncRun} from './bank-sync-run.entity';
 import {BankTransaction} from './bank-transaction.entity';
 import {BankingService} from './banking.service';
+import {BankTransactionCategorizationModule} from './categorization/bank-transaction-categorization.module';
 import {BankTransactionService} from './services/bank-transaction.service';
 import {BankingAuthorizationStateModule} from './services/banking-authorization-state.module';
 import {BankingConnectionLockService} from './services/banking-connection-lock.service';
@@ -25,6 +26,7 @@ import {EnableBankingClient} from './services/enable-banking.client';
 		AccountModule,
 		RedisModule,
 		BankingAuthorizationStateModule,
+		BankTransactionCategorizationModule,
 	],
 	providers: [
 		BankingService,
