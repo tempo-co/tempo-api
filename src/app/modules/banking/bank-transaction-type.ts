@@ -59,8 +59,8 @@ const FREE_FORM_CLASSIFIERS: ReadonlyArray<readonly [BankTransactionType, RegExp
 	[BANK_TRANSACTION_TYPES.INTEREST, /\b(?:interest|rente)\b/],
 	[BANK_TRANSACTION_TYPES.SALARY, /\b(?:salary|payroll|wage|salaris|loon)\b/],
 	[BANK_TRANSACTION_TYPES.REFUND, /\b(?:refund|reimburse|terugbetaling|reversal)\b/],
-	[BANK_TRANSACTION_TYPES.CARD_PAYMENT, /\b(?:card|kaart|pos|purchase|merchant)\b/],
-	[BANK_TRANSACTION_TYPES.TRANSFER, /\b(?:transfer|overboeking|overschrijving|wire|sepa)\b/],
+	[BANK_TRANSACTION_TYPES.CARD_PAYMENT, /\b(?:card|kaart|pos|purchase|merchant|ideal|wero|online\s+payment)\b/],
+	[BANK_TRANSACTION_TYPES.TRANSFER, /\b(?:transfer|overboeking|overschrijving|wire)\b/],
 ];
 
 export function normalizeBankTransactionType({

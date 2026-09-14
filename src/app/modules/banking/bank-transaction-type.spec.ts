@@ -35,6 +35,11 @@ describe('normalizeBankTransactionType', () => {
 			BANK_TRANSACTION_TYPES.CARD_PAYMENT,
 		],
 		['fee descriptions', {description: 'Monthly account fee'}, BANK_TRANSACTION_TYPES.FEE],
+		[
+			'iDEAL payment descriptions',
+			{code: '944', description: 'SEPA IDEAL TRANSFERS'},
+			BANK_TRANSACTION_TYPES.CARD_PAYMENT,
+		],
 		['card descriptions', {description: 'Card payment at a merchant'}, BANK_TRANSACTION_TYPES.CARD_PAYMENT],
 		['deposit descriptions', {description: 'Bank deposit'}, BANK_TRANSACTION_TYPES.OTHER],
 	])('%s', (_label, classification, expected) => {

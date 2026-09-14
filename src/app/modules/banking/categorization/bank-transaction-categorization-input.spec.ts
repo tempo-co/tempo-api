@@ -69,6 +69,19 @@ describe('bank transaction categorization input', () => {
 		expect(JSON.stringify(input)).not.toContain('account-id');
 	});
 
+	it('re-derives the transaction type when the stored value is stale', () => {
+		const input = toBankTransactionCategorizationInput(
+			createTransaction({
+				transactionType: 'TRANSFER',
+				bankTransactionCode: '944',
+				bankTransactionSubCode: null,
+				bankTransactionDescription: null,
+			}),
+		);
+
+		expect(input.transactionType).toBe('OTHER');
+	});
+
 	it('keeps the hash stable across insignificant text and case changes', () => {
 		const first = createTransaction();
 		const second = createTransaction({
@@ -91,10 +104,15 @@ describe('bank transaction categorization input', () => {
 		);
 	});
 
+	it('does not change the hash when only the stored type is stale', () => {
+		expect(createBankTransactionCategorizationInputHash(createTransaction())).toBe(
+			createBankTransactionCategorizationInputHash(createTransaction({transactionType: 'TRANSFER'})),
+		);
+	});
+
 	it.each([
 		['amount', {amount: '-12.51'}],
 		['direction indicator', {creditDebitIndicator: 'CRDT'}],
-		['transaction type', {transactionType: 'TRANSFER'}],
 		['bank transaction code', {bankTransactionCode: 'PMNT2'}],
 		['bank transaction sub-code', {bankTransactionSubCode: 'CARD2'}],
 		['transaction date', {transactionDate: '2026-09-04'}],

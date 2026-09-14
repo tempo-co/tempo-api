@@ -1,6 +1,6 @@
 import {createHash} from 'node:crypto';
 
-import {BANK_TRANSACTION_TYPES} from '../bank-transaction-type';
+import {BANK_TRANSACTION_TYPES, normalizeBankTransactionType} from '../bank-transaction-type';
 import {BankTransaction} from '../bank-transaction.entity';
 import {truncate} from '../banking.utils';
 import {BankTransactionCategorizationInput} from './bank-transaction-categorization.types';
@@ -30,6 +30,17 @@ export function toBankTransactionCategorizationInput(
 	>,
 ): BankTransactionCategorizationInput {
 	const creditDebitIndicator = normalizeUppercase(transaction.creditDebitIndicator);
+	const bankTransactionCode = normalizeUppercase(transaction.bankTransactionCode);
+	const bankTransactionSubCode = normalizeUppercase(transaction.bankTransactionSubCode);
+	const bankTransactionDescription = normalizeNullableText(transaction.bankTransactionDescription);
+	const hasRawTransactionType = Boolean(bankTransactionCode || bankTransactionSubCode || bankTransactionDescription);
+	const transactionType = hasRawTransactionType
+		? normalizeBankTransactionType({
+				code: bankTransactionCode ?? undefined,
+				subCode: bankTransactionSubCode ?? undefined,
+				description: bankTransactionDescription ?? undefined,
+			})
+		: normalizeRequiredText(transaction.transactionType) || BANK_TRANSACTION_TYPES.OTHER;
 
 	return {
 		correlationId: transaction.id,
@@ -40,12 +51,12 @@ export function toBankTransactionCategorizationInput(
 		currency: normalizeUppercase(transaction.currency) ?? '',
 		creditDebitIndicator,
 		direction: toDirection(creditDebitIndicator),
-		transactionType: normalizeRequiredText(transaction.transactionType) || BANK_TRANSACTION_TYPES.OTHER,
-		bankTransactionCode: normalizeUppercase(transaction.bankTransactionCode),
-		bankTransactionSubCode: normalizeUppercase(transaction.bankTransactionSubCode),
+		transactionType,
+		bankTransactionCode,
+		bankTransactionSubCode,
 		description: normalizeNullableText(transaction.description),
 		counterpartyName: normalizeNullableText(transaction.counterpartyName),
-		bankTransactionDescription: normalizeNullableText(transaction.bankTransactionDescription),
+		bankTransactionDescription,
 		merchantCategoryCode: normalizeNullableText(transaction.merchantCategoryCode),
 		remittanceInformation: sanitizeRemittanceInformation(transaction.remittanceInformation),
 	};

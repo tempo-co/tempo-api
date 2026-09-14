@@ -122,6 +122,8 @@ export async function seedBankTransactionCategorizationData(app: INestApplicatio
 				amount: '100.00',
 				creditDebitIndicator: 'CRDT',
 				transactionType: BANK_TRANSACTION_TYPES.SALARY,
+				bankTransactionCode: 'SALA',
+				bankTransactionDescription: 'Salary',
 				description: 'Synthetic salary rule',
 				displayDescription: 'Synthetic salary rule',
 				counterpartyName: 'Synthetic employer',

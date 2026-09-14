@@ -174,6 +174,9 @@ describe('BankTransactionCategorizationService worker', () => {
 	it('applies deterministic rules without calling the provider', async () => {
 		const transaction = createTransaction({
 			transactionType: 'SALARY',
+			bankTransactionCode: 'SALA',
+			bankTransactionSubCode: null,
+			bankTransactionDescription: 'Salary',
 			amount: '100.00',
 			creditDebitIndicator: 'CRDT',
 		});
