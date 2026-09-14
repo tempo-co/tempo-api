@@ -1,4 +1,9 @@
 import {BankTransactionType} from '../../bank-transaction-type';
+import type {
+	BankTransactionCategorizationSource,
+	BankTransactionCategorizationStatus,
+} from '../../categorization/bank-transaction-categorization.types';
+import type {BankTransactionCategory} from '../../categorization/bank-transaction-category';
 
 export enum BankTransactionDirection {
 	INCOME = 'INCOME',
@@ -20,6 +25,10 @@ export class BankTransactionResponseDto {
 	direction: BankTransactionDirection;
 	transactionType: BankTransactionType;
 	transactionStatus: string | null;
+	category: BankTransactionCategory | null;
+	categoryStatus: BankTransactionCategorizationStatus;
+	categorySource: BankTransactionCategorizationSource | null;
+	categoryConfidence: string | null;
 	providerTransactionDescription: string | null;
 	merchantCategoryCode: string | null;
 	remittanceInformation: string | null;

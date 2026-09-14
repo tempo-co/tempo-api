@@ -3,12 +3,29 @@ import {NestExpressApplication} from '@nestjs/platform-express';
 import {Test} from '@nestjs/testing';
 import {Server} from 'node:net';
 
-import {seedAccounts} from '../../scripts/seed-data/seed-accounts';
-import {AppModule} from '../../src/app.module';
-
 let app: INestApplication<Server>;
+let aiCategorizationEnabled = false;
+
+export function enableAiCategorizationE2e(): void {
+	aiCategorizationEnabled = true;
+}
 
 beforeAll(async () => {
+	process.env.NODE_ENV = 'test';
+	process.env.AI_CATEGORIZATION_ENABLED = String(aiCategorizationEnabled);
+
+	if (aiCategorizationEnabled) {
+		process.env.AI_CATEGORIZATION_PROVIDER = 'openai';
+		process.env.AI_CATEGORIZATION_MODEL = 'test-model';
+		process.env.OPENAI_API_KEY = 'test-only-placeholder';
+	} else {
+		delete process.env.OPENAI_API_KEY;
+	}
+
+	const [{seedAccounts}, {AppModule}] = await Promise.all([
+		import('../../scripts/seed-data/seed-accounts'),
+		import('../../src/app.module'),
+	]);
 	const moduleFixture = await Test.createTestingModule({imports: [AppModule]}).compile();
 	app = moduleFixture.createNestApplication({forceCloseConnections: true});
 	(app as NestExpressApplication).set('query parser', 'extended');

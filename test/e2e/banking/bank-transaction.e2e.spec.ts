@@ -6,11 +6,13 @@ import request from 'supertest';
 import TestAgent from 'supertest/lib/agent';
 import {Repository} from 'typeorm';
 
+import {ConfigurationService} from '@core/config/config.service';
 import {Account} from '@modules/account/account.entity';
 import {AccountService} from '@modules/account/account.service';
 import {BankAccount} from '@modules/banking/bank-account.entity';
 import {BankConnection} from '@modules/banking/bank-connection.entity';
 import {BankTransaction} from '@modules/banking/bank-transaction.entity';
+import {OpenAiBankTransactionCategorizationProvider} from '@modules/banking/categorization/providers/openai-bank-transaction-categorization.provider';
 
 import {
 	SESSION_TEST_ACCOUNT_EMAIL,
@@ -35,10 +37,13 @@ describe('BankTransactionController', () => {
 	let fixtureConnection: BankConnection;
 	let fixtureBankAccount: BankAccount;
 	let fixtureTransaction: BankTransaction;
+	let categorizeSpy: jest.SpyInstance;
 
 	beforeAll(async () => {
 		app = getApp();
 		httpServer = app.getHttpServer();
+		expect(app.get(ConfigurationService).get('AI_CATEGORIZATION_ENABLED')).toBe(false);
+		categorizeSpy = jest.spyOn(app.get(OpenAiBankTransactionCategorizationProvider), 'categorize');
 		const accountService = app.get(AccountService);
 		const seededAccount = await accountService.findByEmail(VERIFIED_ACCOUNT_EMAIL);
 		if (!seededAccount) throw new Error('Verified test account was not seeded.');
@@ -213,6 +218,7 @@ describe('BankTransactionController', () => {
 		const response = await verifiedAgent.get('/bank-transactions').expect(200);
 
 		expect(response.body.total).toBe(4);
+		expect(categorizeSpy).not.toHaveBeenCalled();
 		expect(response.body.transactions[0]).toMatchObject({
 			id: fixtureTransaction.id,
 			transactionDate: '2026-08-24',
@@ -221,6 +227,10 @@ describe('BankTransactionController', () => {
 			direction: 'EXPENSE',
 			transactionType: 'CARD_PAYMENT',
 			providerTransactionDescription: 'Card payment',
+			category: null,
+			categoryStatus: 'PENDING',
+			categorySource: null,
+			categoryConfidence: null,
 			balanceAfterAmount: '100.50000000',
 			balanceAfterCurrency: 'EUR',
 			instructedAmount: '4.50000000',
@@ -403,5 +413,47 @@ describe('BankTransactionController', () => {
 		expect(JSON.stringify(response.body)).not.toContain('provider-entry-coffee');
 		expect(response.body).not.toHaveProperty('bankTransactionCode');
 		expect(response.body).not.toHaveProperty('bankTransactionSubCode');
+	});
+
+	it('allows verified owners to correct categories without exposing audit fields', async () => {
+		const transactionPath = `/bank-transactions/${fixtureTransaction.id}/category`;
+
+		await request(httpServer).patch(transactionPath).send({category: 'FOOD_AND_DRINK'}).expect(401);
+		await unverifiedAgent.patch(transactionPath).send({category: 'FOOD_AND_DRINK'}).expect(403);
+		await otherVerifiedAgent.patch(transactionPath).send({category: 'FOOD_AND_DRINK'}).expect(404);
+		await verifiedAgent.patch(transactionPath).send({category: 'NOT_A_CATEGORY'}).expect(400);
+
+		const response = await verifiedAgent.patch(transactionPath).send({category: 'FOOD_AND_DRINK'}).expect(200);
+
+		expect(response.body).toMatchObject({
+			id: fixtureTransaction.id,
+			category: 'FOOD_AND_DRINK',
+			categoryStatus: 'COMPLETED',
+			categorySource: 'MANUAL',
+			categoryConfidence: null,
+		});
+		for (const field of [
+			'categoryInputHash',
+			'categoryAppliedInputHash',
+			'categoryProvider',
+			'categoryModel',
+			'categoryPromptVersion',
+			'categoryLastError',
+		]) {
+			expect(response.body).not.toHaveProperty(field);
+		}
+
+		const persisted = await bankTransactionRepository.findOneByOrFail({id: fixtureTransaction.id});
+		expect(persisted).toMatchObject({
+			category: 'FOOD_AND_DRINK',
+			categoryStatus: 'COMPLETED',
+			categorySource: 'MANUAL',
+			categoryConfidence: null,
+			categoryAppliedInputHash: expect.any(String),
+			categoryProvider: null,
+			categoryModel: null,
+			categoryPromptVersion: null,
+			categoryLastError: null,
+		});
 	});
 });
