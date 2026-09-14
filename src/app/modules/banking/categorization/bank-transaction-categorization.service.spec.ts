@@ -31,7 +31,7 @@ function createTransaction(overrides: Partial<BankTransaction> = {}): BankTransa
 		description: 'Coffee shop',
 		displayDescription: 'Coffee shop',
 		counterpartyName: 'Cafe',
-		merchantCategoryCode: '5814',
+		merchantCategoryCode: null,
 		remittanceInformation: 'Morning coffee',
 		balanceAfterAmount: null,
 		balanceAfterCurrency: null,

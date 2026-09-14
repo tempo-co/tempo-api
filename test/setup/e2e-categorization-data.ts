@@ -15,11 +15,13 @@ export const CATEGORIZATION_E2E_ACCOUNT_ID = '00000000-0000-4000-8000-0000000001
 export const CATEGORIZATION_E2E_AI_TRANSACTION_ID = '00000000-0000-4000-8000-000000000103';
 export const CATEGORIZATION_E2E_FAILURE_TRANSACTION_ID = '00000000-0000-4000-8000-000000000104';
 export const CATEGORIZATION_E2E_RULE_TRANSACTION_ID = '00000000-0000-4000-8000-000000000105';
+export const CATEGORIZATION_E2E_MCC_TRANSACTION_ID = '00000000-0000-4000-8000-000000000106';
 
 const CATEGORIZATION_E2E_TRANSACTION_IDS = [
 	CATEGORIZATION_E2E_AI_TRANSACTION_ID,
 	CATEGORIZATION_E2E_FAILURE_TRANSACTION_ID,
 	CATEGORIZATION_E2E_RULE_TRANSACTION_ID,
+	CATEGORIZATION_E2E_MCC_TRANSACTION_ID,
 ] as const;
 
 export async function seedBankTransactionCategorizationData(app: INestApplicationContext): Promise<void> {
@@ -82,7 +84,7 @@ export async function seedBankTransactionCategorizationData(app: INestApplicatio
 				description: 'Lantern Books',
 				displayDescription: 'Lantern Books',
 				counterpartyName: 'Lantern Books',
-				merchantCategoryCode: '5942',
+				merchantCategoryCode: null,
 				remittanceInformation: 'Fiction and non-fiction',
 			}),
 			createCategorizationTransaction(bankAccount.id, {
@@ -96,6 +98,19 @@ export async function seedBankTransactionCategorizationData(app: INestApplicatio
 				description: 'Synthetic provider failure',
 				displayDescription: 'Synthetic provider failure',
 				counterpartyName: 'Synthetic provider failure',
+			}),
+			createCategorizationTransaction(bankAccount.id, {
+				id: CATEGORIZATION_E2E_MCC_TRANSACTION_ID,
+				providerTransactionId: 'categorization-e2e-mcc',
+				entryReference: 'categorization-e2e-mcc-entry',
+				transactionDate: '2026-09-03',
+				bookingDate: '2026-09-03',
+				valueDate: '2026-09-03',
+				amount: '-18.50',
+				description: 'Synthetic restaurant MCC rule',
+				displayDescription: 'Synthetic restaurant MCC rule',
+				counterpartyName: 'Synthetic restaurant',
+				merchantCategoryCode: '5814',
 			}),
 			createCategorizationTransaction(bankAccount.id, {
 				id: CATEGORIZATION_E2E_RULE_TRANSACTION_ID,

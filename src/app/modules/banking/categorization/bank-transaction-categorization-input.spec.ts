@@ -57,6 +57,8 @@ describe('bank transaction categorization input', () => {
 			creditDebitIndicator: 'DBIT',
 			direction: 'EXPENSE',
 			transactionType: 'CARD_PAYMENT',
+			bankTransactionCode: 'PMNT',
+			bankTransactionSubCode: 'CARD',
 			description: 'Coffee shop',
 			counterpartyName: 'Cafe',
 			bankTransactionDescription: 'Card payment',
@@ -93,6 +95,8 @@ describe('bank transaction categorization input', () => {
 		['amount', {amount: '-12.51'}],
 		['direction indicator', {creditDebitIndicator: 'CRDT'}],
 		['transaction type', {transactionType: 'TRANSFER'}],
+		['bank transaction code', {bankTransactionCode: 'PMNT2'}],
+		['bank transaction sub-code', {bankTransactionSubCode: 'CARD2'}],
 		['transaction date', {transactionDate: '2026-09-04'}],
 		['booking date', {bookingDate: '2026-09-04'}],
 		['value date', {valueDate: '2026-09-04'}],
@@ -130,5 +134,15 @@ describe('bank transaction categorization input', () => {
 
 		expect(input.remittanceInformation).toHaveLength(2_000);
 		expect(input.remittanceInformation).toBe(remittanceInformation.slice(0, 2_000));
+	});
+
+	it('redacts high-risk remittance identifiers before provider use', () => {
+		const input = toBankTransactionCategorizationInput(
+			createTransaction({
+				remittanceInformation: 'IBAN NL91 ABNA 0417 1643 00 contact test@example.com NR:ABC123456 1234567',
+			}),
+		);
+
+		expect(input.remittanceInformation).toBe('IBAN [REDACTED] contact [REDACTED] [REDACTED] [REDACTED]');
 	});
 });

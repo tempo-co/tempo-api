@@ -19,6 +19,7 @@ import {VERIFIED_ACCOUNT_EMAIL, VERIFIED_ACCOUNT_PASSWORD} from '../../../script
 import {
 	CATEGORIZATION_E2E_AI_TRANSACTION_ID,
 	CATEGORIZATION_E2E_FAILURE_TRANSACTION_ID,
+	CATEGORIZATION_E2E_MCC_TRANSACTION_ID,
 	CATEGORIZATION_E2E_RULE_TRANSACTION_ID,
 	seedBankTransactionCategorizationData,
 } from '../../setup/e2e-categorization-data';
@@ -154,6 +155,27 @@ describe('Bank transaction categorization integration', () => {
 			categorySource: 'RULE',
 			categoryConfidence: '1.000',
 		});
+	});
+
+	it('applies MCC rules through the real worker path without calling the provider', async () => {
+		const categorizationService = app.get(BankTransactionCategorizationService);
+		const providerCallsBefore = categorizeSpy.mock.calls.length;
+
+		await categorizationService.enqueueForTransactions([CATEGORIZATION_E2E_MCC_TRANSACTION_ID]);
+
+		const response = await waitFor(
+			() => verifiedAgent.get(`/bank-transactions/${CATEGORIZATION_E2E_MCC_TRANSACTION_ID}`),
+			(value) => value.status === 200 && value.body.categoryStatus === 'COMPLETED',
+		);
+
+		expect(response.body).toMatchObject({
+			id: CATEGORIZATION_E2E_MCC_TRANSACTION_ID,
+			category: 'FOOD_AND_DRINK',
+			categoryStatus: 'COMPLETED',
+			categorySource: 'RULE',
+			categoryConfidence: '1.000',
+		});
+		expect(categorizeSpy).toHaveBeenCalledTimes(providerCallsBefore);
 	});
 
 	it('persists a provider failure through the real worker path without calling an external provider', async () => {

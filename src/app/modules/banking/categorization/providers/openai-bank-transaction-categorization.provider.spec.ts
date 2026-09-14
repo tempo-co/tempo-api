@@ -19,6 +19,8 @@ function createInput(correlationId: string): BankTransactionCategorizationInput 
 		creditDebitIndicator: 'DBIT',
 		direction: 'EXPENSE',
 		transactionType: 'CARD_PAYMENT',
+		bankTransactionCode: 'PMNT',
+		bankTransactionSubCode: 'CARD',
 		description: 'Coffee shop',
 		counterpartyName: 'Cafe',
 		bankTransactionDescription: 'Card payment',

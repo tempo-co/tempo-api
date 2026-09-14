@@ -20,6 +20,8 @@ export function toBankTransactionCategorizationInput(
 		| 'currency'
 		| 'creditDebitIndicator'
 		| 'transactionType'
+		| 'bankTransactionCode'
+		| 'bankTransactionSubCode'
 		| 'description'
 		| 'counterpartyName'
 		| 'bankTransactionDescription'
@@ -39,14 +41,13 @@ export function toBankTransactionCategorizationInput(
 		creditDebitIndicator,
 		direction: toDirection(creditDebitIndicator),
 		transactionType: normalizeRequiredText(transaction.transactionType) || BANK_TRANSACTION_TYPES.OTHER,
+		bankTransactionCode: normalizeUppercase(transaction.bankTransactionCode),
+		bankTransactionSubCode: normalizeUppercase(transaction.bankTransactionSubCode),
 		description: normalizeNullableText(transaction.description),
 		counterpartyName: normalizeNullableText(transaction.counterpartyName),
 		bankTransactionDescription: normalizeNullableText(transaction.bankTransactionDescription),
 		merchantCategoryCode: normalizeNullableText(transaction.merchantCategoryCode),
-		remittanceInformation: truncate(
-			normalizeNullableText(transaction.remittanceInformation),
-			MAX_REMITTANCE_INFORMATION_LENGTH,
-		),
+		remittanceInformation: sanitizeRemittanceInformation(transaction.remittanceInformation),
 	};
 }
 
@@ -63,6 +64,8 @@ export function createBankTransactionCategorizationInputHash(
 		creditDebitIndicator: input.creditDebitIndicator,
 		direction: input.direction,
 		transactionType: input.transactionType,
+		bankTransactionCode: input.bankTransactionCode,
+		bankTransactionSubCode: input.bankTransactionSubCode,
 		description: input.description,
 		counterpartyName: input.counterpartyName,
 		bankTransactionDescription: input.bankTransactionDescription,
@@ -79,6 +82,23 @@ function isCategorizationInput(
 	value: BankTransaction | BankTransactionCategorizationInput,
 ): value is BankTransactionCategorizationInput {
 	return 'direction' in value;
+}
+
+function sanitizeRemittanceInformation(value: string | null | undefined): string | null {
+	const normalized = normalizeNullableText(value);
+	if (!normalized) return null;
+
+	return truncate(
+		normalized
+			.replace(/\b[\w.+-]+@[\w.-]+\.[A-Z]{2,}\b/gi, '[REDACTED]')
+			.replace(/\b[A-Z]{2}\d{2}(?:[\s-]?[A-Z0-9]{2,4}){4,8}\b/g, '[REDACTED]')
+			.replace(
+				/\b(?:iban|account|acct|rekening|reference|ref|nr)\s*[:#-]?\s*[A-Z0-9][A-Z0-9-]{3,}\b/gi,
+				'[REDACTED]',
+			)
+			.replace(/\b\d{6,}\b/g, '[REDACTED]'),
+		MAX_REMITTANCE_INFORMATION_LENGTH,
+	);
 }
 
 function normalizeNullableText(value: string | null | undefined): string | null {

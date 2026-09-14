@@ -593,6 +593,8 @@ export class BankingSyncService {
 				currency,
 				creditDebitIndicator,
 				transactionType,
+				bankTransactionCode,
+				bankTransactionSubCode,
 				description,
 				counterpartyName,
 				bankTransactionDescription,

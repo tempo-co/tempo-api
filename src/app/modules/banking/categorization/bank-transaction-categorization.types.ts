@@ -16,6 +16,8 @@ export type BankTransactionCategorizationInput = {
 	creditDebitIndicator: string | null;
 	direction: 'INCOME' | 'EXPENSE' | 'UNKNOWN';
 	transactionType: string;
+	bankTransactionCode: string | null;
+	bankTransactionSubCode: string | null;
 	description: string | null;
 	counterpartyName: string | null;
 	bankTransactionDescription: string | null;

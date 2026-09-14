@@ -174,6 +174,8 @@ export class OpenAiBankTransactionCategorizationProvider implements BankTransact
 			creditDebitIndicator: transaction.creditDebitIndicator,
 			direction: transaction.direction,
 			transactionType: transaction.transactionType,
+			bankTransactionCode: transaction.bankTransactionCode,
+			bankTransactionSubCode: transaction.bankTransactionSubCode,
 			description: transaction.description,
 			counterpartyName: transaction.counterpartyName,
 			bankTransactionDescription: transaction.bankTransactionDescription,
