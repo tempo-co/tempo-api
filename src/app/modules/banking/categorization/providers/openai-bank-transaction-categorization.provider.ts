@@ -4,10 +4,7 @@ import {z} from 'zod';
 
 import {ConfigurationService} from '@core/config/config.service';
 
-import {
-	BANK_TRANSACTION_CATEGORIZATION_PROMPT_VERSION,
-	BANK_TRANSACTION_CATEGORIZATION_REQUEST_TIMEOUT_MS,
-} from '../bank-transaction-categorization.constants';
+import {BANK_TRANSACTION_CATEGORIZATION_REQUEST_TIMEOUT_MS} from '../bank-transaction-categorization.constants';
 import {
 	BankTransactionCategorizationProvider,
 	BankTransactionCategorizationProviderError,
@@ -206,6 +203,3 @@ export class OpenAiBankTransactionCategorizationProvider implements BankTransact
 		return typeof status === 'number' && Number.isInteger(status) ? status : undefined;
 	}
 }
-
-export {BANK_TRANSACTION_CATEGORIZATION_PROMPT_VERSION};
-export {BankTransactionCategorizationProviderError};

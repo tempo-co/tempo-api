@@ -7,6 +7,7 @@ import {BankAccount} from '../bank-account.entity';
 import {BankConnection} from '../bank-connection.entity';
 import {BankSyncRun} from '../bank-sync-run.entity';
 import {BankTransaction} from '../bank-transaction.entity';
+import {BankTransactionCategorizationService} from '../categorization/bank-transaction-categorization.service';
 import {BankingConnectionLockService} from './banking-connection-lock.service';
 import {BankingEncryptionService} from './banking-encryption.service';
 import {BankingSyncService} from './banking-sync.service';
@@ -77,7 +78,10 @@ describe('BankingSyncService', () => {
 			bankConnection: {update: jest.fn().mockResolvedValue(undefined)},
 			bankSyncRun: {update: jest.fn().mockResolvedValue(undefined)},
 			balance: {insert: jest.fn().mockResolvedValue(undefined)},
-			bankTransaction: {upsert: jest.fn().mockResolvedValue(undefined)},
+			bankTransaction: {
+				find: jest.fn().mockResolvedValue([]),
+				upsert: jest.fn().mockResolvedValue(undefined),
+			},
 			bankAccount: {update: jest.fn().mockResolvedValue(undefined)},
 		};
 		const transactionManager = {
@@ -101,6 +105,9 @@ describe('BankingSyncService', () => {
 		const encryptionServiceMock = {
 			decrypt: jest.fn().mockReturnValue('provider-session'),
 		};
+		const categorizationServiceMock = {
+			enqueueForTransactions: jest.fn().mockResolvedValue(undefined),
+		};
 		const service = new BankingSyncService(
 			bankConnectionRepositoryMock as unknown as Repository<BankConnection>,
 			bankAccountRepositoryMock as unknown as Repository<BankAccount>,
@@ -109,6 +116,7 @@ describe('BankingSyncService', () => {
 			enableBankingClientMock as unknown as EnableBankingClient,
 			encryptionServiceMock as unknown as BankingEncryptionService,
 			new BankingConnectionLockService(redisMock as unknown as Redis),
+			categorizationServiceMock as unknown as BankTransactionCategorizationService,
 		);
 
 		bankConnectionRepositoryMock.findOne.mockImplementation(async (options: {where: {account: {id: string}}}) => {
@@ -167,12 +175,14 @@ describe('BankingSyncService synchronization lock', () => {
 		findOneBy: jest.Mock;
 		update: jest.Mock;
 	};
-	let transactionRepository: {
+	type TransactionRepository = {
+		find: jest.Mock;
 		insert: jest.Mock;
 		upsert: jest.Mock;
 		update: jest.Mock;
 		createQueryBuilder: jest.Mock;
 	};
+	let transactionRepository: TransactionRepository;
 
 	beforeEach(() => {
 		jest.useFakeTimers();
@@ -245,6 +255,7 @@ describe('BankingSyncService synchronization lock', () => {
 			update: jest.fn().mockResolvedValue(undefined),
 		};
 		transactionRepository = {
+			find: jest.fn().mockResolvedValue([]),
 			insert: jest.fn().mockResolvedValue(undefined),
 			upsert: jest.fn().mockResolvedValue(undefined),
 			update: jest.fn().mockResolvedValue(undefined),
@@ -265,6 +276,9 @@ describe('BankingSyncService synchronization lock', () => {
 		const encryptionService = {
 			decrypt: jest.fn().mockReturnValue('provider-session'),
 		};
+		const categorizationService = {
+			enqueueForTransactions: jest.fn().mockResolvedValue(undefined),
+		};
 
 		service = new BankingSyncService(
 			bankConnectionRepository as unknown as Repository<BankConnection>,
@@ -274,6 +288,7 @@ describe('BankingSyncService synchronization lock', () => {
 			enableBankingClient as unknown as EnableBankingClient,
 			encryptionService as unknown as BankingEncryptionService,
 			new BankingConnectionLockService(redis as unknown as Redis),
+			categorizationService as unknown as BankTransactionCategorizationService,
 		);
 	});
 

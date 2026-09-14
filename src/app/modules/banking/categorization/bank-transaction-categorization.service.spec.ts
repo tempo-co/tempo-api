@@ -6,9 +6,9 @@ import {
 } from '@core/queue/queue.constants';
 
 import {BankTransaction} from '../bank-transaction.entity';
+import {BankTransactionCategorizationProviderError} from './bank-transaction-categorization.provider';
 import {BankTransactionCategorizationService} from './bank-transaction-categorization.service';
 import {BankTransactionCategorizationInput} from './bank-transaction-categorization.types';
-import {BankTransactionCategorizationProviderError} from './providers/openai-bank-transaction-categorization.provider';
 
 function createTransaction(overrides: Partial<BankTransaction> = {}): BankTransaction {
 	return {

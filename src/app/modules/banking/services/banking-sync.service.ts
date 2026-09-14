@@ -1,11 +1,4 @@
-import {
-	ConflictException,
-	Injectable,
-	InternalServerErrorException,
-	Logger,
-	NotFoundException,
-	Optional,
-} from '@nestjs/common';
+import {ConflictException, Injectable, InternalServerErrorException, Logger, NotFoundException} from '@nestjs/common';
 import {InjectRepository} from '@nestjs/typeorm';
 import {createHash} from 'node:crypto';
 import {DataSource, In, Repository} from 'typeorm';
@@ -97,7 +90,7 @@ export class BankingSyncService {
 		private readonly enableBankingClient: EnableBankingClient,
 		private readonly encryptionService: BankingEncryptionService,
 		private readonly connectionLockService: BankingConnectionLockService,
-		@Optional() private readonly categorizationService?: BankTransactionCategorizationService,
+		private readonly categorizationService: BankTransactionCategorizationService,
 	) {}
 
 	async synchronize(accountId: Account['id'], connectionId: BankConnection['id']): Promise<BankSyncRunResponseDto> {
@@ -446,13 +439,10 @@ export class BankingSyncService {
 			this.toBankTransactionValues(bankAccount, transaction),
 		);
 		const dedupeKeys = transactionValues.map(({dedupeKey}) => dedupeKey);
-		const existingTransactions =
-			typeof repository.find === 'function'
-				? ((await repository.find({
-						select: ['id', 'dedupeKey', 'categoryInputHash', 'categorySource'],
-						where: {bankAccountId: bankAccount.id, dedupeKey: In(dedupeKeys)},
-					})) ?? [])
-				: [];
+		const existingTransactions = await repository.find({
+			select: ['id', 'dedupeKey', 'categoryInputHash', 'categorySource'],
+			where: {bankAccountId: bankAccount.id, dedupeKey: In(dedupeKeys)},
+		});
 
 		const insertResult = await repository
 			.createQueryBuilder()
@@ -497,13 +487,10 @@ export class BankingSyncService {
 				.execute();
 		}
 
-		const persistedRows =
-			typeof repository.find === 'function'
-				? ((await repository.find({
-						select: ['id'],
-						where: {bankAccountId: bankAccount.id, dedupeKey: In(dedupeKeys)},
-					})) ?? [])
-				: [];
+		const persistedRows = await repository.find({
+			select: ['id'],
+			where: {bankAccountId: bankAccount.id, dedupeKey: In(dedupeKeys)},
+		});
 		const persistedTransactionIds =
 			persistedRows.length > 0
 				? persistedRows.map(({id}) => id)
@@ -513,7 +500,7 @@ export class BankingSyncService {
 	}
 
 	private async enqueuePersistedTransactions(transactionIds: readonly string[]): Promise<void> {
-		if (!this.categorizationService || transactionIds.length === 0) return;
+		if (transactionIds.length === 0) return;
 		try {
 			await this.categorizationService.enqueueForTransactions(transactionIds);
 		} catch (error) {

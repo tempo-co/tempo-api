@@ -1,12 +1,12 @@
 import {ConfigurationService} from '@core/config/config.service';
 
+import {BankTransactionCategorizationProviderError} from '../bank-transaction-categorization.provider';
 import {
 	BankTransactionCategorizationInput,
 	BankTransactionCategorizationResult,
 } from '../bank-transaction-categorization.types';
 import {BANK_TRANSACTION_CATEGORIES, BANK_TRANSACTION_CATEGORY_DEFINITIONS} from '../bank-transaction-category';
 import {OpenAiBankTransactionCategorizationProvider} from './openai-bank-transaction-categorization.provider';
-import {BankTransactionCategorizationProviderError} from './openai-bank-transaction-categorization.provider';
 
 function createInput(correlationId: string): BankTransactionCategorizationInput {
 	return {
