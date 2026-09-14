@@ -90,6 +90,10 @@ export class OpenAiBankTransactionCategorizationProvider implements BankTransact
 			throw this.invalidResponseError();
 		}
 
+		const requestTransactions = transactions.map((transaction, index) => ({
+			...this.toSafeInput(transaction),
+			correlationId: String(index),
+		}));
 		let response: {output_text?: unknown};
 		try {
 			const client = this.client ?? (this.client = this.createClient());
@@ -98,7 +102,7 @@ export class OpenAiBankTransactionCategorizationProvider implements BankTransact
 				instructions: CATEGORIZATION_INSTRUCTIONS,
 				input: JSON.stringify({
 					categories: categories.map(({value, label, description}) => ({value, label, description})),
-					transactions: transactions.map((transaction) => this.toSafeInput(transaction)),
+					transactions: requestTransactions,
 				}),
 				reasoning: {effort: 'low'},
 				store: false,
@@ -131,16 +135,20 @@ export class OpenAiBankTransactionCategorizationProvider implements BankTransact
 		if (!validation.success) throw this.invalidResponseError();
 
 		const outputIds = validation.data.classifications.map(({correlationId}) => correlationId);
+		const requestIds = requestTransactions.map(({correlationId}) => correlationId);
 		const outputIdSet = new Set(outputIds);
 		if (
 			outputIdSet.size !== outputIds.length ||
-			outputIdSet.size !== inputIds.length ||
-			inputIds.some((correlationId) => !outputIdSet.has(correlationId))
+			outputIdSet.size !== requestIds.length ||
+			requestIds.some((correlationId) => !outputIdSet.has(correlationId))
 		) {
 			throw this.invalidResponseError();
 		}
 
-		return validation.data.classifications;
+		return validation.data.classifications.map((result) => ({
+			...result,
+			correlationId: transactions[Number(result.correlationId)].correlationId,
+		}));
 	}
 
 	private createClient(): OpenAiResponsesClient {
@@ -177,7 +185,7 @@ export class OpenAiBankTransactionCategorizationProvider implements BankTransact
 	private invalidResponseError(): BankTransactionCategorizationProviderError {
 		return new BankTransactionCategorizationProviderError(
 			'OpenAI returned an invalid categorization response.',
-			false,
+			true,
 		);
 	}
 

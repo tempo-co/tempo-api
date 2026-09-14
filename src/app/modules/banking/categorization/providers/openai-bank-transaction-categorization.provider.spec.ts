@@ -49,7 +49,7 @@ describe('OpenAiBankTransactionCategorizationProvider', () => {
 	it('sends a private strict structured request using the configured model', async () => {
 		const {provider, responsesCreate} = createProvider();
 		responsesCreate.mockResolvedValue({
-			output_text: output([{correlationId: 'transaction-1', category: 'FOOD_AND_DRINK', confidence: 0.97}]),
+			output_text: output([{correlationId: '0', category: 'FOOD_AND_DRINK', confidence: 0.97}]),
 		});
 		const transactions = [createInput('transaction-1')];
 
@@ -75,9 +75,25 @@ describe('OpenAiBankTransactionCategorizationProvider', () => {
 		expect(request.text.format.schema.additionalProperties).toBe(false);
 		expect(request.text.format.schema.properties.classifications.items.additionalProperties).toBe(false);
 		const sentInput = JSON.parse(request.input);
-		expect(sentInput.transactions).toEqual(transactions);
+		expect(sentInput.transactions).toEqual([{...transactions[0], correlationId: '0'}]);
 		expect(sentInput.categories).toEqual(BANK_TRANSACTION_CATEGORY_DEFINITIONS);
 		expect(request.input).not.toContain('test-secret-api-key');
+	});
+
+	it('maps compact provider correlation IDs back to the original transaction IDs', async () => {
+		const {provider, responsesCreate} = createProvider();
+		responsesCreate.mockResolvedValue({
+			output_text: output([
+				{correlationId: '1', category: 'SHOPPING', confidence: 0.71},
+				{correlationId: '0', category: 'FOOD_AND_DRINK', confidence: 0.93},
+			]),
+		});
+		const transactions = [createInput('transaction-1'), createInput('transaction-2')];
+
+		await expect(provider.categorize(transactions, BANK_TRANSACTION_CATEGORY_DEFINITIONS)).resolves.toEqual([
+			{correlationId: 'transaction-2', category: 'SHOPPING', confidence: 0.71},
+			{correlationId: 'transaction-1', category: 'FOOD_AND_DRINK', confidence: 0.93},
+		]);
 	});
 
 	it('does not construct the SDK when no OpenAI key is configured', () => {
@@ -95,14 +111,14 @@ describe('OpenAiBankTransactionCategorizationProvider', () => {
 	it.each([
 		[
 			'unknown category',
-			JSON.stringify({classifications: [{correlationId: 'transaction-1', category: 'UNKNOWN', confidence: 0.5}]}),
+			JSON.stringify({classifications: [{correlationId: '0', category: 'UNKNOWN', confidence: 0.5}]}),
 		],
 		[
 			'duplicate correlation ID',
 			JSON.stringify({
 				classifications: [
-					{correlationId: 'transaction-1', category: 'FOOD_AND_DRINK', confidence: 0.5},
-					{correlationId: 'transaction-1', category: 'SHOPPING', confidence: 0.5},
+					{correlationId: '0', category: 'FOOD_AND_DRINK', confidence: 0.5},
+					{correlationId: '0', category: 'SHOPPING', confidence: 0.5},
 				],
 			}),
 		],
@@ -115,7 +131,7 @@ describe('OpenAiBankTransactionCategorizationProvider', () => {
 		[
 			'invalid confidence',
 			JSON.stringify({
-				classifications: [{correlationId: 'transaction-1', category: 'FOOD_AND_DRINK', confidence: 2}],
+				classifications: [{correlationId: '0', category: 'FOOD_AND_DRINK', confidence: 2}],
 			}),
 		],
 		['malformed JSON', '{not-json'],
@@ -125,7 +141,7 @@ describe('OpenAiBankTransactionCategorizationProvider', () => {
 
 		await expect(
 			provider.categorize([createInput('transaction-1')], BANK_TRANSACTION_CATEGORY_DEFINITIONS),
-		).rejects.toThrow();
+		).rejects.toMatchObject<Partial<BankTransactionCategorizationProviderError>>({retryable: true});
 	});
 
 	it.each([
