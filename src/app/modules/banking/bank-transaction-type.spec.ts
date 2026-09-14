@@ -3,44 +3,58 @@ import {BANK_TRANSACTION_TYPES, normalizeBankTransactionType} from './bank-trans
 describe('normalizeBankTransactionType', () => {
 	it.each([
 		[
-			'card classifications',
+			'structured card classifications',
 			{code: 'PMNT', subCode: 'CARD', description: 'Card payment'},
 			BANK_TRANSACTION_TYPES.CARD_PAYMENT,
 		],
 		[
-			'transfer classifications',
+			'structured transfer classifications',
 			{code: 'PMNT', subCode: 'TRANSFER', description: 'SEPA transfer'},
 			BANK_TRANSACTION_TYPES.TRANSFER,
 		],
-		['direct debit classifications', {description: 'Direct debit'}, BANK_TRANSACTION_TYPES.DIRECT_DEBIT],
 		[
-			'cash withdrawal classifications',
-			{description: 'ATM cash withdrawal'},
+			'structured direct debit classifications',
+			{code: 'PMNT', subCode: 'DD', description: 'Direct debit'},
+			BANK_TRANSACTION_TYPES.DIRECT_DEBIT,
+		],
+		[
+			'structured cash withdrawal classifications',
+			{code: 'ATM', description: 'ATM cash withdrawal'},
 			BANK_TRANSACTION_TYPES.CASH_WITHDRAWAL,
 		],
-		['fee classifications', {description: 'Bank fee'}, BANK_TRANSACTION_TYPES.FEE],
-		['interest classifications', {description: 'Interest payment'}, BANK_TRANSACTION_TYPES.INTEREST],
-		['salary classifications', {description: 'Salary payment'}, BANK_TRANSACTION_TYPES.SALARY],
-		['refund classifications', {description: 'Refund'}, BANK_TRANSACTION_TYPES.REFUND],
+		['structured fee classifications', {code: 'CHRG', description: 'Bank fee'}, BANK_TRANSACTION_TYPES.FEE],
+		[
+			'structured interest classifications',
+			{code: 'INT', description: 'Interest payment'},
+			BANK_TRANSACTION_TYPES.INTEREST,
+		],
+		[
+			'structured salary classifications',
+			{code: 'SALA', description: 'Salary payment'},
+			BANK_TRANSACTION_TYPES.SALARY,
+		],
+		['structured refund classifications', {code: 'RIMB', description: 'Refund'}, BANK_TRANSACTION_TYPES.REFUND],
 	])('%s', (_label, classification, expected) => {
 		expect(normalizeBankTransactionType(classification)).toBe(expected);
 	});
 
 	it.each([
-		['Coffee shop is not a fee', {description: 'Coffee shop'}, BANK_TRANSACTION_TYPES.OTHER],
-		['Deposit is not a card payment', {description: 'Deposit'}, BANK_TRANSACTION_TYPES.OTHER],
+		['description-only fee', {description: 'Monthly account fee'}, BANK_TRANSACTION_TYPES.OTHER],
+		[
+			'iDEAL payment descriptions remain unresolved without a structured code',
+			{code: '944', description: 'SEPA IDEAL TRANSFERS'},
+			BANK_TRANSACTION_TYPES.OTHER,
+		],
+		['description-only card payment', {description: 'Card payment at a merchant'}, BANK_TRANSACTION_TYPES.OTHER],
+		['description-only direct debit', {description: 'Direct debit'}, BANK_TRANSACTION_TYPES.OTHER],
+		['description-only cash withdrawal', {description: 'ATM cash withdrawal'}, BANK_TRANSACTION_TYPES.OTHER],
+		['description-only salary', {description: 'Salary payment'}, BANK_TRANSACTION_TYPES.OTHER],
+		['description-only refund', {description: 'Refund'}, BANK_TRANSACTION_TYPES.OTHER],
 		[
 			'structured card code takes precedence over the description',
 			{code: 'PMNT', subCode: 'CARD', description: 'Coffee shop'},
 			BANK_TRANSACTION_TYPES.CARD_PAYMENT,
 		],
-		['fee descriptions', {description: 'Monthly account fee'}, BANK_TRANSACTION_TYPES.FEE],
-		[
-			'iDEAL payment descriptions',
-			{code: '944', description: 'SEPA IDEAL TRANSFERS'},
-			BANK_TRANSACTION_TYPES.CARD_PAYMENT,
-		],
-		['card descriptions', {description: 'Card payment at a merchant'}, BANK_TRANSACTION_TYPES.CARD_PAYMENT],
 		['deposit descriptions', {description: 'Bank deposit'}, BANK_TRANSACTION_TYPES.OTHER],
 	])('%s', (_label, classification, expected) => {
 		expect(normalizeBankTransactionType(classification)).toBe(expected);

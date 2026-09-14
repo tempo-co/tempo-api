@@ -1,6 +1,6 @@
 import {createHash} from 'node:crypto';
 
-import {BANK_TRANSACTION_TYPES, normalizeBankTransactionType} from '../bank-transaction-type';
+import {normalizeBankTransactionType} from '../bank-transaction-type';
 import {BankTransaction} from '../bank-transaction.entity';
 import {truncate} from '../banking.utils';
 import {BankTransactionCategorizationInput} from './bank-transaction-categorization.types';
@@ -19,7 +19,6 @@ export function toBankTransactionCategorizationInput(
 		| 'amount'
 		| 'currency'
 		| 'creditDebitIndicator'
-		| 'transactionType'
 		| 'bankTransactionCode'
 		| 'bankTransactionSubCode'
 		| 'description'
@@ -33,14 +32,10 @@ export function toBankTransactionCategorizationInput(
 	const bankTransactionCode = normalizeUppercase(transaction.bankTransactionCode);
 	const bankTransactionSubCode = normalizeUppercase(transaction.bankTransactionSubCode);
 	const bankTransactionDescription = normalizeNullableText(transaction.bankTransactionDescription);
-	const hasRawTransactionType = Boolean(bankTransactionCode || bankTransactionSubCode || bankTransactionDescription);
-	const transactionType = hasRawTransactionType
-		? normalizeBankTransactionType({
-				code: bankTransactionCode ?? undefined,
-				subCode: bankTransactionSubCode ?? undefined,
-				description: bankTransactionDescription ?? undefined,
-			})
-		: normalizeRequiredText(transaction.transactionType) || BANK_TRANSACTION_TYPES.OTHER;
+	const transactionType = normalizeBankTransactionType({
+		code: bankTransactionCode ?? undefined,
+		subCode: bankTransactionSubCode ?? undefined,
+	});
 
 	return {
 		correlationId: transaction.id,

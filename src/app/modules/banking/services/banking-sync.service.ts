@@ -568,7 +568,6 @@ export class BankingSyncService {
 		const transactionType = normalizeBankTransactionType({
 			code: bankTransactionCode ?? undefined,
 			subCode: bankTransactionSubCode ?? undefined,
-			description: bankTransactionDescription ?? undefined,
 		});
 		const merchantCategoryCode = truncate(transaction.merchantCategoryCode, 16);
 		const dedupeKey = this.createDedupeKey({
@@ -592,7 +591,6 @@ export class BankingSyncService {
 				amount,
 				currency,
 				creditDebitIndicator,
-				transactionType,
 				bankTransactionCode,
 				bankTransactionSubCode,
 				description,
