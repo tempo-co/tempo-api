@@ -49,4 +49,3 @@ Tempo API is a NestJS backend for personal-finance accounts, bank connections, b
 - `npm run db:seed` truncates and recreates the PostgreSQL `public` schema before seeding; run it only against the intended database.
 - Compose uses fixed container names and environment-interpolated host ports, so stale containers or overlapping ports can block startup.
 - `dist/` and `coverage/` are generated. Email `.hbs` files belong under `src/app/core/email/templates`; Nest copies them to `dist/src` via `nest-cli.json`.
-- `npm run start:prod` still starts the development Compose stack with `.env.development` before running the built app; verify this is intended before using it.
