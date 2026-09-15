@@ -16,7 +16,6 @@ const IBAN_PATTERN = /\b[A-Z]{2}\d{2}(?:[\s-]?[A-Z0-9]{2,4}){4,8}\b/gi;
 const LABELED_IDENTIFIER_PATTERN =
 	/\b(?:iban|account|acct|rekening|reference|ref|order|pas|nr)\s*[:#-]?\s*[A-Z0-9][A-Z0-9-]{3,}\b/gi;
 const LONG_DIGIT_PATTERN = /\b\d{4,}\b/g;
-const PAYMENT_PREFIX_PATTERN = /^(?:BEA|Google Pay|SEPA (?:iDEAL|Wero)|Card payment)\b\s*[:,-]?\s*/i;
 
 type CategorizationHashInput = Omit<BankTransactionCategorizationInput, 'correlationId'>;
 
@@ -147,7 +146,6 @@ function sanitizeWebSearchMerchantName(value: string | null | undefined): string
 		.replace(IBAN_PATTERN, ' ')
 		.replace(LABELED_IDENTIFIER_PATTERN, ' ')
 		.replace(LONG_DIGIT_PATTERN, ' ')
-		.replace(PAYMENT_PREFIX_PATTERN, '')
 		.replace(/[,:;|]+/g, ' ')
 		.replace(/\s+/g, ' ')
 		.trim();

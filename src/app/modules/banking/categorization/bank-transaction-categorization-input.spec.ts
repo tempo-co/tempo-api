@@ -200,19 +200,21 @@ describe('bank transaction categorization input', () => {
 		expect(serialized).not.toContain('Order 123456789');
 	});
 
-	it('redacts identifiers and payment prefixes while retaining ordinary merchant words', () => {
-		const result = toBankTransactionCategorizationWebSearchInput(
-			toBankTransactionCategorizationInput(
-				createTransaction({
-					counterpartyName:
-						'Google Pay ACME email@example.com IBAN NL00TEST0123456789 Order 123456789 NS Almelo 1234',
-				}),
-			),
-		);
+	it.each(['Google Pay', 'Apple Pay', 'Bancontact', 'ACH', 'SEPA Wero'])(
+		'does not depend on a locale-specific payment-prefix list for %s',
+		(paymentPrefix) => {
+			const result = toBankTransactionCategorizationWebSearchInput(
+				toBankTransactionCategorizationInput(
+					createTransaction({
+						counterpartyName: `${paymentPrefix} ACME email@example.com IBAN NL00TEST0123456789 Order 123456789 NS Almelo 1234`,
+					}),
+				),
+			);
 
-		expect(result?.merchantName).toBe('ACME NS Almelo');
-		expect(JSON.stringify(result)).not.toMatch(/email@example\.com|NL00TEST0123456789|123456789|1234/);
-	});
+			expect(result?.merchantName).toBe(`${paymentPrefix} ACME NS Almelo`);
+			expect(JSON.stringify(result)).not.toMatch(/email@example\.com|NL00TEST0123456789|123456789|1234/);
+		},
+	);
 
 	it('returns null when all merchant text is empty or redacted', () => {
 		const input = toBankTransactionCategorizationInput(
