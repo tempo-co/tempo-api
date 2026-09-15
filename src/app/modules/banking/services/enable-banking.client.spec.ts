@@ -174,20 +174,58 @@ describe('EnableBankingClient', () => {
 		fetchMock.mockResolvedValueOnce(
 			new Response(
 				JSON.stringify({
-					aspsps: [{name: 'Nordea', country: 'FI', maximum_consent_validity: 86_400}],
+					aspsps: [
+						{
+							name: 'Nordea',
+							country: 'FI',
+							logo: 'https://enablebanking.com/brands/FI/Nordea/',
+							maximum_consent_validity: 86_400,
+						},
+					],
 				}),
 				{status: 200, headers: {'content-type': 'application/json'}},
 			),
 		);
 
 		await expect(client.getAspsps('FI')).resolves.toEqual([
-			{name: 'Nordea', country: 'FI', maximumConsentValiditySeconds: 86_400},
+			{
+				name: 'Nordea',
+				country: 'FI',
+				logoUrl: 'https://enablebanking.com/brands/FI/Nordea/',
+				maximumConsentValiditySeconds: 86_400,
+			},
 		]);
 
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 		const requestUrl = new URL(String(fetchMock.mock.calls[0][0]));
 		expect(requestUrl.pathname).toBe('/aspsps');
 		expect(requestUrl.searchParams.get('country')).toBe('FI');
+		expect(requestUrl.searchParams.get('psu_type')).toBe('personal');
+		expect(requestUrl.searchParams.get('service')).toBe('AIS');
+	});
+
+	it('requests the full supported ASPSP catalog without a country filter', async () => {
+		fetchMock.mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({
+					aspsps: [
+						{name: 'ABN AMRO', country: 'NL', maximum_consent_validity: 86_400},
+						{name: 'Revolut', country: 'NL', maximum_consent_validity: 86_400},
+					],
+				}),
+				{status: 200, headers: {'content-type': 'application/json'}},
+			),
+		);
+
+		await expect(client.getAspsps()).resolves.toEqual([
+			{name: 'ABN AMRO', country: 'NL', maximumConsentValiditySeconds: 86_400},
+			{name: 'Revolut', country: 'NL', maximumConsentValiditySeconds: 86_400},
+		]);
+
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		const requestUrl = new URL(String(fetchMock.mock.calls[0][0]));
+		expect(requestUrl.pathname).toBe('/aspsps');
+		expect(requestUrl.searchParams.has('country')).toBe(false);
 		expect(requestUrl.searchParams.get('psu_type')).toBe('personal');
 		expect(requestUrl.searchParams.get('service')).toBe('AIS');
 	});
