@@ -4,7 +4,6 @@ Tempo API is a NestJS backend for personal-finance accounts, bank connections, b
 
 ## Product direction and workflow
 
-- Repository-wide privacy rule: never use the repository owner's personal name or other personally identifying information in documentation, tests, fixtures, examples, comments, source, or any other file in this repository. Use neutral placeholders or clearly synthetic values instead.
 - Tempo is personal-use-first, not a public multi-tenant SaaS. A private self-hosted production deployment exists; do not assume managed cloud services or public SaaS behavior.
 - The intended deployment model is a self-hosted 24/7 instance using real bank data fetched through Enable Banking, with access from other devices. Keep that separate from local development and test environments.
 - Do not push directly to `main`; use a pull request with passing CI. Use Conventional Commit-style messages such as `feat: ...` and `fix: ...`.
