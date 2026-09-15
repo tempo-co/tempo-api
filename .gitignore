@@ -47,9 +47,6 @@ lerna-debug.log*
 .temp
 .tmp
 
-# Local agent instructions
-/AGENTS.md
-
 # Runtime data
 pids
 *.pid
