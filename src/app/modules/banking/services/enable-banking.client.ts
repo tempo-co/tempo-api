@@ -49,8 +49,9 @@ export class EnableBankingClient {
 			: Buffer.from(privateKeyB64 as string, 'base64').toString('utf8');
 	}
 
-	async getAspsps(country: string): Promise<EnableBankingAspsp[]> {
-		const filteredParams = new URLSearchParams({country, psu_type: 'personal', service: 'AIS'});
+	async getAspsps(country?: string): Promise<EnableBankingAspsp[]> {
+		const filteredParams = new URLSearchParams({psu_type: 'personal', service: 'AIS'});
+		if (country) filteredParams.set('country', country);
 
 		try {
 			const response = await this.request(`/aspsps?${filteredParams.toString()}`);
@@ -58,7 +59,10 @@ export class EnableBankingClient {
 		} catch (error) {
 			if (!this.isUnsupportedAspspFilterError(error)) throw error;
 
-			const response = await this.request(`/aspsps?country=${encodeURIComponent(country)}`);
+			const fallbackParams = new URLSearchParams();
+			if (country) fallbackParams.set('country', country);
+			const query = fallbackParams.toString();
+			const response = await this.request(`/aspsps${query ? `?${query}` : ''}`);
 			return this.parseAspsps(response);
 		}
 	}
@@ -249,6 +253,7 @@ export class EnableBankingClient {
 			const record = this.asRecord(rawAspsp);
 			const name = this.asString(record?.name);
 			const country = this.asString(record?.country);
+			const logoUrl = this.asHttpsUrl(record?.logo);
 			const maximumConsentValiditySeconds = record?.maximum_consent_validity;
 
 			if (
@@ -261,7 +266,7 @@ export class EnableBankingClient {
 				return [];
 			}
 
-			return [{name, country, maximumConsentValiditySeconds}];
+			return [{name, country, ...(logoUrl ? {logoUrl} : {}), maximumConsentValiditySeconds}];
 		});
 
 		if (rawAspsps.length > 0 && aspsps.length === 0) {
@@ -459,6 +464,17 @@ export class EnableBankingClient {
 			normalizedCode === 'wrong_request_parameters' ||
 			/^(?:unsupported|unknown|unrecognized|invalid)_(?:query_)?(?:parameter|filter)s?$/.test(normalizedCode)
 		);
+	}
+
+	private asHttpsUrl(value: unknown): string | undefined {
+		const url = this.asString(value);
+		if (!url) return undefined;
+
+		try {
+			return new URL(url).protocol === 'https:' ? url : undefined;
+		} catch {
+			return undefined;
+		}
 	}
 
 	private asRecord(value: unknown): Record<string, unknown> | undefined {
