@@ -362,6 +362,33 @@ describe('BankConnectionController', () => {
 			.expect(400);
 	});
 
+	it('lists supported ASPSPs without exposing provider metadata', async () => {
+		getAspsps.mockResolvedValueOnce([
+			{name: 'Revolut', country: 'NL', maximumConsentValiditySeconds: 86_400},
+			{name: 'Nordea', country: 'FI', maximumConsentValiditySeconds: 86_400},
+			{name: 'Revolut', country: 'NL', maximumConsentValiditySeconds: 86_400},
+			{name: 'ABN AMRO', country: 'NL', maximumConsentValiditySeconds: 86_400},
+		]);
+
+		const response = await verifiedAgent.get('/bank-connections/aspsps').expect(200);
+
+		expect(response.body).toEqual([
+			{name: 'Nordea', country: 'FI'},
+			{name: 'ABN AMRO', country: 'NL'},
+			{name: 'Revolut', country: 'NL'},
+		]);
+		expect(JSON.stringify(response.body)).not.toContain('maximumConsentValiditySeconds');
+	});
+
+	it('returns a sanitized error when supported ASPSPs cannot be loaded', async () => {
+		getAspsps.mockRejectedValueOnce(new EnableBankingClientError('secret-provider-error'));
+
+		const response = await verifiedAgent.get('/bank-connections/aspsps').expect(502);
+
+		expect(response.body.message).toBe('Unable to load supported banks.');
+		expect(JSON.stringify(response.body)).not.toContain('secret-provider-error');
+	});
+
 	it('persists a successful authorization without exposing sensitive provider values', async () => {
 		const sessionId = 'provider-session-success';
 		createSession.mockResolvedValueOnce({

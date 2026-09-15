@@ -34,6 +34,11 @@ export class BankConnectionController {
 		return this.bankingService.startAuthorization(account.id, dto);
 	}
 
+	@Get('aspsps')
+	async getSupportedAspsps() {
+		return this.bankingService.findSupportedAspsps();
+	}
+
 	@Get()
 	async getConnections(@CurrentAccount() account: Account) {
 		return this.bankingService.findAll(account.id);

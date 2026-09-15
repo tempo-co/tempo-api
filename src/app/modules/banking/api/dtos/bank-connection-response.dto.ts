@@ -4,6 +4,11 @@ import type {
 } from '../../categorization/bank-transaction-categorization.types';
 import type {BankTransactionCategory} from '../../categorization/bank-transaction-category';
 
+export class BankConnectionAspspResponseDto {
+	name: string;
+	country: string;
+}
+
 export class BankAccountResponseDto {
 	id: string;
 	name: string | null;

@@ -49,8 +49,9 @@ export class EnableBankingClient {
 			: Buffer.from(privateKeyB64 as string, 'base64').toString('utf8');
 	}
 
-	async getAspsps(country: string): Promise<EnableBankingAspsp[]> {
-		const filteredParams = new URLSearchParams({country, psu_type: 'personal', service: 'AIS'});
+	async getAspsps(country?: string): Promise<EnableBankingAspsp[]> {
+		const filteredParams = new URLSearchParams({psu_type: 'personal', service: 'AIS'});
+		if (country) filteredParams.set('country', country);
 
 		try {
 			const response = await this.request(`/aspsps?${filteredParams.toString()}`);
@@ -58,7 +59,10 @@ export class EnableBankingClient {
 		} catch (error) {
 			if (!this.isUnsupportedAspspFilterError(error)) throw error;
 
-			const response = await this.request(`/aspsps?country=${encodeURIComponent(country)}`);
+			const fallbackParams = new URLSearchParams();
+			if (country) fallbackParams.set('country', country);
+			const query = fallbackParams.toString();
+			const response = await this.request(`/aspsps${query ? `?${query}` : ''}`);
 			return this.parseAspsps(response);
 		}
 	}

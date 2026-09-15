@@ -28,7 +28,11 @@ import {
 } from './api/constants/banking-messages.constants';
 import {BankConnectionAuthorizeDto} from './api/dtos/bank-connection-authorize.dto';
 import {BankConnectionCallbackDto} from './api/dtos/bank-connection-callback.dto';
-import {BankAccountResponseDto, BankConnectionResponseDto} from './api/dtos/bank-connection-response.dto';
+import {
+	BankAccountResponseDto,
+	BankConnectionAspspResponseDto,
+	BankConnectionResponseDto,
+} from './api/dtos/bank-connection-response.dto';
 import {BankAccountBalance} from './bank-account-balance.entity';
 import {BankAccount} from './bank-account.entity';
 import {BankConnectionCallbackResult} from './bank-connection-callback-result';
@@ -154,6 +158,15 @@ export class BankingService {
 
 			throw this.toAuthorizationStartException(error);
 		}
+	}
+
+	async findSupportedAspsps(): Promise<BankConnectionAspspResponseDto[]> {
+		const aspsps = await this.getAspsps();
+		const uniqueAspsps = new Map(aspsps.map(({name, country}) => [`${country}:${name}`, {name, country}]));
+
+		return [...uniqueAspsps.values()].sort(
+			(left, right) => left.country.localeCompare(right.country) || left.name.localeCompare(right.name),
+		);
 	}
 
 	async findAll(accountId: Account['id']): Promise<BankConnectionResponseDto[]> {
@@ -446,7 +459,7 @@ export class BankingService {
 		});
 	}
 
-	private async getAspsps(country: string) {
+	private async getAspsps(country?: string) {
 		try {
 			return await this.enableBankingClient.getAspsps(country);
 		} catch (error) {
