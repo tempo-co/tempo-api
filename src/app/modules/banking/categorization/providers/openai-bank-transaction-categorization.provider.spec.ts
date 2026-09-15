@@ -4,6 +4,7 @@ import {BankTransactionCategorizationProviderError} from '../bank-transaction-ca
 import {
 	BankTransactionCategorizationInput,
 	BankTransactionCategorizationResult,
+	BankTransactionCategorizationWebSearchInput,
 } from '../bank-transaction-categorization.types';
 import {BANK_TRANSACTION_CATEGORIES, BANK_TRANSACTION_CATEGORY_DEFINITIONS} from '../bank-transaction-category';
 import {OpenAiBankTransactionCategorizationProvider} from './openai-bank-transaction-categorization.provider';
@@ -26,6 +27,18 @@ function createInput(correlationId: string): BankTransactionCategorizationInput 
 		bankTransactionDescription: 'Card payment',
 		merchantCategoryCode: '5814',
 		remittanceInformation: 'Morning coffee',
+	};
+}
+
+function createWebSearchInput(correlationId: string): BankTransactionCategorizationWebSearchInput {
+	return {
+		correlationId,
+		amount: '-10.00',
+		currency: 'EUR',
+		direction: 'EXPENSE',
+		transactionType: 'CARD_PAYMENT',
+		merchantName: 'ACME Coffee',
+		merchantCategoryCode: '5814',
 	};
 }
 
@@ -96,6 +109,90 @@ describe('OpenAiBankTransactionCategorizationProvider', () => {
 			{correlationId: 'transaction-2', category: 'SHOPPING', confidence: 0.71},
 			{correlationId: 'transaction-1', category: 'FOOD_AND_DRINK', confidence: 0.93},
 		]);
+	});
+
+	it('uses the hosted web-search tool for a sanitized fallback request', async () => {
+		const {provider, responsesCreate} = createProvider();
+		responsesCreate.mockResolvedValue({
+			output_text: output([{correlationId: '0', category: 'FOOD_AND_DRINK', confidence: 0.93}]),
+		});
+		const transactions = [createWebSearchInput('opaque-transaction-id')];
+
+		await expect(
+			provider.categorizeWithWebSearch(transactions, BANK_TRANSACTION_CATEGORY_DEFINITIONS),
+		).resolves.toEqual([{correlationId: 'opaque-transaction-id', category: 'FOOD_AND_DRINK', confidence: 0.93}]);
+
+		expect(responsesCreate).toHaveBeenCalledTimes(1);
+		const request = responsesCreate.mock.calls[0][0];
+		expect(request).toMatchObject({
+			model: 'configured-model',
+			reasoning: {effort: 'low'},
+			tool_choice: 'required',
+			parallel_tool_calls: false,
+			store: false,
+		});
+		expect(request.tools).toEqual([
+			{
+				type: 'web_search',
+				external_web_access: true,
+				search_context_size: 'low',
+			},
+		]);
+		expect(request.text.format).toMatchObject({
+			type: 'json_schema',
+			strict: true,
+		});
+
+		const sentInput = JSON.parse(request.input);
+		expect(sentInput.transactions).toEqual([{...transactions[0], correlationId: '0'}]);
+		expect(sentInput.categories).toEqual(BANK_TRANSACTION_CATEGORY_DEFINITIONS);
+		expect(request.input).not.toContain('opaque-transaction-id');
+		expect(request.input).not.toContain('provider-id');
+		expect(request.input).not.toContain('account-id');
+		expect(request.input).not.toContain('IBAN');
+		expect(request.input).not.toContain('remittance');
+	});
+
+	it.each([
+		[
+			'unknown category',
+			JSON.stringify({classifications: [{correlationId: '0', category: 'UNKNOWN', confidence: 0.5}]}),
+		],
+		[
+			'duplicate correlation ID',
+			JSON.stringify({
+				classifications: [
+					{correlationId: '0', category: 'FOOD_AND_DRINK', confidence: 0.5},
+					{correlationId: '0', category: 'SHOPPING', confidence: 0.5},
+				],
+			}),
+		],
+		['malformed JSON', '{not-json'],
+	] as const)('rejects web-search %s', async (_case, responseText) => {
+		const {provider, responsesCreate} = createProvider();
+		responsesCreate.mockResolvedValue({output_text: responseText});
+
+		await expect(
+			provider.categorizeWithWebSearch(
+				[createWebSearchInput('transaction-1')],
+				BANK_TRANSACTION_CATEGORY_DEFINITIONS,
+			),
+		).rejects.toMatchObject<Partial<BankTransactionCategorizationProviderError>>({retryable: true});
+	});
+
+	it.each([
+		[503, true],
+		[400, false],
+	] as const)('maps web-search provider status %s to retryable=%s', async (status, retryable) => {
+		const {provider, responsesCreate} = createProvider();
+		responsesCreate.mockRejectedValue({status, name: 'APIError'});
+
+		await expect(
+			provider.categorizeWithWebSearch(
+				[createWebSearchInput('transaction-1')],
+				BANK_TRANSACTION_CATEGORY_DEFINITIONS,
+			),
+		).rejects.toMatchObject<Partial<BankTransactionCategorizationProviderError>>({retryable});
 	});
 
 	it('does not construct the SDK when no OpenAI key is configured', () => {

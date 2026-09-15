@@ -2,6 +2,7 @@ import {BankTransaction} from '../bank-transaction.entity';
 import {
 	createBankTransactionCategorizationInputHash,
 	toBankTransactionCategorizationInput,
+	toBankTransactionCategorizationWebSearchInput,
 } from './bank-transaction-categorization-input';
 
 function createTransaction(overrides: Partial<BankTransaction> = {}): BankTransaction {
@@ -162,5 +163,66 @@ describe('bank transaction categorization input', () => {
 		);
 
 		expect(input.remittanceInformation).toBe('IBAN [REDACTED] contact [REDACTED] [REDACTED] [REDACTED]');
+	});
+
+	it('keeps only compact transaction context and the selected merchant name', () => {
+		const input = toBankTransactionCategorizationInput(
+			createTransaction({
+				amount: '-39.99',
+				currency: 'EUR',
+				creditDebitIndicator: 'DBIT',
+				bankTransactionCode: null,
+				bankTransactionSubCode: null,
+				counterpartyName: 'Jaemy VOF via Stichting',
+				merchantCategoryCode: null,
+				description: 'SEPA iDEAL IBAN: NL00TEST0123456789 Order 123456789',
+				remittanceInformation: 'Order 123456789',
+			}),
+		);
+
+		const result = toBankTransactionCategorizationWebSearchInput(input);
+
+		expect(result).toEqual({
+			correlationId: 'transaction-id',
+			amount: '-39.99',
+			currency: 'EUR',
+			direction: 'EXPENSE',
+			transactionType: 'OTHER',
+			merchantName: 'Jaemy VOF via Stichting',
+			merchantCategoryCode: null,
+		});
+
+		const serialized = JSON.stringify(result);
+		expect(serialized).not.toContain('NL00TEST0123456789');
+		expect(serialized).not.toContain('123456789');
+		expect(serialized).not.toContain('provider-id');
+		expect(serialized).not.toContain('account-id');
+		expect(serialized).not.toContain('Order 123456789');
+	});
+
+	it('redacts identifiers and payment prefixes while retaining ordinary merchant words', () => {
+		const result = toBankTransactionCategorizationWebSearchInput(
+			toBankTransactionCategorizationInput(
+				createTransaction({
+					counterpartyName:
+						'Google Pay ACME email@example.com IBAN NL00TEST0123456789 Order 123456789 NS Almelo 1234',
+				}),
+			),
+		);
+
+		expect(result?.merchantName).toBe('ACME NS Almelo');
+		expect(JSON.stringify(result)).not.toMatch(/email@example\.com|NL00TEST0123456789|123456789|1234/);
+	});
+
+	it('returns null when all merchant text is empty or redacted', () => {
+		const input = toBankTransactionCategorizationInput(
+			createTransaction({
+				counterpartyName: '',
+				description: 'IBAN NL00TEST0123456789 Order 123456789',
+				bankTransactionDescription: 'Card payment',
+			}),
+		);
+
+		expect(toBankTransactionCategorizationWebSearchInput(input)).toBeNull();
 	});
 });

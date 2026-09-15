@@ -16,8 +16,12 @@ import {BankTransaction} from '../bank-transaction.entity';
 import {
 	createBankTransactionCategorizationInputHash,
 	toBankTransactionCategorizationInput,
+	toBankTransactionCategorizationWebSearchInput,
 } from './bank-transaction-categorization-input';
-import {BANK_TRANSACTION_CATEGORIZATION_PROMPT_VERSION} from './bank-transaction-categorization.constants';
+import {
+	BANK_TRANSACTION_CATEGORIZATION_PROMPT_VERSION,
+	BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_PROMPT_VERSION,
+} from './bank-transaction-categorization.constants';
 import {
 	BANK_TRANSACTION_CATEGORIZATION_PROVIDER,
 	BankTransactionCategorizationProvider,
@@ -170,21 +174,47 @@ export class BankTransactionCategorizationService {
 
 	private async categorizeClaimedBatch(batch: readonly ClaimedTransaction[]): Promise<void> {
 		const inputs = batch.map(({input}) => input);
-		let results: readonly BankTransactionCategorizationResult[];
+		let standardResults: readonly BankTransactionCategorizationResult[];
 
 		try {
-			results = await this.provider.categorize(inputs, BANK_TRANSACTION_CATEGORY_DEFINITIONS);
-			this.assertCompleteResults(inputs, results);
+			standardResults = await this.provider.categorize(inputs, BANK_TRANSACTION_CATEGORY_DEFINITIONS);
+			this.assertCompleteResults(inputs, standardResults);
 		} catch (error) {
 			await this.markBatchFailed(batch, error);
 			if (this.isRetryable(error)) throw error;
 			return;
 		}
 
-		const resultById = new Map(results.map((result) => [result.correlationId, result]));
+		const standardResultById = new Map(standardResults.map((result) => [result.correlationId, result]));
+		const webCandidates = inputs
+			.filter((input) => standardResultById.get(input.correlationId)?.category === 'OTHER')
+			.map(toBankTransactionCategorizationWebSearchInput)
+			.filter((input): input is NonNullable<typeof input> => input !== null)
+			.slice(0, this.configurationService.get('AI_CATEGORIZATION_WEB_SEARCH_MAX_TRANSACTIONS'));
+
+		let webResults: readonly BankTransactionCategorizationResult[] = [];
+		if (this.isWebSearchEnabled() && webCandidates.length > 0) {
+			try {
+				webResults = await this.provider.categorizeWithWebSearch(
+					webCandidates,
+					BANK_TRANSACTION_CATEGORY_DEFINITIONS,
+				);
+				this.assertCompleteResults(webCandidates, webResults);
+			} catch (error) {
+				this.logger.warn(`Transaction web-search fallback failed: ${this.safeErrorName(error)}`);
+				webResults = [];
+			}
+		}
+
+		const resultById = new Map(standardResults.map((result) => [result.correlationId, result]));
+		for (const result of webResults) resultById.set(result.correlationId, result);
+		const webResultIds = new Set(webResults.map(({correlationId}) => correlationId));
 		for (const claimed of batch) {
 			const result = resultById.get(claimed.input.correlationId);
 			if (!result) continue;
+			const promptVersion = webResultIds.has(claimed.input.correlationId)
+				? BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_PROMPT_VERSION
+				: BANK_TRANSACTION_CATEGORIZATION_PROMPT_VERSION;
 			const applied = await this.updateCategorizationWithGuard(
 				claimed.transaction.id,
 				claimed.inputHash,
@@ -196,7 +226,7 @@ export class BankTransactionCategorizationService {
 					categoryAppliedInputHash: claimed.inputHash,
 					categoryProvider: this.configurationService.get('AI_CATEGORIZATION_PROVIDER'),
 					categoryModel: this.configurationService.get('AI_CATEGORIZATION_MODEL'),
-					categoryPromptVersion: BANK_TRANSACTION_CATEGORIZATION_PROMPT_VERSION,
+					categoryPromptVersion: promptVersion,
 					categoryUpdatedAt: new Date(),
 					categoryLastError: null,
 				},
@@ -211,7 +241,7 @@ export class BankTransactionCategorizationService {
 					categoryAppliedInputHash: claimed.inputHash,
 					categoryProvider: this.configurationService.get('AI_CATEGORIZATION_PROVIDER'),
 					categoryModel: this.configurationService.get('AI_CATEGORIZATION_MODEL'),
-					categoryPromptVersion: BANK_TRANSACTION_CATEGORIZATION_PROMPT_VERSION,
+					categoryPromptVersion: promptVersion,
 					categoryLastError: null,
 				});
 		}
@@ -354,7 +384,7 @@ export class BankTransactionCategorizationService {
 	}
 
 	private assertCompleteResults(
-		inputs: readonly BankTransactionCategorizationInput[],
+		inputs: readonly {correlationId: string}[],
 		results: readonly BankTransactionCategorizationResult[],
 	): void {
 		const inputIds = inputs.map(({correlationId}) => correlationId);
@@ -399,6 +429,10 @@ export class BankTransactionCategorizationService {
 
 	private isEnabled(): boolean {
 		return this.configurationService.get('AI_CATEGORIZATION_ENABLED');
+	}
+
+	private isWebSearchEnabled(): boolean {
+		return this.configurationService.get('AI_CATEGORIZATION_WEB_SEARCH_ENABLED');
 	}
 
 	private isRetryable(error: unknown): boolean {
