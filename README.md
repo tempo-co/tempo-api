@@ -31,20 +31,6 @@ $ npm ci
 
 The development environment uses variables from `.env.development`. To override these locally (for API keys or secrets), define them in a `.env.development.local` file, which takes precedence.
 
-### AI categorization
-
-AI categorization is disabled by default. The optional web-search fallback is a live external-data path and is also disabled by default:
-
-```dotenv
-AI_CATEGORIZATION_ENABLED=false
-AI_CATEGORIZATION_PROVIDER=openai
-AI_CATEGORIZATION_MODEL=gpt-5.6-luna
-AI_CATEGORIZATION_WEB_SEARCH_ENABLED=false
-AI_CATEGORIZATION_WEB_SEARCH_MAX_TRANSACTIONS=5
-```
-
-When enabled, web search runs only after a valid normal `OTHER` result. The maximum is five fallback transaction candidates per normal batch, not a guaranteed five hosted search queries. Merchant text is redacted before it crosses the web boundary. Enabling the fallback does not reprocess existing rows; historical work requires a separate approved operation.
-
 ## Development
 
 ```bash
