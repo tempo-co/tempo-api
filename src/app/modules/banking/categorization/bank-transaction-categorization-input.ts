@@ -4,9 +4,18 @@ import {toBankTransactionDirection} from '../bank-transaction-direction';
 import {normalizeBankTransactionType} from '../bank-transaction-type';
 import {BankTransaction} from '../bank-transaction.entity';
 import {truncate} from '../banking.utils';
-import {BankTransactionCategorizationInput} from './bank-transaction-categorization.types';
+import {
+	BankTransactionCategorizationInput,
+	BankTransactionCategorizationWebSearchInput,
+} from './bank-transaction-categorization.types';
 
 const MAX_REMITTANCE_INFORMATION_LENGTH = 2_000;
+const MAX_WEB_SEARCH_MERCHANT_NAME_LENGTH = 160;
+const EMAIL_PATTERN = /\b[\w.+-]+@[\w.-]+\.[A-Z]{2,}\b/gi;
+const IBAN_PATTERN = /\b[A-Z]{2}\d{2}(?:[\s-]?[A-Z0-9]{2,4}){4,8}\b/gi;
+const LABELED_IDENTIFIER_PATTERN =
+	/\b(?:iban|account|acct|rekening|reference|ref|order|pas|nr)\s*[:#-]?\s*[A-Z0-9][A-Z0-9-]{3,}\b/gi;
+const LONG_DIGIT_PATTERN = /\b\d{4,}\b/g;
 
 type CategorizationHashInput = Omit<BankTransactionCategorizationInput, 'correlationId'>;
 
@@ -58,6 +67,26 @@ export function toBankTransactionCategorizationInput(
 	};
 }
 
+export function toBankTransactionCategorizationWebSearchInput(
+	input: BankTransactionCategorizationInput,
+): BankTransactionCategorizationWebSearchInput | null {
+	const merchantText = [input.counterpartyName, input.description, input.bankTransactionDescription].find(
+		(value) => normalizeNullableText(value) !== null,
+	);
+	const merchantName = sanitizeWebSearchMerchantName(merchantText);
+	if (!merchantName) return null;
+
+	return {
+		correlationId: input.correlationId,
+		amount: input.amount,
+		currency: input.currency,
+		direction: input.direction,
+		transactionType: input.transactionType,
+		merchantName,
+		merchantCategoryCode: input.merchantCategoryCode,
+	};
+}
+
 export function createBankTransactionCategorizationInputHash(
 	value: BankTransaction | BankTransactionCategorizationInput,
 ): string {
@@ -106,6 +135,22 @@ function sanitizeRemittanceInformation(value: string | null | undefined): string
 			.replace(/\b\d{6,}\b/g, '[REDACTED]'),
 		MAX_REMITTANCE_INFORMATION_LENGTH,
 	);
+}
+
+function sanitizeWebSearchMerchantName(value: string | null | undefined): string | null {
+	const normalized = normalizeNullableText(value);
+	if (!normalized) return null;
+
+	const sanitized = normalized
+		.replace(EMAIL_PATTERN, ' ')
+		.replace(IBAN_PATTERN, ' ')
+		.replace(LABELED_IDENTIFIER_PATTERN, ' ')
+		.replace(LONG_DIGIT_PATTERN, ' ')
+		.replace(/[,:;|]+/g, ' ')
+		.replace(/\s+/g, ' ')
+		.trim();
+
+	return sanitized.length > 0 ? truncate(sanitized, MAX_WEB_SEARCH_MERCHANT_NAME_LENGTH) : null;
 }
 
 function normalizeNullableText(value: string | null | undefined): string | null {
