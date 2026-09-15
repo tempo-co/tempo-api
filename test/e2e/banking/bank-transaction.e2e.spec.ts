@@ -37,6 +37,7 @@ describe('BankTransactionController', () => {
 	let fixtureConnection: BankConnection;
 	let fixtureBankAccount: BankAccount;
 	let fixtureTransaction: BankTransaction;
+	let fixtureGroceriesTransaction: BankTransaction;
 	let categorizeSpy: jest.SpyInstance;
 
 	beforeAll(async () => {
@@ -195,6 +196,7 @@ describe('BankTransactionController', () => {
 			}),
 		]);
 		fixtureTransaction = transactions[0];
+		fixtureGroceriesTransaction = transactions[1];
 	});
 
 	afterAll(async () => {
@@ -334,6 +336,86 @@ describe('BankTransactionController', () => {
 		expect(bookingDateAscendingResponse.body.transactions[0].bookingDate).toBe('2026-08-10');
 	});
 
+	it('supports category and source sorting', async () => {
+		const sourceConnection = await bankConnectionRepository.save(
+			bankConnectionRepository.create({
+				account,
+				provider: 'enable-banking',
+				aspspName: 'ING',
+				aspspCountry: 'NL',
+				providerSessionId: randomUUID(),
+				status: 'AUTHORIZED',
+			}),
+		);
+		const sourceBankAccount = await bankAccountRepository.save(
+			bankAccountRepository.create({
+				bankConnection: sourceConnection,
+				providerAccountId: 'source-sort-account',
+				identificationHash: 'source-sort-identification',
+				name: 'Other account',
+				currency: 'EUR',
+				isActive: true,
+			}),
+		);
+		await bankTransactionRepository.save(
+			bankTransactionRepository.create({
+				bankAccountId: sourceBankAccount.id,
+				providerTransactionId: 'source-sort-transaction',
+				entryReference: 'source-sort-entry',
+				dedupeKey: randomUUID(),
+				bookingDate: '2026-08-27',
+				valueDate: '2026-08-27',
+				amount: '1.00',
+				currency: 'EUR',
+				creditDebitIndicator: 'CRDT',
+				transactionStatus: 'BOOK',
+				description: 'Source sort transaction',
+				displayDescription: 'Source sort transaction',
+			}),
+		);
+		await bankTransactionRepository.update({id: fixtureTransaction.id}, {category: 'FOOD_AND_DRINK'});
+		await bankTransactionRepository.update({id: fixtureGroceriesTransaction.id}, {category: 'SHOPPING'});
+
+		try {
+			const categoryAscendingResponse = await verifiedAgent
+				.get('/bank-transactions')
+				.query({'sort[by]': 'category', 'sort[order]': 'ASC'})
+				.expect(200);
+			expect(
+				categoryAscendingResponse.body.transactions
+					.slice(0, 2)
+					.map(({category}: {category: string}) => category),
+			).toEqual(['FOOD_AND_DRINK', 'SHOPPING']);
+
+			const categoryDescendingResponse = await verifiedAgent
+				.get('/bank-transactions')
+				.query({'sort[by]': 'category', 'sort[order]': 'DESC'})
+				.expect(200);
+			expect(
+				categoryDescendingResponse.body.transactions
+					.slice(0, 2)
+					.map(({category}: {category: string}) => category),
+			).toEqual(['SHOPPING', 'FOOD_AND_DRINK']);
+
+			const sourceAscendingResponse = await verifiedAgent
+				.get('/bank-transactions')
+				.query({'sort[by]': 'source', 'sort[order]': 'ASC'})
+				.expect(200);
+			expect(sourceAscendingResponse.body.transactions[0].bankName).toBe('ABN AMRO');
+			expect(sourceAscendingResponse.body.transactions.at(-1).bankName).toBe('ING');
+
+			const sourceDescendingResponse = await verifiedAgent
+				.get('/bank-transactions')
+				.query({'sort[by]': 'source', 'sort[order]': 'DESC'})
+				.expect(200);
+			expect(sourceDescendingResponse.body.transactions[0].bankName).toBe('ING');
+		} finally {
+			await bankTransactionRepository.update({id: fixtureTransaction.id}, {category: null});
+			await bankTransactionRepository.update({id: fixtureGroceriesTransaction.id}, {category: null});
+			await bankConnectionRepository.delete(sourceConnection.id);
+		}
+	});
+
 	it('applies date, account, and search filters', async () => {
 		const filteredResponse = await verifiedAgent
 			.get('/bank-transactions')
@@ -347,6 +429,94 @@ describe('BankTransactionController', () => {
 
 		expect(filteredResponse.body.total).toBe(1);
 		expect(filteredResponse.body.transactions[0].description).toBe('Coffee shop');
+	});
+
+	it('applies one or multiple category filters', async () => {
+		await bankTransactionRepository.update({id: fixtureTransaction.id}, {category: 'FOOD_AND_DRINK'});
+		await bankTransactionRepository.update({id: fixtureGroceriesTransaction.id}, {category: 'SHOPPING'});
+
+		try {
+			const singleCategoryResponse = await verifiedAgent
+				.get('/bank-transactions')
+				.query({'filter[categories][]': 'FOOD_AND_DRINK'})
+				.expect(200);
+
+			expect(singleCategoryResponse.body.total).toBe(1);
+			expect(singleCategoryResponse.body.transactions[0].description).toBe('Coffee shop');
+
+			const multipleCategoriesResponse = await verifiedAgent
+				.get('/bank-transactions')
+				.query({'filter[categories][]': ['FOOD_AND_DRINK', 'SHOPPING']})
+				.expect(200);
+
+			expect(multipleCategoriesResponse.body.total).toBe(2);
+			expect(
+				multipleCategoriesResponse.body.transactions.map(({description}: {description: string}) => description),
+			).toEqual(['Coffee shop', 'Groceries']);
+		} finally {
+			await bankTransactionRepository.update({id: fixtureTransaction.id}, {category: null});
+			await bankTransactionRepository.update({id: fixtureGroceriesTransaction.id}, {category: null});
+		}
+	});
+
+	it('filters uncategorized transactions and categorization sources', async () => {
+		await bankTransactionRepository.update(
+			{id: fixtureTransaction.id},
+			{category: 'FOOD_AND_DRINK', categoryStatus: 'COMPLETED', categorySource: 'MANUAL'},
+		);
+		await bankTransactionRepository.update(
+			{id: fixtureGroceriesTransaction.id},
+			{category: 'SHOPPING', categoryStatus: 'COMPLETED', categorySource: 'AI'},
+		);
+
+		try {
+			const uncategorizedResponse = await verifiedAgent
+				.get('/bank-transactions')
+				.query({'filter[categories][]': 'UNCATEGORIZED'})
+				.expect(200);
+
+			expect(uncategorizedResponse.body.total).toBe(2);
+			expect(
+				uncategorizedResponse.body.transactions.every(
+					({category}: {category: string | null}) => category === null,
+				),
+			).toBe(true);
+
+			const mixedCategoryResponse = await verifiedAgent
+				.get('/bank-transactions')
+				.query({'filter[categories][]': ['FOOD_AND_DRINK', 'UNCATEGORIZED']})
+				.expect(200);
+
+			expect(mixedCategoryResponse.body.total).toBe(3);
+			expect(
+				mixedCategoryResponse.body.transactions.map(({description}: {description: string}) => description),
+			).toEqual(['Coffee shop', 'Salary', 'Transfer']);
+
+			const manualResponse = await verifiedAgent
+				.get('/bank-transactions')
+				.query({'filter[categorySources][]': 'MANUAL'})
+				.expect(200);
+
+			expect(manualResponse.body.total).toBe(1);
+			expect(manualResponse.body.transactions[0].description).toBe('Coffee shop');
+
+			const aiResponse = await verifiedAgent
+				.get('/bank-transactions')
+				.query({'filter[categorySources][]': 'AI'})
+				.expect(200);
+
+			expect(aiResponse.body.total).toBe(1);
+			expect(aiResponse.body.transactions[0].description).toBe('Groceries');
+		} finally {
+			await bankTransactionRepository.update(
+				{id: fixtureTransaction.id},
+				{category: null, categoryStatus: 'PENDING', categorySource: null},
+			);
+			await bankTransactionRepository.update(
+				{id: fixtureGroceriesTransaction.id},
+				{category: null, categoryStatus: 'PENDING', categorySource: null},
+			);
+		}
 	});
 
 	it.each([
@@ -368,6 +538,8 @@ describe('BankTransactionController', () => {
 		['an unsupported sort order', {'sort[order]': 'DOWN'}],
 		['an invalid booking date', {'filter[bookingDate][from]': '2026-99-99'}],
 		['a malformed bank account ID', {'filter[bankAccountIds][]': 'not-a-uuid'}],
+		['an unsupported category', {'filter[categories][]': 'NOT_A_CATEGORY'}],
+		['an unsupported categorization source', {'filter[categorySources][]': 'RULE'}],
 	])('rejects %s', async (_case, query) => {
 		await verifiedAgent.get('/bank-transactions').query(query).expect(400);
 	});

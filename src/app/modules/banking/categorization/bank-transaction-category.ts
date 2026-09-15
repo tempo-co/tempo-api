@@ -24,6 +24,13 @@ export const BANK_TRANSACTION_CATEGORIES = [
 
 export type BankTransactionCategory = (typeof BANK_TRANSACTION_CATEGORIES)[number];
 
+export const BANK_TRANSACTION_UNCATEGORIZED = 'UNCATEGORIZED' as const;
+export const BANK_TRANSACTION_CATEGORY_FILTER_VALUES = [
+	...BANK_TRANSACTION_CATEGORIES,
+	BANK_TRANSACTION_UNCATEGORIZED,
+] as const;
+export type BankTransactionCategoryFilterValue = (typeof BANK_TRANSACTION_CATEGORY_FILTER_VALUES)[number];
+
 export const BANK_TRANSACTION_CATEGORY_DEFINITIONS: readonly BankTransactionCategoryDefinition[] = [
 	{
 		value: 'HOUSING_AND_UTILITIES',
