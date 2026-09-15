@@ -21,7 +21,7 @@ import {
 	VERIFIED_ACCOUNT_EMAIL,
 	VERIFIED_ACCOUNT_PASSWORD,
 } from '../../../scripts/seed-data/seed.constants';
-import {getApp} from '../../setup/e2e.setup';
+import {getApp, loginAgent} from '../../setup/e2e.setup';
 import {EmailUtils} from '../../utils/email-utils';
 
 describe('AccountController - DELETE /accounts/me', () => {
@@ -123,8 +123,7 @@ describe('AccountController - DELETE /accounts/me', () => {
 		expect(await countOwnedAccounts(connectionRepository, accountId)).toBe(1);
 
 		// A second session of the same account must die with the account too.
-		const secondSessionAgent = request.agent(httpServer);
-		await secondSessionAgent.post('/auth/login').send({email, password}).expect(200);
+		const secondSessionAgent = await loginAgent(httpServer, email, password);
 		await secondSessionAgent.get('/accounts/me').expect(200);
 
 		// Pending bank authorization states are cleaned up per account, not globally.
@@ -195,11 +194,7 @@ describe('AccountController - DELETE /accounts/me', () => {
 	}, 30_000);
 
 	it('returns 403 Forbidden for an unverified account', async () => {
-		const agent = request.agent(httpServer);
-		await agent
-			.post('/auth/login')
-			.send({email: UNVERIFIED_ACCOUNT_EMAIL, password: UNVERIFIED_ACCOUNT_PASSWORD})
-			.expect(200);
+		const agent = await loginAgent(httpServer, UNVERIFIED_ACCOUNT_EMAIL, UNVERIFIED_ACCOUNT_PASSWORD);
 
 		await agent
 			.delete('/accounts/me')
@@ -211,11 +206,7 @@ describe('AccountController - DELETE /accounts/me', () => {
 	});
 
 	it('returns 400 Bad Request if the password is missing', async () => {
-		const agent = request.agent(httpServer);
-		await agent
-			.post('/auth/login')
-			.send({email: VERIFIED_ACCOUNT_EMAIL, password: VERIFIED_ACCOUNT_PASSWORD})
-			.expect(200);
+		const agent = await loginAgent(httpServer, VERIFIED_ACCOUNT_EMAIL, VERIFIED_ACCOUNT_PASSWORD);
 
 		await agent
 			.delete('/accounts/me')

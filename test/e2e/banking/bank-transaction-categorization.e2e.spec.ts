@@ -1,7 +1,6 @@
 import {INestApplication} from '@nestjs/common';
 import {getRepositoryToken} from '@nestjs/typeorm';
 import {Server} from 'node:net';
-import request from 'supertest';
 import TestAgent from 'supertest/lib/agent';
 import {Repository} from 'typeorm';
 
@@ -21,7 +20,7 @@ import {
 	CATEGORIZATION_E2E_FAILURE_TRANSACTION_ID,
 	seedBankTransactionCategorizationData,
 } from '../../setup/e2e-categorization-data';
-import {enableAiCategorizationE2e, getApp} from '../../setup/e2e.setup';
+import {enableAiCategorizationE2e, getApp, loginAgent} from '../../setup/e2e.setup';
 
 enableAiCategorizationE2e();
 
@@ -77,11 +76,7 @@ describe('Bank transaction categorization integration', () => {
 		expect(configurationService.get('OPENAI_API_KEY')).toBeTruthy();
 
 		bankTransactionRepository = app.get<Repository<BankTransaction>>(getRepositoryToken(BankTransaction));
-		verifiedAgent = request.agent(httpServer);
-		await verifiedAgent
-			.post('/auth/login')
-			.send({email: VERIFIED_ACCOUNT_EMAIL, password: VERIFIED_ACCOUNT_PASSWORD})
-			.expect(200);
+		verifiedAgent = await loginAgent(httpServer, VERIFIED_ACCOUNT_EMAIL, VERIFIED_ACCOUNT_PASSWORD);
 	});
 
 	afterAll(() => {
