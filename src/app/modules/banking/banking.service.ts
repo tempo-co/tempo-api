@@ -162,7 +162,18 @@ export class BankingService {
 
 	async findSupportedAspsps(): Promise<BankConnectionAspspResponseDto[]> {
 		const aspsps = await this.getAspsps();
-		const uniqueAspsps = new Map(aspsps.map(({name, country}) => [`${country}:${name}`, {name, country}]));
+		const uniqueAspsps = new Map<string, BankConnectionAspspResponseDto>();
+
+		for (const {name, country, logoUrl} of aspsps) {
+			const key = `${country}:${name}`;
+			const existing = uniqueAspsps.get(key);
+			if (existing) {
+				if (!existing.logoUrl && logoUrl) existing.logoUrl = logoUrl;
+				continue;
+			}
+
+			uniqueAspsps.set(key, {name, country, ...(logoUrl ? {logoUrl} : {})});
+		}
 
 		return [...uniqueAspsps.values()].sort(
 			(left, right) => left.country.localeCompare(right.country) || left.name.localeCompare(right.name),

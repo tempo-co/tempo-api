@@ -7,6 +7,7 @@ import type {BankTransactionCategory} from '../../categorization/bank-transactio
 export class BankConnectionAspspResponseDto {
 	name: string;
 	country: string;
+	logoUrl?: string;
 }
 
 export class BankAccountResponseDto {

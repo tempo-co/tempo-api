@@ -364,18 +364,33 @@ describe('BankConnectionController', () => {
 
 	it('lists supported ASPSPs without exposing provider metadata', async () => {
 		getAspsps.mockResolvedValueOnce([
+			{
+				name: 'Revolut',
+				country: 'NL',
+				logoUrl: 'https://enablebanking.com/brands/NL/Revolut/',
+				maximumConsentValiditySeconds: 86_400,
+			},
+			{
+				name: 'Nordea',
+				country: 'FI',
+				logoUrl: 'https://enablebanking.com/brands/FI/Nordea/',
+				maximumConsentValiditySeconds: 86_400,
+			},
 			{name: 'Revolut', country: 'NL', maximumConsentValiditySeconds: 86_400},
-			{name: 'Nordea', country: 'FI', maximumConsentValiditySeconds: 86_400},
-			{name: 'Revolut', country: 'NL', maximumConsentValiditySeconds: 86_400},
-			{name: 'ABN AMRO', country: 'NL', maximumConsentValiditySeconds: 86_400},
+			{
+				name: 'ABN AMRO',
+				country: 'NL',
+				logoUrl: 'https://enablebanking.com/brands/NL/ABN-AMRO/',
+				maximumConsentValiditySeconds: 86_400,
+			},
 		]);
 
 		const response = await verifiedAgent.get('/bank-connections/aspsps').expect(200);
 
 		expect(response.body).toEqual([
-			{name: 'Nordea', country: 'FI'},
-			{name: 'ABN AMRO', country: 'NL'},
-			{name: 'Revolut', country: 'NL'},
+			{name: 'Nordea', country: 'FI', logoUrl: 'https://enablebanking.com/brands/FI/Nordea/'},
+			{name: 'ABN AMRO', country: 'NL', logoUrl: 'https://enablebanking.com/brands/NL/ABN-AMRO/'},
+			{name: 'Revolut', country: 'NL', logoUrl: 'https://enablebanking.com/brands/NL/Revolut/'},
 		]);
 		expect(JSON.stringify(response.body)).not.toContain('maximumConsentValiditySeconds');
 	});

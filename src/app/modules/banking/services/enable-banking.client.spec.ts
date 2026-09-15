@@ -174,14 +174,26 @@ describe('EnableBankingClient', () => {
 		fetchMock.mockResolvedValueOnce(
 			new Response(
 				JSON.stringify({
-					aspsps: [{name: 'Nordea', country: 'FI', maximum_consent_validity: 86_400}],
+					aspsps: [
+						{
+							name: 'Nordea',
+							country: 'FI',
+							logo: 'https://enablebanking.com/brands/FI/Nordea/',
+							maximum_consent_validity: 86_400,
+						},
+					],
 				}),
 				{status: 200, headers: {'content-type': 'application/json'}},
 			),
 		);
 
 		await expect(client.getAspsps('FI')).resolves.toEqual([
-			{name: 'Nordea', country: 'FI', maximumConsentValiditySeconds: 86_400},
+			{
+				name: 'Nordea',
+				country: 'FI',
+				logoUrl: 'https://enablebanking.com/brands/FI/Nordea/',
+				maximumConsentValiditySeconds: 86_400,
+			},
 		]);
 
 		expect(fetchMock).toHaveBeenCalledTimes(1);

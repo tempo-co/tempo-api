@@ -1,6 +1,7 @@
 export type EnableBankingAspsp = {
 	name: string;
 	country: string;
+	logoUrl?: string;
 	maximumConsentValiditySeconds: number;
 };
 
