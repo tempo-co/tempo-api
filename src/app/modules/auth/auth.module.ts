@@ -3,7 +3,6 @@ import {APP_GUARD} from '@nestjs/core';
 import {PassportModule} from '@nestjs/passport';
 
 import {EmailModule} from '@core/email/email.module';
-import {EmailService} from '@core/email/email.service';
 import {RedisModule} from '@core/redis/redis.module';
 import {SessionModule} from '@core/session/session.module';
 import {AccountModule} from '@modules/account/account.module';
@@ -24,7 +23,6 @@ import {LocalStrategy} from './strategies/local.strategy';
 		PasswordResetService,
 		SessionSerializer,
 		LocalStrategy,
-		EmailService,
 		{provide: APP_GUARD, useClass: AuthGuard},
 	],
 	controllers: [AuthController],

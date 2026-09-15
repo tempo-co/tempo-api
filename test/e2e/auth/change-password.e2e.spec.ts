@@ -13,7 +13,7 @@ import {
 	VERIFIED_ACCOUNT_EMAIL,
 	VERIFIED_ACCOUNT_PASSWORD,
 } from '../../../scripts/seed-data/seed.constants';
-import {getApp} from '../../setup/e2e.setup';
+import {getApp, loginAgent} from '../../setup/e2e.setup';
 
 describe('AuthController - Change password', () => {
 	let httpServer: Server;
@@ -24,11 +24,7 @@ describe('AuthController - Change password', () => {
 
 	describe('POST /auth/change-password', () => {
 		it('should change password for authenticated account and allow login with new password', async () => {
-			const agent = request.agent(httpServer);
-			await agent
-				.post('/auth/login')
-				.send({email: PW_CHANGE_ACCOUNT_EMAIL, password: PW_CHANGE_ACCOUNT_PASSWORD})
-				.expect(200);
+			const agent = await loginAgent(httpServer, PW_CHANGE_ACCOUNT_EMAIL, PW_CHANGE_ACCOUNT_PASSWORD);
 
 			const newPassword = faker.internet.password({length: 12});
 			const changePasswordDto: PasswordChangeDto = {
@@ -60,11 +56,7 @@ describe('AuthController - Change password', () => {
 		});
 
 		it('should fail with 401 Unauthorized if current password is incorrect', async () => {
-			const agent = request.agent(httpServer);
-			await agent
-				.post('/auth/login')
-				.send({email: VERIFIED_ACCOUNT_EMAIL, password: VERIFIED_ACCOUNT_PASSWORD})
-				.expect(200);
+			const agent = await loginAgent(httpServer, VERIFIED_ACCOUNT_EMAIL, VERIFIED_ACCOUNT_PASSWORD);
 
 			const changePasswordDto: PasswordChangeDto = {
 				currentPassword: 'wrong-current-password',
@@ -75,11 +67,7 @@ describe('AuthController - Change password', () => {
 		});
 
 		it('should fail with 403 Forbidden when unverified account tries to change password', async () => {
-			const unverifiedAgent = request.agent(httpServer);
-			await unverifiedAgent
-				.post('/auth/login')
-				.send({email: UNVERIFIED_ACCOUNT_EMAIL, password: UNVERIFIED_ACCOUNT_PASSWORD})
-				.expect(200);
+			const unverifiedAgent = await loginAgent(httpServer, UNVERIFIED_ACCOUNT_EMAIL, UNVERIFIED_ACCOUNT_PASSWORD);
 
 			const newPassword = faker.internet.password({length: 12});
 			const changePasswordDto: PasswordChangeDto = {
@@ -97,11 +85,7 @@ describe('AuthController - Change password', () => {
 		});
 
 		it('should fail with 400 Bad Request if new password is too short', async () => {
-			const agent = request.agent(httpServer);
-			await agent
-				.post('/auth/login')
-				.send({email: VERIFIED_ACCOUNT_EMAIL, password: VERIFIED_ACCOUNT_PASSWORD})
-				.expect(200);
+			const agent = await loginAgent(httpServer, VERIFIED_ACCOUNT_EMAIL, VERIFIED_ACCOUNT_PASSWORD);
 
 			const changePasswordDto: PasswordChangeDto = {
 				currentPassword: VERIFIED_ACCOUNT_PASSWORD,
@@ -122,11 +106,7 @@ describe('AuthController - Change password', () => {
 		});
 
 		it('should fail with 400 Bad Request if current password is missing', async () => {
-			const agent = request.agent(httpServer);
-			await agent
-				.post('/auth/login')
-				.send({email: VERIFIED_ACCOUNT_EMAIL, password: VERIFIED_ACCOUNT_PASSWORD})
-				.expect(200);
+			const agent = await loginAgent(httpServer, VERIFIED_ACCOUNT_EMAIL, VERIFIED_ACCOUNT_PASSWORD);
 
 			const changePasswordDto: Partial<PasswordChangeDto> = {
 				newPassword: faker.internet.password({length: 12}),
@@ -144,11 +124,7 @@ describe('AuthController - Change password', () => {
 		});
 
 		it('should fail with 400 Bad Request if new password is missing', async () => {
-			const agent = request.agent(httpServer);
-			await agent
-				.post('/auth/login')
-				.send({email: VERIFIED_ACCOUNT_EMAIL, password: VERIFIED_ACCOUNT_PASSWORD})
-				.expect(200);
+			const agent = await loginAgent(httpServer, VERIFIED_ACCOUNT_EMAIL, VERIFIED_ACCOUNT_PASSWORD);
 
 			const changePasswordDto: Partial<PasswordChangeDto> = {
 				currentPassword: VERIFIED_ACCOUNT_PASSWORD,
