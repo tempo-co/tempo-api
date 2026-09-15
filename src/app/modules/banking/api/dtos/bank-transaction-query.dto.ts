@@ -17,7 +17,14 @@ import {
 import {DEFAULT_PAGE_INDEX, DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS} from '@core/pagination/pagination.constants';
 import {transformStrictDecimalInteger} from '@core/pagination/pagination.transform';
 
-import {BANK_TRANSACTION_CATEGORIES, BankTransactionCategory} from '../../categorization/bank-transaction-category';
+import {
+	BANK_TRANSACTION_CATEGORIZATION_SOURCES,
+	type BankTransactionCategorizationSource,
+} from '../../categorization/bank-transaction-categorization.types';
+import {
+	BANK_TRANSACTION_CATEGORY_FILTER_VALUES,
+	type BankTransactionCategoryFilterValue,
+} from '../../categorization/bank-transaction-category';
 
 export const DEFAULT_BANK_TRANSACTION_PAGE_INDEX = DEFAULT_PAGE_INDEX;
 export const DEFAULT_BANK_TRANSACTION_PAGE_SIZE = DEFAULT_PAGE_SIZE;
@@ -27,6 +34,8 @@ export const MAX_BANK_TRANSACTION_PAGE_SIZE = Math.max(...BANK_TRANSACTION_PAGE_
 export enum BankTransactionSortField {
 	BOOKING_DATE = 'bookingDate',
 	AMOUNT = 'amount',
+	CATEGORY = 'category',
+	SOURCE = 'source',
 }
 
 export enum BankTransactionSortOrder {
@@ -87,8 +96,13 @@ export class BankTransactionFilterQueryDto {
 
 	@IsOptional()
 	@IsArray()
-	@IsEnum(BANK_TRANSACTION_CATEGORIES, {each: true})
-	categories?: BankTransactionCategory[];
+	@IsEnum(BANK_TRANSACTION_CATEGORY_FILTER_VALUES, {each: true})
+	categories?: BankTransactionCategoryFilterValue[];
+
+	@IsOptional()
+	@IsArray()
+	@IsEnum(BANK_TRANSACTION_CATEGORIZATION_SOURCES, {each: true})
+	categorySources?: BankTransactionCategorizationSource[];
 }
 
 export class BankTransactionQueryDto {

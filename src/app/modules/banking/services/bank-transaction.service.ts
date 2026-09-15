@@ -22,7 +22,10 @@ import {BankConnection} from '../bank-connection.entity';
 import {BANK_TRANSACTION_TYPES} from '../bank-transaction-type';
 import {BankTransaction} from '../bank-transaction.entity';
 import {createBankTransactionCategorizationInputHash} from '../categorization/bank-transaction-categorization-input';
-import type {BankTransactionCategory} from '../categorization/bank-transaction-category';
+import {
+	BANK_TRANSACTION_UNCATEGORIZED,
+	type BankTransactionCategory,
+} from '../categorization/bank-transaction-category';
 
 @Injectable()
 export class BankTransactionService {
@@ -54,9 +57,30 @@ export class BankTransactionService {
 				bankAccountIds: filter.bankAccountIds,
 			});
 		}
-		if (filter?.categories && filter.categories.length > 0) {
-			query.andWhere('transaction.category IN (:...categories)', {
-				categories: filter.categories,
+		const categoryFilters = filter?.categories;
+		if (categoryFilters && categoryFilters.length > 0) {
+			const categorizedCategories = categoryFilters.filter(
+				(category) => category !== BANK_TRANSACTION_UNCATEGORIZED,
+			);
+			const includesUncategorized = categoryFilters.includes(BANK_TRANSACTION_UNCATEGORIZED);
+
+			query.andWhere(
+				new Brackets((categoryQuery) => {
+					if (categorizedCategories.length > 0) {
+						categoryQuery.where('transaction.category IN (:...categories)', {
+							categories: categorizedCategories,
+						});
+					}
+					if (includesUncategorized) {
+						if (categorizedCategories.length > 0) categoryQuery.orWhere('transaction.category IS NULL');
+						else categoryQuery.where('transaction.category IS NULL');
+					}
+				}),
+			);
+		}
+		if (filter?.categorySources && filter.categorySources.length > 0) {
+			query.andWhere('transaction.categorySource IN (:...categorySources)', {
+				categorySources: filter.categorySources,
 			});
 		}
 
@@ -75,7 +99,13 @@ export class BankTransactionService {
 		const sortField = queryParams.sort?.by ?? BankTransactionSortField.BOOKING_DATE;
 		const sortOrder = queryParams.sort?.order ?? BankTransactionSortOrder.DESC;
 		const sortColumn =
-			sortField === BankTransactionSortField.AMOUNT ? 'transaction.amount' : 'transaction.bookingDate';
+			sortField === BankTransactionSortField.AMOUNT
+				? 'transaction.amount'
+				: sortField === BankTransactionSortField.CATEGORY
+					? 'transaction.category'
+					: sortField === BankTransactionSortField.SOURCE
+						? 'connection.aspspName'
+						: 'transaction.bookingDate';
 		query.orderBy(sortColumn, sortOrder, 'NULLS LAST');
 		if (sortField !== BankTransactionSortField.BOOKING_DATE) {
 			query.addOrderBy('transaction.bookingDate', 'DESC', 'NULLS LAST');
