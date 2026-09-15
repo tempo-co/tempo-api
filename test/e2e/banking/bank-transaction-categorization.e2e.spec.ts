@@ -185,7 +185,7 @@ describe('Bank transaction categorization integration', () => {
 		expect(persisted).toMatchObject({
 			category: WEB_CATEGORY,
 			categorySource: 'AI',
-			categoryPromptVersion: 'bank-transaction-categorization-web-search-v1',
+			categoryPromptVersion: 'bank-transaction-categorization-web-search-v2',
 		});
 	});
 

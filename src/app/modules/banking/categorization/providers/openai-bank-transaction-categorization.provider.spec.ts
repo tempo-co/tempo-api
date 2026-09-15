@@ -60,6 +60,10 @@ function output(classifications: readonly BankTransactionCategorizationResult[])
 	return JSON.stringify({classifications});
 }
 
+function webSearchOutput(classifications: readonly (BankTransactionCategorizationResult & {needsFollowUp: boolean})[]) {
+	return JSON.stringify({classifications});
+}
+
 describe('OpenAiBankTransactionCategorizationProvider', () => {
 	it('sends a private strict structured request using the configured model', async () => {
 		const {provider, responsesCreate} = createProvider();
@@ -114,7 +118,9 @@ describe('OpenAiBankTransactionCategorizationProvider', () => {
 	it('uses the hosted web-search tool for a sanitized fallback request', async () => {
 		const {provider, responsesCreate} = createProvider();
 		responsesCreate.mockResolvedValue({
-			output_text: output([{correlationId: '0', category: 'FOOD_AND_DRINK', confidence: 0.93}]),
+			output_text: webSearchOutput([
+				{correlationId: '0', category: 'FOOD_AND_DRINK', confidence: 0.93, needsFollowUp: false},
+			]),
 		});
 		const transactions = [createWebSearchInput('opaque-transaction-id')];
 
@@ -146,11 +152,133 @@ describe('OpenAiBankTransactionCategorizationProvider', () => {
 		const sentInput = JSON.parse(request.input);
 		expect(sentInput.transactions).toEqual([{...transactions[0], correlationId: '0'}]);
 		expect(sentInput.categories).toEqual(BANK_TRANSACTION_CATEGORY_DEFINITIONS);
+		expect(request.text.format.schema.properties.classifications.items.properties.needsFollowUp).toEqual({
+			type: 'boolean',
+		});
 		expect(request.input).not.toContain('opaque-transaction-id');
 		expect(request.input).not.toContain('provider-id');
 		expect(request.input).not.toContain('account-id');
 		expect(request.input).not.toContain('IBAN');
 		expect(request.input).not.toContain('remittance');
+	});
+
+	it('performs one follow-up lookup only for genuinely ambiguous first results', async () => {
+		const {provider, responsesCreate} = createProvider();
+		responsesCreate
+			.mockResolvedValueOnce({
+				output_text: webSearchOutput([
+					{correlationId: '0', category: 'FOOD_AND_DRINK', confidence: 0.93, needsFollowUp: false},
+					{correlationId: '1', category: 'OTHER', confidence: 0.4, needsFollowUp: true},
+				]),
+			})
+			.mockResolvedValueOnce({
+				output_text: webSearchOutput([
+					{correlationId: '0', category: 'TRANSPORTATION', confidence: 0.88, needsFollowUp: false},
+				]),
+			});
+		const transactions = [createWebSearchInput('transaction-1'), createWebSearchInput('transaction-2')];
+
+		await expect(
+			provider.categorizeWithWebSearch(transactions, BANK_TRANSACTION_CATEGORY_DEFINITIONS),
+		).resolves.toEqual([
+			{correlationId: 'transaction-1', category: 'FOOD_AND_DRINK', confidence: 0.93},
+			{correlationId: 'transaction-2', category: 'TRANSPORTATION', confidence: 0.88},
+		]);
+
+		expect(responsesCreate).toHaveBeenCalledTimes(2);
+		const followUpRequest = responsesCreate.mock.calls[1][0];
+		expect(followUpRequest.instructions).toContain('Perform at most one single follow-up lookup per transaction');
+		expect(JSON.parse(followUpRequest.input).transactions).toEqual([
+			{
+				...transactions[1],
+				correlationId: '0',
+				initialCategory: 'OTHER',
+				initialConfidence: 0.4,
+			},
+		]);
+		expect(followUpRequest.input).not.toContain('transaction-2');
+	});
+
+	it('keeps OTHER when the single follow-up remains ambiguous', async () => {
+		const {provider, responsesCreate} = createProvider();
+		responsesCreate
+			.mockResolvedValueOnce({
+				output_text: webSearchOutput([
+					{correlationId: '0', category: 'OTHER', confidence: 0.3, needsFollowUp: true},
+				]),
+			})
+			.mockResolvedValueOnce({
+				output_text: webSearchOutput([
+					{correlationId: '0', category: 'OTHER', confidence: 0.2, needsFollowUp: false},
+				]),
+			});
+
+		await expect(
+			provider.categorizeWithWebSearch(
+				[createWebSearchInput('transaction-1')],
+				BANK_TRANSACTION_CATEGORY_DEFINITIONS,
+			),
+		).resolves.toEqual([{correlationId: 'transaction-1', category: 'OTHER', confidence: 0.2}]);
+		expect(responsesCreate).toHaveBeenCalledTimes(2);
+	});
+
+	it('keeps a clear OTHER result without a follow-up lookup', async () => {
+		const {provider, responsesCreate} = createProvider();
+		responsesCreate.mockResolvedValue({
+			output_text: webSearchOutput([
+				{correlationId: '0', category: 'OTHER', confidence: 0.7, needsFollowUp: false},
+			]),
+		});
+
+		await expect(
+			provider.categorizeWithWebSearch(
+				[createWebSearchInput('transaction-1')],
+				BANK_TRANSACTION_CATEGORY_DEFINITIONS,
+			),
+		).resolves.toEqual([{correlationId: 'transaction-1', category: 'OTHER', confidence: 0.7}]);
+		expect(responsesCreate).toHaveBeenCalledTimes(1);
+	});
+
+	it('does not return partial web results when a follow-up lookup fails', async () => {
+		const {provider, responsesCreate} = createProvider();
+		responsesCreate
+			.mockResolvedValueOnce({
+				output_text: webSearchOutput([
+					{correlationId: '0', category: 'OTHER', confidence: 0.3, needsFollowUp: true},
+				]),
+			})
+			.mockRejectedValueOnce({status: 503, name: 'APIError'});
+
+		await expect(
+			provider.categorizeWithWebSearch(
+				[createWebSearchInput('transaction-1')],
+				BANK_TRANSACTION_CATEGORY_DEFINITIONS,
+			),
+		).rejects.toMatchObject<Partial<BankTransactionCategorizationProviderError>>({retryable: true});
+		expect(responsesCreate).toHaveBeenCalledTimes(2);
+	});
+
+	it('does not perform a third lookup when the follow-up remains ambiguous', async () => {
+		const {provider, responsesCreate} = createProvider();
+		responsesCreate
+			.mockResolvedValueOnce({
+				output_text: webSearchOutput([
+					{correlationId: '0', category: 'OTHER', confidence: 0.3, needsFollowUp: true},
+				]),
+			})
+			.mockResolvedValueOnce({
+				output_text: webSearchOutput([
+					{correlationId: '0', category: 'OTHER', confidence: 0.2, needsFollowUp: true},
+				]),
+			});
+
+		await expect(
+			provider.categorizeWithWebSearch(
+				[createWebSearchInput('transaction-1')],
+				BANK_TRANSACTION_CATEGORY_DEFINITIONS,
+			),
+		).resolves.toEqual([{correlationId: 'transaction-1', category: 'OTHER', confidence: 0.2}]);
+		expect(responsesCreate).toHaveBeenCalledTimes(2);
 	});
 
 	it.each([
