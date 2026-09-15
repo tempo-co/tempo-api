@@ -21,7 +21,7 @@ import {
 	VERIFIED_ACCOUNT_EMAIL,
 	VERIFIED_ACCOUNT_PASSWORD,
 } from '../../../scripts/seed-data/seed.constants';
-import {getApp} from '../../setup/e2e.setup';
+import {getApp, loginAgent} from '../../setup/e2e.setup';
 import {EmailUtils} from '../../utils/email-utils';
 
 describe('AuthController - Signup', () => {
@@ -214,17 +214,8 @@ describe('AuthController - Signup', () => {
 		let verifiedAgent: TestAgent;
 
 		beforeEach(async () => {
-			unverifiedAgent = request.agent(httpServer);
-			await unverifiedAgent
-				.post('/auth/login')
-				.send({email: UNVERIFIED_ACCOUNT_EMAIL, password: UNVERIFIED_ACCOUNT_PASSWORD})
-				.expect(200);
-
-			verifiedAgent = request.agent(httpServer);
-			await verifiedAgent
-				.post('/auth/login')
-				.send({email: VERIFIED_ACCOUNT_EMAIL, password: VERIFIED_ACCOUNT_PASSWORD})
-				.expect(200);
+			unverifiedAgent = await loginAgent(httpServer, UNVERIFIED_ACCOUNT_EMAIL, UNVERIFIED_ACCOUNT_PASSWORD);
+			verifiedAgent = await loginAgent(httpServer, VERIFIED_ACCOUNT_EMAIL, VERIFIED_ACCOUNT_PASSWORD);
 
 			await EmailUtils.clearEmails(mailpitApiUrl);
 		});
@@ -303,8 +294,7 @@ describe('AuthController - Signup', () => {
 			expect(verificationCode).toBeDefined();
 			expect(verificationCode).toMatch(/^\d{6}$/);
 
-			agent = request.agent(httpServer);
-			await agent.post('/auth/login').send(accountCredentials).expect(200);
+			agent = await loginAgent(httpServer, accountCredentials.email, accountCredentials.password);
 
 			await EmailUtils.clearEmails(mailpitApiUrl);
 		});
@@ -327,8 +317,7 @@ describe('AuthController - Signup', () => {
 				.find((cookie: string) => cookie.startsWith('session='));
 			expect(sessionCookie).toBeDefined();
 
-			const agent = request.agent(httpServer);
-			await agent.post('/auth/login').send(accountCredentials).expect(200);
+			const agent = await loginAgent(httpServer, accountCredentials.email, accountCredentials.password);
 
 			const meResponse = await agent.get('/accounts/me').expect(200);
 			expect(meResponse.body.isEmailVerified).toBe(true);

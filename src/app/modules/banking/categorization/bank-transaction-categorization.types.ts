@@ -1,3 +1,4 @@
+import type {BankTransactionDirection} from '../bank-transaction-direction';
 import type {BankTransactionCategory} from './bank-transaction-category';
 
 export const BANK_TRANSACTION_CATEGORIZATION_STATUSES = ['PENDING', 'PROCESSING', 'COMPLETED', 'FAILED'] as const;
@@ -14,7 +15,7 @@ export type BankTransactionCategorizationInput = {
 	amount: string;
 	currency: string;
 	creditDebitIndicator: string | null;
-	direction: 'INCOME' | 'EXPENSE' | 'UNKNOWN';
+	direction: BankTransactionDirection;
 	transactionType: string;
 	bankTransactionCode: string | null;
 	bankTransactionSubCode: string | null;

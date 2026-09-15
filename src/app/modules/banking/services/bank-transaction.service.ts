@@ -13,12 +13,9 @@ import {
 	DEFAULT_BANK_TRANSACTION_PAGE_INDEX,
 	DEFAULT_BANK_TRANSACTION_PAGE_SIZE,
 } from '../api/dtos/bank-transaction-query.dto';
-import {
-	BankTransactionDirection,
-	BankTransactionResponseDto,
-	BankTransactionsResponseDto,
-} from '../api/dtos/bank-transaction-response.dto';
+import {BankTransactionResponseDto, BankTransactionsResponseDto} from '../api/dtos/bank-transaction-response.dto';
 import {BankConnection} from '../bank-connection.entity';
+import {toBankTransactionDirection} from '../bank-transaction-direction';
 import {BANK_TRANSACTION_TYPES} from '../bank-transaction-type';
 import {BankTransaction} from '../bank-transaction.entity';
 import {createBankTransactionCategorizationInputHash} from '../categorization/bank-transaction-categorization-input';
@@ -208,26 +205,11 @@ export class BankTransactionService {
 
 	private toResponse(transaction: BankTransaction): BankTransactionResponseDto {
 		return {
-			id: transaction.id,
+			...this.toSharedResponseFields(transaction),
 			transactionDate: transaction.transactionDate,
-			bookingDate: transaction.bookingDate,
-			valueDate: transaction.valueDate,
-			description: transaction.description,
-			displayDescription: transaction.displayDescription,
-			counterpartyName: transaction.counterpartyName,
-			amount: transaction.amount,
-			currency: transaction.currency,
-			creditDebitIndicator: transaction.creditDebitIndicator,
-			direction: this.toDirection(transaction.creditDebitIndicator),
+			direction: toBankTransactionDirection(transaction.creditDebitIndicator),
 			transactionType: transaction.transactionType ?? BANK_TRANSACTION_TYPES.OTHER,
-			transactionStatus: transaction.transactionStatus,
-			category: (transaction.category as BankTransactionResponseDto['category']) ?? null,
-			categoryStatus: (transaction.categoryStatus ?? 'PENDING') as BankTransactionResponseDto['categoryStatus'],
-			categorySource: (transaction.categorySource as BankTransactionResponseDto['categorySource']) ?? null,
-			categoryConfidence: transaction.categoryConfidence,
 			providerTransactionDescription: transaction.bankTransactionDescription,
-			merchantCategoryCode: transaction.merchantCategoryCode,
-			remittanceInformation: transaction.remittanceInformation,
 			balanceAfterAmount: transaction.balanceAfterAmount,
 			balanceAfterCurrency: transaction.balanceAfterCurrency,
 			instructedAmount: transaction.instructedAmount,
@@ -247,6 +229,10 @@ export class BankTransactionService {
 	private toBankTransactionResponse(
 		transaction: BankTransaction,
 	): BankConnectionTransactionsResponseDto['transactions'][number] {
+		return this.toSharedResponseFields(transaction);
+	}
+
+	private toSharedResponseFields(transaction: BankTransaction) {
 		return {
 			id: transaction.id,
 			bookingDate: transaction.bookingDate,
@@ -258,24 +244,12 @@ export class BankTransactionService {
 			description: transaction.description,
 			displayDescription: transaction.displayDescription,
 			counterpartyName: transaction.counterpartyName,
-			category:
-				(transaction.category as BankConnectionTransactionsResponseDto['transactions'][number]['category']) ??
-				null,
-			categoryStatus: (transaction.categoryStatus ??
-				'PENDING') as BankConnectionTransactionsResponseDto['transactions'][number]['categoryStatus'],
-			categorySource:
-				(transaction.categorySource as BankConnectionTransactionsResponseDto['transactions'][number]['categorySource']) ??
-				null,
+			category: (transaction.category as BankTransactionResponseDto['category']) ?? null,
+			categoryStatus: (transaction.categoryStatus ?? 'PENDING') as BankTransactionResponseDto['categoryStatus'],
+			categorySource: (transaction.categorySource as BankTransactionResponseDto['categorySource']) ?? null,
 			categoryConfidence: transaction.categoryConfidence,
 			merchantCategoryCode: transaction.merchantCategoryCode,
 			remittanceInformation: transaction.remittanceInformation,
 		};
-	}
-
-	private toDirection(indicator: string | null): BankTransactionDirection {
-		const normalizedIndicator = indicator?.toUpperCase();
-		if (normalizedIndicator === 'CRDT') return BankTransactionDirection.INCOME;
-		if (normalizedIndicator === 'DBIT') return BankTransactionDirection.EXPENSE;
-		return BankTransactionDirection.UNKNOWN;
 	}
 }

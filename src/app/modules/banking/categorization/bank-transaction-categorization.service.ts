@@ -81,14 +81,16 @@ export class BankTransactionCategorizationService {
 			where: {id: In(uniqueIds)},
 		});
 		const inputHashes = new Map(transactions.map(({id, categoryInputHash}) => [id, categoryInputHash]));
+		const jobs = [];
 		for (let index = 0; index < uniqueIds.length; index += BANK_TRANSACTION_CATEGORIZATION_BATCH_SIZE) {
 			const batch = uniqueIds.slice(index, index + BANK_TRANSACTION_CATEGORIZATION_BATCH_SIZE);
-			await this.queue.add(
-				CATEGORIZE_BANK_TRANSACTIONS_JOB,
-				{transactionIds: batch},
-				{jobId: this.createJobId(batch, inputHashes), removeOnFail: true},
-			);
+			jobs.push({
+				name: CATEGORIZE_BANK_TRANSACTIONS_JOB,
+				data: {transactionIds: batch},
+				opts: {jobId: this.createJobId(batch, inputHashes), removeOnFail: true},
+			});
 		}
+		await this.queue.addBulk(jobs);
 	}
 
 	async processTransactionJob(transactionIds: readonly string[]): Promise<void> {

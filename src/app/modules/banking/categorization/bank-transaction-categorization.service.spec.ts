@@ -85,7 +85,7 @@ function createService({
 	providerError?: BankTransactionCategorizationProviderError;
 	queryBuilder?: ReturnType<typeof createUpdateQueryBuilder>;
 } = {}) {
-	const queue = {add: jest.fn().mockResolvedValue(undefined)};
+	const queue = {addBulk: jest.fn().mockResolvedValue([])};
 	const provider = {
 		categorize: jest.fn().mockImplementation(async (inputs: readonly BankTransactionCategorizationInput[]) => {
 			if (providerError) throw providerError;
@@ -130,22 +130,22 @@ describe('BankTransactionCategorizationService queue scheduling', () => {
 
 		await service.enqueueForTransactions([...ids, ids[0]]);
 
-		expect(queue.add).toHaveBeenCalledTimes(2);
-		expect(queue.add.mock.calls[0][0]).toBe(CATEGORIZE_BANK_TRANSACTIONS_JOB);
-		expect(queue.add.mock.calls[1][0]).toBe(CATEGORIZE_BANK_TRANSACTIONS_JOB);
-		expect(queue.add.mock.calls[0][2]).toEqual({
-			jobId: expect.any(String),
-			removeOnFail: true,
+		expect(queue.addBulk).toHaveBeenCalledTimes(1);
+		const jobs = queue.addBulk.mock.calls[0][0];
+		expect(jobs).toHaveLength(2);
+		expect(jobs[0]).toEqual({
+			name: CATEGORIZE_BANK_TRANSACTIONS_JOB,
+			data: {transactionIds: expect.any(Array)},
+			opts: {jobId: expect.any(String), removeOnFail: true},
 		});
-		expect(queue.add.mock.calls[1][2]).toEqual({
-			jobId: expect.any(String),
-			removeOnFail: true,
+		expect(jobs[1]).toEqual({
+			name: CATEGORIZE_BANK_TRANSACTIONS_JOB,
+			data: {transactionIds: expect.any(Array)},
+			opts: {jobId: expect.any(String), removeOnFail: true},
 		});
-		expect(queue.add.mock.calls[0][1].transactionIds).toHaveLength(50);
-		expect(queue.add.mock.calls[1][1].transactionIds).toHaveLength(1);
-		expect(
-			[...queue.add.mock.calls[0][1].transactionIds, ...queue.add.mock.calls[1][1].transactionIds].sort(),
-		).toEqual(ids.sort());
+		expect(jobs[0].data.transactionIds).toHaveLength(50);
+		expect(jobs[1].data.transactionIds).toHaveLength(1);
+		expect([...jobs[0].data.transactionIds, ...jobs[1].data.transactionIds].sort()).toEqual(ids.sort());
 	});
 
 	it('changes the job ID when the categorization input hash changes', async () => {
@@ -156,8 +156,8 @@ describe('BankTransactionCategorizationService queue scheduling', () => {
 		transaction.categoryInputHash = 'hash-b';
 		await service.enqueueForTransactions([transaction.id]);
 
-		expect(queue.add).toHaveBeenCalledTimes(2);
-		expect(queue.add.mock.calls[0][2].jobId).not.toBe(queue.add.mock.calls[1][2].jobId);
+		expect(queue.addBulk).toHaveBeenCalledTimes(2);
+		expect(queue.addBulk.mock.calls[0][0][0].opts.jobId).not.toBe(queue.addBulk.mock.calls[1][0][0].opts.jobId);
 	});
 
 	it('does not enqueue when AI categorization is disabled or IDs are empty', async () => {
@@ -165,7 +165,7 @@ describe('BankTransactionCategorizationService queue scheduling', () => {
 		await disabled.service.enqueueForTransactions(['transaction-1']);
 		await disabled.service.enqueueForTransactions([]);
 
-		expect(disabled.queue.add).not.toHaveBeenCalled();
+		expect(disabled.queue.addBulk).not.toHaveBeenCalled();
 		expect(BANK_TRANSACTION_CATEGORIZATION_QUEUE).toBe('bank-transaction-categorization');
 	});
 });

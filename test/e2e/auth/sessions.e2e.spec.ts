@@ -20,7 +20,7 @@ import {
 	VERIFIED_ACCOUNT_EMAIL,
 	VERIFIED_ACCOUNT_PASSWORD,
 } from '../../../scripts/seed-data/seed.constants';
-import {getApp} from '../../setup/e2e.setup';
+import {getApp, loginAgent} from '../../setup/e2e.setup';
 
 describe('AuthController - Sessions', () => {
 	let httpServer: Server;
@@ -35,23 +35,11 @@ describe('AuthController - Sessions', () => {
 		let unverifiedAgent: TestAgent;
 
 		beforeEach(async () => {
-			verifiedAgent1 = request.agent(httpServer);
-			await verifiedAgent1
-				.post('/auth/login')
-				.send({email: VERIFIED_ACCOUNT_EMAIL, password: VERIFIED_ACCOUNT_PASSWORD})
-				.expect(200);
+			verifiedAgent1 = await loginAgent(httpServer, VERIFIED_ACCOUNT_EMAIL, VERIFIED_ACCOUNT_PASSWORD);
 
-			verifiedAgent2 = request.agent(httpServer);
-			await verifiedAgent2
-				.post('/auth/login')
-				.send({email: VERIFIED_ACCOUNT_EMAIL, password: VERIFIED_ACCOUNT_PASSWORD})
-				.expect(200);
+			verifiedAgent2 = await loginAgent(httpServer, VERIFIED_ACCOUNT_EMAIL, VERIFIED_ACCOUNT_PASSWORD);
 
-			unverifiedAgent = request.agent(httpServer);
-			await unverifiedAgent
-				.post('/auth/login')
-				.send({email: UNVERIFIED_ACCOUNT_EMAIL, password: UNVERIFIED_ACCOUNT_PASSWORD})
-				.expect(200);
+			unverifiedAgent = await loginAgent(httpServer, UNVERIFIED_ACCOUNT_EMAIL, UNVERIFIED_ACCOUNT_PASSWORD);
 		});
 
 		it('should return all active sessions, marking the current one', async () => {
@@ -130,29 +118,13 @@ describe('AuthController - Sessions', () => {
 		let currentSessionIdAgent1: string | null = null;
 
 		beforeEach(async () => {
-			verifiedAgent1 = request.agent(httpServer);
-			await verifiedAgent1
-				.post('/auth/login')
-				.send({email: VERIFIED_ACCOUNT_EMAIL, password: VERIFIED_ACCOUNT_PASSWORD})
-				.expect(200);
+			verifiedAgent1 = await loginAgent(httpServer, VERIFIED_ACCOUNT_EMAIL, VERIFIED_ACCOUNT_PASSWORD);
 
-			verifiedAgent2 = request.agent(httpServer);
-			await verifiedAgent2
-				.post('/auth/login')
-				.send({email: VERIFIED_ACCOUNT_EMAIL, password: VERIFIED_ACCOUNT_PASSWORD})
-				.expect(200);
+			verifiedAgent2 = await loginAgent(httpServer, VERIFIED_ACCOUNT_EMAIL, VERIFIED_ACCOUNT_PASSWORD);
 
-			verifiedAgent3 = request.agent(httpServer);
-			await verifiedAgent3
-				.post('/auth/login')
-				.send({email: VERIFIED_ACCOUNT_EMAIL, password: VERIFIED_ACCOUNT_PASSWORD})
-				.expect(200);
+			verifiedAgent3 = await loginAgent(httpServer, VERIFIED_ACCOUNT_EMAIL, VERIFIED_ACCOUNT_PASSWORD);
 
-			unverifiedAgent = request.agent(httpServer);
-			await unverifiedAgent
-				.post('/auth/login')
-				.send({email: UNVERIFIED_ACCOUNT_EMAIL, password: UNVERIFIED_ACCOUNT_PASSWORD})
-				.expect(200);
+			unverifiedAgent = await loginAgent(httpServer, UNVERIFIED_ACCOUNT_EMAIL, UNVERIFIED_ACCOUNT_PASSWORD);
 
 			// Get current session ID for agent 1
 			const response = await verifiedAgent1.get('/auth/sessions').expect(200);
@@ -186,11 +158,7 @@ describe('AuthController - Sessions', () => {
 		});
 
 		it('should return success message and not change session count when only the current session exists', async () => {
-			const agent = request.agent(httpServer);
-			await agent
-				.post('/auth/login')
-				.send({email: PW_CHANGE_ACCOUNT_EMAIL, password: PW_CHANGE_ACCOUNT_PASSWORD})
-				.expect(200);
+			const agent = await loginAgent(httpServer, PW_CHANGE_ACCOUNT_EMAIL, PW_CHANGE_ACCOUNT_PASSWORD);
 
 			const initialResponse = await agent.get('/auth/sessions').expect(200);
 			expect(initialResponse.body).toHaveLength(1);
@@ -225,31 +193,18 @@ describe('AuthController - Sessions', () => {
 
 	describe('DELETE /auth/sessions/:sessionId', () => {
 		let verifiedAgent1: TestAgent; // Agent making the revoke request
-		let verifiedAgent2: TestAgent; // Agent whose session will be revoked
 		let unverifiedAgent: TestAgent;
 		let sessionToRevokeId: string | null = null;
 		let currentSessionId: string | null = null;
 
 		beforeEach(async () => {
 			// Login verified account - Session 1
-			verifiedAgent1 = request.agent(httpServer);
-			await verifiedAgent1
-				.post('/auth/login')
-				.send({email: VERIFIED_ACCOUNT_EMAIL, password: VERIFIED_ACCOUNT_PASSWORD})
-				.expect(200);
+			verifiedAgent1 = await loginAgent(httpServer, VERIFIED_ACCOUNT_EMAIL, VERIFIED_ACCOUNT_PASSWORD);
 
 			// Login verified account - Session 2
-			verifiedAgent2 = request.agent(httpServer);
-			await verifiedAgent2
-				.post('/auth/login')
-				.send({email: VERIFIED_ACCOUNT_EMAIL, password: VERIFIED_ACCOUNT_PASSWORD})
-				.expect(200);
+			await loginAgent(httpServer, VERIFIED_ACCOUNT_EMAIL, VERIFIED_ACCOUNT_PASSWORD);
 
-			unverifiedAgent = request.agent(httpServer);
-			await unverifiedAgent
-				.post('/auth/login')
-				.send({email: UNVERIFIED_ACCOUNT_EMAIL, password: UNVERIFIED_ACCOUNT_PASSWORD})
-				.expect(200);
+			unverifiedAgent = await loginAgent(httpServer, UNVERIFIED_ACCOUNT_EMAIL, UNVERIFIED_ACCOUNT_PASSWORD);
 
 			// Get sessions using agent 1 to identify IDs
 			const response = await verifiedAgent1.get('/auth/sessions').expect(200);

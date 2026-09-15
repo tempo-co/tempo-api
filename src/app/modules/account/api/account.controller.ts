@@ -22,7 +22,7 @@ export class AccountController {
 	@Get('me')
 	@SkipEmailVerification()
 	findOne(@CurrentAccount() account: Account) {
-		return this.accountService.findById(account.id);
+		return account;
 	}
 
 	@Patch('me')

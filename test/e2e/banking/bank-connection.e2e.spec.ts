@@ -28,7 +28,7 @@ import {
 	VERIFIED_ACCOUNT_EMAIL,
 	VERIFIED_ACCOUNT_PASSWORD,
 } from '../../../scripts/seed-data/seed.constants';
-import {getApp} from '../../setup/e2e.setup';
+import {getApp, loginAgent} from '../../setup/e2e.setup';
 
 describe('BankConnectionController', () => {
 	let app: INestApplication;
@@ -89,23 +89,9 @@ describe('BankConnectionController', () => {
 			authorizationId: faker.string.uuid(),
 		});
 
-		verifiedAgent = request.agent(httpServer);
-		await verifiedAgent
-			.post('/auth/login')
-			.send({email: VERIFIED_ACCOUNT_EMAIL, password: VERIFIED_ACCOUNT_PASSWORD})
-			.expect(200);
-
-		unverifiedAgent = request.agent(httpServer);
-		await unverifiedAgent
-			.post('/auth/login')
-			.send({email: UNVERIFIED_ACCOUNT_EMAIL, password: UNVERIFIED_ACCOUNT_PASSWORD})
-			.expect(200);
-
-		otherVerifiedAgent = request.agent(httpServer);
-		await otherVerifiedAgent
-			.post('/auth/login')
-			.send({email: SESSION_TEST_ACCOUNT_EMAIL, password: SESSION_TEST_ACCOUNT_PASSWORD})
-			.expect(200);
+		verifiedAgent = await loginAgent(httpServer, VERIFIED_ACCOUNT_EMAIL, VERIFIED_ACCOUNT_PASSWORD);
+		unverifiedAgent = await loginAgent(httpServer, UNVERIFIED_ACCOUNT_EMAIL, UNVERIFIED_ACCOUNT_PASSWORD);
+		otherVerifiedAgent = await loginAgent(httpServer, SESSION_TEST_ACCOUNT_EMAIL, SESSION_TEST_ACCOUNT_PASSWORD);
 
 		await bankConnectionRepository
 			.createQueryBuilder()

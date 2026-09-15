@@ -64,9 +64,8 @@ export class BankConnectionController {
 	async handleCallback(@Query() query: BankConnectionCallbackDto, @Res() response: Response) {
 		const result = await this.bankingService.handleCallback(query);
 
-		const redirectUrl = new URL(createWebUrl('/bank-connections', this.configurationService.get('WEB_BASE_URL')));
-		redirectUrl.searchParams.set('result', result);
-		return response.redirect(302, redirectUrl.toString());
+		const redirectUrl = createWebUrl('/bank-connections', this.configurationService.get('WEB_BASE_URL'), {result});
+		return response.redirect(302, redirectUrl);
 	}
 
 	@Get(':connectionId/transactions')

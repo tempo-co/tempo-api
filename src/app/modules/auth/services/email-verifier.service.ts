@@ -1,5 +1,4 @@
-import {BadRequestException, ConflictException, Injectable} from '@nestjs/common';
-import {Inject} from '@nestjs/common';
+import {BadRequestException, Inject, Injectable} from '@nestjs/common';
 import Redis from 'ioredis';
 import ms from 'ms';
 import crypto from 'node:crypto';
@@ -12,7 +11,6 @@ import {Account} from '@modules/account/account.entity';
 import {AccountService} from '@modules/account/account.service';
 
 import {
-	EMAIL_ALREADY_IN_USE,
 	EMAIL_ALREADY_VERIFIED,
 	EMAIL_CHANGE_SUCCESS,
 	EMAIL_INVALID_TOKEN,
@@ -36,11 +34,8 @@ export class EmailVerifierService {
 		this.WEB_BASE_URL = this.configService.get('WEB_BASE_URL');
 	}
 
-	async checkEmailAvailability(email: Account['email']) {
-		const existingAccount = await this.accountService.findByEmail(email);
-		if (existingAccount) {
-			throw new ConflictException(EMAIL_ALREADY_IN_USE);
-		}
+	checkEmailAvailability(email: Account['email']) {
+		return this.accountService.validateEmailIsUnique(email);
 	}
 
 	async verifySignup(code: string, email: Account['email']) {
@@ -120,9 +115,7 @@ export class EmailVerifierService {
 	}
 
 	private _createUrl(path: string, params: Record<string, string>) {
-		const url = new URL(createWebUrl(path, this.WEB_BASE_URL));
-		url.search = new URLSearchParams(params).toString();
-		return url.toString();
+		return createWebUrl(path, this.WEB_BASE_URL, params);
 	}
 
 	private async _createCode(email: Account['email']) {

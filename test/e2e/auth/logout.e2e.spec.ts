@@ -6,7 +6,7 @@ import TestAgent from 'supertest/lib/agent';
 import {LOGOUT_SUCCESS} from '@modules/auth/api/constants/api-messages.constants';
 import {SignUpDto} from '@modules/auth/api/dtos/signup.dto';
 
-import {getApp} from '../../setup/e2e.setup';
+import {getApp, loginAgent} from '../../setup/e2e.setup';
 
 describe('AuthController - Logout', () => {
 	let httpServer: Server;
@@ -28,11 +28,7 @@ describe('AuthController - Logout', () => {
 
 			await request(httpServer).post('/auth/signup').send(accountCredentials).expect(201);
 
-			agent = request.agent(httpServer);
-			await agent
-				.post('/auth/login')
-				.send({email: accountCredentials.email, password: accountCredentials.password})
-				.expect(200);
+			agent = await loginAgent(httpServer, accountCredentials.email, accountCredentials.password);
 		});
 
 		it('should log out an authenticated account', async () => {

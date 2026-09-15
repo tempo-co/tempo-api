@@ -1,5 +1,6 @@
 import {createHash} from 'node:crypto';
 
+import {toBankTransactionDirection} from '../bank-transaction-direction';
 import {normalizeBankTransactionType} from '../bank-transaction-type';
 import {BankTransaction} from '../bank-transaction.entity';
 import {truncate} from '../banking.utils';
@@ -45,7 +46,7 @@ export function toBankTransactionCategorizationInput(
 		amount: normalizeRequiredText(transaction.amount),
 		currency: normalizeUppercase(transaction.currency) ?? '',
 		creditDebitIndicator,
-		direction: toDirection(creditDebitIndicator),
+		direction: toBankTransactionDirection(creditDebitIndicator),
 		transactionType,
 		bankTransactionCode,
 		bankTransactionSubCode,
@@ -131,10 +132,4 @@ function normalizeAmountForHash(value: string): string {
 	const fraction = fractionPart.replace(/0+$/, '');
 	const normalizedSign = sign === '-' && (integer !== '0' || fraction.length > 0) ? '-' : '';
 	return `${normalizedSign}${integer}${fraction.length > 0 ? `.${fraction}` : ''}`;
-}
-
-function toDirection(indicator: string | null): BankTransactionCategorizationInput['direction'] {
-	if (indicator === 'CRDT') return 'INCOME';
-	if (indicator === 'DBIT') return 'EXPENSE';
-	return 'UNKNOWN';
 }

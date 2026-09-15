@@ -14,7 +14,7 @@ import {
 	VERIFIED_ACCOUNT_EMAIL,
 	VERIFIED_ACCOUNT_PASSWORD,
 } from '../../../scripts/seed-data/seed.constants';
-import {getApp} from '../../setup/e2e.setup';
+import {getApp, loginAgent} from '../../setup/e2e.setup';
 
 describe('Account controller - /me', () => {
 	let httpServer: Server;
@@ -27,15 +27,7 @@ describe('Account controller - /me', () => {
 
 	describe('GET /accounts/me', () => {
 		it('should return the current VERIFIED authenticated account', async () => {
-			const agent = request.agent(httpServer);
-
-			await agent
-				.post('/auth/login')
-				.send({
-					email: VERIFIED_ACCOUNT_EMAIL,
-					password: VERIFIED_ACCOUNT_PASSWORD,
-				})
-				.expect(200);
+			const agent = await loginAgent(httpServer, VERIFIED_ACCOUNT_EMAIL, VERIFIED_ACCOUNT_PASSWORD);
 
 			const response = await agent.get('/accounts/me').expect(200);
 
@@ -50,15 +42,7 @@ describe('Account controller - /me', () => {
 		});
 
 		it('should return the current UNVERIFIED authenticated account', async () => {
-			const agent = request.agent(httpServer);
-
-			await agent
-				.post('/auth/login')
-				.send({
-					email: UNVERIFIED_ACCOUNT_EMAIL,
-					password: UNVERIFIED_ACCOUNT_PASSWORD,
-				})
-				.expect(200);
+			const agent = await loginAgent(httpServer, UNVERIFIED_ACCOUNT_EMAIL, UNVERIFIED_ACCOUNT_PASSWORD);
 
 			const response = await agent.get('/accounts/me').expect(200);
 
@@ -82,23 +66,9 @@ describe('Account controller - /me', () => {
 		let unverifiedAgent: TestAgent;
 
 		beforeAll(async () => {
-			verifiedAgent = request.agent(httpServer);
-			await verifiedAgent
-				.post('/auth/login')
-				.send({
-					email: VERIFIED_ACCOUNT_EMAIL,
-					password: VERIFIED_ACCOUNT_PASSWORD,
-				})
-				.expect(200);
+			verifiedAgent = await loginAgent(httpServer, VERIFIED_ACCOUNT_EMAIL, VERIFIED_ACCOUNT_PASSWORD);
 
-			unverifiedAgent = request.agent(httpServer);
-			await unverifiedAgent
-				.post('/auth/login')
-				.send({
-					email: UNVERIFIED_ACCOUNT_EMAIL,
-					password: UNVERIFIED_ACCOUNT_PASSWORD,
-				})
-				.expect(200);
+			unverifiedAgent = await loginAgent(httpServer, UNVERIFIED_ACCOUNT_EMAIL, UNVERIFIED_ACCOUNT_PASSWORD);
 		});
 
 		it('should update the name for an authenticated VERIFIED account', async () => {
