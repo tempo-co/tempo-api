@@ -6,7 +6,7 @@
     <img src="https://github.com/tempo-co/tempo-api/actions/workflows/ci.yml/badge.svg" alt="Build Status" />
   </a>
   <a href="https://nodejs.org/" target="_blank">
-    <img src="https://img.shields.io/badge/node.js-20.19%2B-brightgreen" alt="Node.js Version" />
+    <img src="https://img.shields.io/badge/node.js-22.13%2B-brightgreen" alt="Node.js Version" />
   </a>
 </p>
 
