@@ -22,7 +22,7 @@ import {
 	VERIFIED_ACCOUNT_EMAIL,
 	VERIFIED_ACCOUNT_PASSWORD,
 } from '../../../scripts/seed-data/seed.constants';
-import {getApp} from '../../setup/e2e.setup';
+import {getApp, loginAgent} from '../../setup/e2e.setup';
 import {UUID_REGEX} from '../../types/regex.constants';
 import {EmailUtils} from '../../utils/email-utils';
 
@@ -62,17 +62,9 @@ describe('AuthController - Change email', () => {
 			existingEmail = conflictAccountDto.email;
 
 			// Setup authenticated agents
-			verifiedAgent = request.agent(httpServer);
-			await verifiedAgent
-				.post('/auth/login')
-				.send({email: VERIFIED_ACCOUNT_EMAIL, password: VERIFIED_ACCOUNT_PASSWORD})
-				.expect(200);
+			verifiedAgent = await loginAgent(httpServer, VERIFIED_ACCOUNT_EMAIL, VERIFIED_ACCOUNT_PASSWORD);
 
-			unverifiedAgent = request.agent(httpServer);
-			await unverifiedAgent
-				.post('/auth/login')
-				.send({email: UNVERIFIED_ACCOUNT_EMAIL, password: UNVERIFIED_ACCOUNT_PASSWORD})
-				.expect(200);
+			unverifiedAgent = await loginAgent(httpServer, UNVERIFIED_ACCOUNT_EMAIL, UNVERIFIED_ACCOUNT_PASSWORD);
 		});
 
 		it('should return 204 No Content for an available email (Verified User)', async () => {
@@ -140,17 +132,9 @@ describe('AuthController - Change email', () => {
 		});
 
 		beforeEach(async () => {
-			verifiedAgent = request.agent(httpServer);
-			await verifiedAgent
-				.post('/auth/login')
-				.send({email: VERIFIED_ACCOUNT_EMAIL, password: VERIFIED_ACCOUNT_PASSWORD})
-				.expect(200);
+			verifiedAgent = await loginAgent(httpServer, VERIFIED_ACCOUNT_EMAIL, VERIFIED_ACCOUNT_PASSWORD);
 
-			unverifiedAgent = request.agent(httpServer);
-			await unverifiedAgent
-				.post('/auth/login')
-				.send({email: UNVERIFIED_ACCOUNT_EMAIL, password: UNVERIFIED_ACCOUNT_PASSWORD})
-				.expect(200);
+			unverifiedAgent = await loginAgent(httpServer, UNVERIFIED_ACCOUNT_EMAIL, UNVERIFIED_ACCOUNT_PASSWORD);
 
 			await EmailUtils.clearEmails(mailpitApiUrl);
 		});
@@ -251,11 +235,7 @@ describe('AuthController - Change email', () => {
 		let initialAccountEmail: string = VERIFIED_ACCOUNT_EMAIL;
 
 		beforeEach(async () => {
-			verifiedAgent = request.agent(httpServer);
-			await verifiedAgent
-				.post('/auth/login')
-				.send({email: initialAccountEmail, password: VERIFIED_ACCOUNT_PASSWORD})
-				.expect(200);
+			verifiedAgent = await loginAgent(httpServer, initialAccountEmail, VERIFIED_ACCOUNT_PASSWORD);
 
 			// Request email change and get the token
 			const requestedNewEmail = faker.internet.email();
@@ -299,11 +279,7 @@ describe('AuthController - Change email', () => {
 		});
 
 		it('should fail with 403 Forbidden if the logged in account is not email-verified', async () => {
-			const unverifiedAgent = request.agent(httpServer);
-			await unverifiedAgent
-				.post('/auth/login')
-				.send({email: UNVERIFIED_ACCOUNT_EMAIL, password: UNVERIFIED_ACCOUNT_PASSWORD})
-				.expect(200);
+			const unverifiedAgent = await loginAgent(httpServer, UNVERIFIED_ACCOUNT_EMAIL, UNVERIFIED_ACCOUNT_PASSWORD);
 
 			await unverifiedAgent
 				.post('/auth/change-email/verify')
@@ -331,11 +307,7 @@ describe('AuthController - Change email', () => {
 
 			initialAccountEmail = newEmailAddress;
 
-			const agentWithNewEmail = request.agent(httpServer);
-			await agentWithNewEmail
-				.post('/auth/login')
-				.send({email: newEmailAddress, password: VERIFIED_ACCOUNT_PASSWORD})
-				.expect(200);
+			const agentWithNewEmail = await loginAgent(httpServer, newEmailAddress, VERIFIED_ACCOUNT_PASSWORD);
 
 			await agentWithNewEmail
 				.post('/auth/change-email/verify')
@@ -391,11 +363,7 @@ describe('AuthController - Change email', () => {
 			const emailVerifyDto: EmailVerifyDto = {code: signupCodeB, email: accountBCredentials.email};
 			await request(httpServer).post('/auth/signup/verify').send(emailVerifyDto).expect(200);
 
-			const accountBAgent = request.agent(httpServer);
-			await accountBAgent
-				.post('/auth/login')
-				.send({email: accountBCredentials.email, password: accountBCredentials.password})
-				.expect(200);
+			const accountBAgent = await loginAgent(httpServer, accountBCredentials.email, accountBCredentials.password);
 
 			// 3. Account B requests change to the same targetEmail and gets their own token
 			const changeDtoForB: EmailChangeRequestDto = {newEmail: targetEmail};

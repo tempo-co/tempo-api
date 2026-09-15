@@ -1,15 +1,14 @@
-import {BankTransactionType} from '../../bank-transaction-type';
+import {BANK_TRANSACTION_DIRECTIONS} from '../../bank-transaction-direction';
+import type {BankTransactionDirection as BankTransactionDirectionType} from '../../bank-transaction-direction';
+import type {BankTransactionType} from '../../bank-transaction-type';
 import type {
 	BankTransactionCategorizationSource,
 	BankTransactionCategorizationStatus,
 } from '../../categorization/bank-transaction-categorization.types';
 import type {BankTransactionCategory} from '../../categorization/bank-transaction-category';
 
-export enum BankTransactionDirection {
-	INCOME = 'INCOME',
-	EXPENSE = 'EXPENSE',
-	UNKNOWN = 'UNKNOWN',
-}
+export const BankTransactionDirection = BANK_TRANSACTION_DIRECTIONS;
+export type BankTransactionDirection = BankTransactionDirectionType;
 
 export class BankTransactionResponseDto {
 	id: string;
@@ -22,7 +21,7 @@ export class BankTransactionResponseDto {
 	amount: string;
 	currency: string;
 	creditDebitIndicator: string | null;
-	direction: BankTransactionDirection;
+	direction: BankTransactionDirectionType;
 	transactionType: BankTransactionType;
 	transactionStatus: string | null;
 	category: BankTransactionCategory | null;

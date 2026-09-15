@@ -12,4 +12,13 @@ describe('createWebUrl', () => {
 			'http://localhost:5173/bank-connections',
 		);
 	});
+
+	it('encodes query parameters on application URLs', () => {
+		expect(
+			createWebUrl('/verify-email', 'https://example.ts.net/tempo', {
+				email: 'sami+test@example.com',
+				code: 'a/b',
+			}),
+		).toBe('https://example.ts.net/tempo/verify-email?email=sami%2Btest%40example.com&code=a%2Fb');
+	});
 });

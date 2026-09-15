@@ -83,9 +83,7 @@ export class PasswordResetService {
 	}
 
 	private _createUrl(email: Account['email'], token: string) {
-		const url = new URL(createWebUrl('/reset-password', this.WEB_BASE_URL));
-		url.search = new URLSearchParams({email, token}).toString();
-		return url.toString();
+		return createWebUrl('/reset-password', this.WEB_BASE_URL, {email, token});
 	}
 
 	private async _getTokenData(token: string) {

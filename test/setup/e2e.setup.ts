@@ -2,6 +2,8 @@ import {INestApplication, ValidationPipe} from '@nestjs/common';
 import {NestExpressApplication} from '@nestjs/platform-express';
 import {Test} from '@nestjs/testing';
 import {Server} from 'node:net';
+import request from 'supertest';
+import TestAgent from 'supertest/lib/agent';
 
 let app: INestApplication<Server>;
 let aiCategorizationEnabled = false;
@@ -41,4 +43,10 @@ afterAll(async () => {
 
 export function getApp() {
 	return app;
+}
+
+export async function loginAgent(httpServer: Server, email: string, password: string): Promise<TestAgent> {
+	const agent = request.agent(httpServer);
+	await agent.post('/auth/login').send({email, password}).expect(200);
+	return agent;
 }
