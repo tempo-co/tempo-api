@@ -200,6 +200,42 @@ describe('bank transaction categorization input', () => {
 		expect(serialized).not.toContain('Order 123456789');
 	});
 
+	it('canonicalizes Google Pay card descriptions before web search', () => {
+		const input = toBankTransactionCategorizationInput(
+			createTransaction({
+				counterpartyName: null,
+				description: 'BEA, Google Pay Example Coffee Shop,PAS999 NR:TEST12345, 12.03.26/20:53 Sampletown',
+			}),
+		);
+
+		expect(toBankTransactionCategorizationWebSearchInput(input)?.merchantName).toBe(
+			'Example Coffee Shop Sampletown',
+		);
+	});
+
+	it('prefers a nonblank counterparty over a noisy card description', () => {
+		const input = toBankTransactionCategorizationInput(
+			createTransaction({
+				counterpartyName: 'Known Merchant',
+				description: 'BEA, Google Pay Example Coffee Shop,PAS999 NR:TEST12345, 12.03.26/20:53 Sampletown',
+			}),
+		);
+
+		expect(toBankTransactionCategorizationWebSearchInput(input)?.merchantName).toBe('Known Merchant');
+	});
+
+	it('falls back to the bank transaction description when the description is missing', () => {
+		const input = toBankTransactionCategorizationInput(
+			createTransaction({
+				counterpartyName: null,
+				description: null,
+				bankTransactionDescription: 'Fallback Merchant',
+			}),
+		);
+
+		expect(toBankTransactionCategorizationWebSearchInput(input)?.merchantName).toBe('Fallback Merchant');
+	});
+
 	it.each(['Google Pay', 'Apple Pay', 'Bancontact', 'ACH', 'SEPA Wero'])(
 		'does not depend on a locale-specific payment-prefix list for %s',
 		(paymentPrefix) => {
