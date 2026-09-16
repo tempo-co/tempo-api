@@ -127,7 +127,7 @@ describe('OpenAiBankTransactionCategorizationProvider', () => {
 		const request = responsesCreate.mock.calls[0][0];
 		expect(request).toMatchObject({
 			model: 'configured-model',
-			reasoning: {effort: 'low'},
+			reasoning: {effort: 'medium'},
 			tool_choice: 'required',
 			max_tool_calls: 1,
 			parallel_tool_calls: false,
@@ -185,6 +185,7 @@ describe('OpenAiBankTransactionCategorizationProvider', () => {
 
 		expect(responsesCreate).toHaveBeenCalledTimes(3);
 		expect(responsesCreate.mock.calls.every(([request]) => request.max_tool_calls === 1)).toBe(true);
+		expect(responsesCreate.mock.calls.every(([request]) => request.reasoning?.effort === 'medium')).toBe(true);
 		const followUpRequest = responsesCreate.mock.calls[2][0];
 		expect(followUpRequest.instructions).toContain('Perform at most one single follow-up lookup per transaction');
 		expect(JSON.parse(followUpRequest.input).transactions).toEqual([

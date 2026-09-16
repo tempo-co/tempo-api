@@ -1,6 +1,7 @@
 import {createHash} from 'node:crypto';
 
 import {toBankTransactionDirection} from '../bank-transaction-direction';
+import {getBankTransactionDisplayDescription} from '../bank-transaction-display';
 import {normalizeBankTransactionType} from '../bank-transaction-type';
 import {BankTransaction} from '../bank-transaction.entity';
 import {truncate} from '../banking.utils';
@@ -21,6 +22,7 @@ const FORMATTED_NUMERIC_IDENTIFIER_PATTERN = /(?<![A-Z0-9])\+?\d[\d\s()./-]{5,}\
 const UNLABELED_ALPHANUMERIC_IDENTIFIER_PATTERN =
 	/\b(?=[A-Z0-9_-]*[A-Z])(?=[A-Z0-9_-]*\d[A-Z0-9_-]*\d[A-Z0-9_-]*\d)[A-Z0-9_-]+\b/gi;
 const LONG_DIGIT_PATTERN = /\b\d{4,}\b/g;
+const CARD_LOCATION_PATTERN = /,\s*\d{2}[./]\d{2}[./]\d{2}\/\d{2}:\d{2}\s+(.+)$/i;
 
 type CategorizationHashInput = Omit<BankTransactionCategorizationInput, 'correlationId'>;
 
@@ -75,9 +77,7 @@ export function toBankTransactionCategorizationInput(
 export function toBankTransactionCategorizationWebSearchInput(
 	input: BankTransactionCategorizationInput,
 ): BankTransactionCategorizationWebSearchInput | null {
-	const merchantText = [input.counterpartyName, input.description, input.bankTransactionDescription].find(
-		(value) => normalizeNullableText(value) !== null,
-	);
+	const merchantText = getWebSearchMerchantText(input);
 	const merchantName = sanitizeWebSearchMerchantName(merchantText);
 	if (!merchantName) return null;
 
@@ -90,6 +90,20 @@ export function toBankTransactionCategorizationWebSearchInput(
 		merchantName,
 		merchantCategoryCode: input.merchantCategoryCode,
 	};
+}
+
+function getWebSearchMerchantText(input: BankTransactionCategorizationInput): string | null {
+	const counterpartyName = normalizeNullableText(input.counterpartyName);
+	if (counterpartyName) return counterpartyName;
+
+	const description = normalizeNullableText(input.description);
+	if (description) {
+		const merchantName = getBankTransactionDisplayDescription({description, counterpartyName: null});
+		const location = description.match(CARD_LOCATION_PATTERN)?.[1]?.trim();
+		return [merchantName, location].filter(Boolean).join(', ');
+	}
+
+	return normalizeNullableText(input.bankTransactionDescription);
 }
 
 export function createBankTransactionCategorizationInputHash(
