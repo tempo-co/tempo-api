@@ -67,14 +67,19 @@ function createTransaction(overrides: Partial<BankTransaction> = {}): BankTransa
 	} as unknown as BankTransaction;
 }
 
-function createUpdateQueryBuilder(results: readonly {affected: number}[] = [{affected: 1}] as const) {
+function createUpdateQueryBuilder(
+	results: readonly {affected: number}[] = [{affected: 1}] as const,
+	rawRows: readonly {id: string}[] = [],
+) {
 	const builder = {
 		update: jest.fn().mockReturnThis(),
+		select: jest.fn().mockReturnThis(),
 		set: jest.fn().mockReturnThis(),
 		where: jest.fn().mockReturnThis(),
 		andWhere: jest.fn().mockReturnThis(),
 		returning: jest.fn().mockReturnThis(),
 		execute: jest.fn().mockResolvedValue({affected: 1}),
+		getRawMany: jest.fn().mockResolvedValue(rawRows),
 	};
 	for (const result of results) builder.execute.mockResolvedValueOnce(result);
 	return builder;
@@ -197,6 +202,79 @@ describe('BankTransactionCategorizationService queue scheduling', () => {
 
 		expect(disabled.queue.addBulk).not.toHaveBeenCalled();
 		expect(BANK_TRANSACTION_CATEGORIZATION_QUEUE).toBe('bank-transaction-categorization');
+	});
+});
+
+describe('BankTransactionCategorizationService web-search reconciliation', () => {
+	it('resets and enqueues completed OTHER rows in bounded batches when web search is enabled', async () => {
+		const rows = Array.from({length: 114}, (_, index) =>
+			createTransaction({
+				id: `other-transaction-${index}`,
+				category: 'OTHER',
+				categoryStatus: 'COMPLETED',
+				categorySource: 'AI',
+				categoryInputHash: `input-hash-${index}`,
+				categoryAppliedInputHash: `input-hash-${index}`,
+				categoryPromptVersion: BANK_TRANSACTION_CATEGORIZATION_PROMPT_VERSION,
+			}),
+		);
+		const queryBuilder = createUpdateQueryBuilder();
+		queryBuilder.getRawMany.mockResolvedValueOnce([]).mockResolvedValueOnce(rows.map(({id}) => ({id})));
+		const {service, queue} = createService({rows, webSearchEnabled: true, queryBuilder});
+
+		await service.onApplicationBootstrap();
+
+		expect(queryBuilder.getRawMany).toHaveBeenCalledTimes(2);
+		const selectionQueries = [...queryBuilder.where.mock.calls, ...queryBuilder.andWhere.mock.calls]
+			.map(([query]) => query)
+			.join('\n');
+		expect(selectionQueries).toContain('transaction."category" = \'OTHER\'');
+		expect(selectionQueries).toContain('transaction."categoryStatus" = \'COMPLETED\'');
+		expect(selectionQueries).toContain('transaction."categorySource" IS DISTINCT FROM \'MANUAL\'');
+		expect(selectionQueries).toContain(
+			'transaction."categoryPromptVersion" IS DISTINCT FROM :webSearchPromptVersion',
+		);
+		expect(queryBuilder.set).toHaveBeenCalledWith(
+			expect.objectContaining({
+				category: null,
+				categoryStatus: 'PENDING',
+				categorySource: null,
+				categoryAppliedInputHash: null,
+				categoryPromptVersion: null,
+			}),
+		);
+		expect(queue.addBulk).toHaveBeenCalledTimes(1);
+		const jobs = queue.addBulk.mock.calls[0][0];
+		expect(jobs).toHaveLength(23);
+		expect(
+			jobs.slice(0, 22).every(({data}: {data: {transactionIds: string[]}}) => data.transactionIds.length === 5),
+		).toBe(true);
+		expect(jobs[22].data.transactionIds).toHaveLength(4);
+		expect(jobs.flatMap(({data}: {data: {transactionIds: string[]}}) => data.transactionIds)).toEqual(
+			rows.map(({id}) => id).sort(),
+		);
+	});
+
+	it('does not scan or enqueue completed OTHER rows when the web-search cap is zero', async () => {
+		const queryBuilder = createUpdateQueryBuilder();
+		const {service, queue} = createService({webSearchEnabled: true, webSearchMaxTransactions: 0, queryBuilder});
+
+		await service.onApplicationBootstrap();
+
+		expect(queryBuilder.getRawMany).toHaveBeenCalledTimes(1);
+		expect(queryBuilder.set).not.toHaveBeenCalled();
+		expect(queue.addBulk).not.toHaveBeenCalled();
+	});
+
+	it('does not scan or enqueue completed OTHER rows when web search is disabled', async () => {
+		const queryBuilder = createUpdateQueryBuilder();
+		const {service, queue} = createService({webSearchEnabled: false, queryBuilder});
+
+		await service.onApplicationBootstrap();
+
+		expect(queryBuilder.getRawMany).toHaveBeenCalledTimes(1);
+		expect(queryBuilder.set).not.toHaveBeenCalled();
+		expect(queue.addBulk).not.toHaveBeenCalled();
 	});
 });
 

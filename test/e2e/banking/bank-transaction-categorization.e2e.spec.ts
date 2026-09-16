@@ -6,6 +6,14 @@ import {Repository} from 'typeorm';
 
 import {ConfigurationService} from '@core/config/config.service';
 import {BankTransaction} from '@modules/banking/bank-transaction.entity';
+import {
+	createBankTransactionCategorizationInputHash,
+	toBankTransactionCategorizationInput,
+} from '@modules/banking/categorization/bank-transaction-categorization-input';
+import {
+	BANK_TRANSACTION_CATEGORIZATION_PROMPT_VERSION,
+	BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_PROMPT_VERSION,
+} from '@modules/banking/categorization/bank-transaction-categorization.constants';
 import {BankTransactionCategorizationProviderError} from '@modules/banking/categorization/bank-transaction-categorization.provider';
 import {BankTransactionCategorizationService} from '@modules/banking/categorization/bank-transaction-categorization.service';
 import type {
@@ -214,5 +222,56 @@ describe('Bank transaction categorization integration', () => {
 		} finally {
 			shouldFail = false;
 		}
+	});
+
+	it('automatically requeues completed OTHER rows during reconciliation and skips them after web search', async () => {
+		const categorizationService = app.get(BankTransactionCategorizationService);
+		const transaction = await bankTransactionRepository.findOneByOrFail({
+			id: CATEGORIZATION_E2E_WEB_TRANSACTION_ID,
+		});
+		const inputHash = createBankTransactionCategorizationInputHash(
+			toBankTransactionCategorizationInput(transaction),
+		);
+		await bankTransactionRepository.update(transaction.id, {
+			category: 'OTHER',
+			categoryStatus: 'COMPLETED',
+			categorySource: 'AI',
+			categoryConfidence: '0.250',
+			categoryInputHash: inputHash,
+			categoryAppliedInputHash: inputHash,
+			categoryProvider: 'openai',
+			categoryModel: 'test-model',
+			categoryPromptVersion: BANK_TRANSACTION_CATEGORIZATION_PROMPT_VERSION,
+			categoryUpdatedAt: new Date(),
+			categoryLastError: null,
+		});
+
+		await categorizationService.reconcilePendingTransactions();
+		const response = await waitFor(
+			() => verifiedAgent.get(`/bank-transactions/${CATEGORIZATION_E2E_WEB_TRANSACTION_ID}`),
+			(value) =>
+				value.status === 200 &&
+				value.body.categoryStatus === 'COMPLETED' &&
+				value.body.category === WEB_CATEGORY,
+		);
+
+		expect(response.body).toMatchObject({
+			id: CATEGORIZATION_E2E_WEB_TRANSACTION_ID,
+			category: WEB_CATEGORY,
+			categoryStatus: 'COMPLETED',
+		});
+		expect(
+			await bankTransactionRepository.findOneByOrFail({id: CATEGORIZATION_E2E_WEB_TRANSACTION_ID}),
+		).toMatchObject({categoryPromptVersion: BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_PROMPT_VERSION});
+		expect(categorizeWithWebSearchSpy).toHaveBeenCalledWith(
+			expect.arrayContaining([expect.objectContaining({correlationId: CATEGORIZATION_E2E_WEB_TRANSACTION_ID})]),
+			expect.any(Array),
+		);
+
+		const normalCallCount = categorizeSpy.mock.calls.length;
+		const webSearchCallCount = categorizeWithWebSearchSpy.mock.calls.length;
+		await categorizationService.reconcilePendingTransactions();
+		expect(categorizeSpy).toHaveBeenCalledTimes(normalCallCount);
+		expect(categorizeWithWebSearchSpy).toHaveBeenCalledTimes(webSearchCallCount);
 	});
 });

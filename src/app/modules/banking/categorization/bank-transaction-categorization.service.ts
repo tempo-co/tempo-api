@@ -75,6 +75,10 @@ export class BankTransactionCategorizationService {
 	) {}
 
 	async enqueueForTransactions(transactionIds: readonly string[]): Promise<void> {
+		await this.enqueueForTransactionsInBatches(transactionIds, BANK_TRANSACTION_CATEGORIZATION_BATCH_SIZE);
+	}
+
+	private async enqueueForTransactionsInBatches(transactionIds: readonly string[], batchSize: number): Promise<void> {
 		if (!this.isEnabled()) return;
 
 		const uniqueIds = [...new Set(transactionIds.filter((id) => id.length > 0))].sort();
@@ -86,8 +90,8 @@ export class BankTransactionCategorizationService {
 		});
 		const inputHashes = new Map(transactions.map(({id, categoryInputHash}) => [id, categoryInputHash]));
 		const jobs = [];
-		for (let index = 0; index < uniqueIds.length; index += BANK_TRANSACTION_CATEGORIZATION_BATCH_SIZE) {
-			const batch = uniqueIds.slice(index, index + BANK_TRANSACTION_CATEGORIZATION_BATCH_SIZE);
+		for (let index = 0; index < uniqueIds.length; index += batchSize) {
+			const batch = uniqueIds.slice(index, index + batchSize);
 			jobs.push({
 				name: CATEGORIZE_BANK_TRANSACTIONS_JOB,
 				data: {transactionIds: batch},
@@ -163,6 +167,7 @@ export class BankTransactionCategorizationService {
 				.getRawMany<{id: string}>();
 
 			await this.enqueueForTransactions(rows.map(({id}) => id));
+			await this.reconcileCompletedOtherTransactionsForWebSearch();
 		} catch (error) {
 			this.logger.warn(`Transaction categorization reconciliation failed: ${this.safeErrorName(error)}`);
 		}
@@ -170,6 +175,50 @@ export class BankTransactionCategorizationService {
 
 	async onApplicationBootstrap(): Promise<void> {
 		await this.reconcilePendingTransactions();
+	}
+
+	private async reconcileCompletedOtherTransactionsForWebSearch(): Promise<void> {
+		const webSearchMaxTransactions = this.configurationService.get('AI_CATEGORIZATION_WEB_SEARCH_MAX_TRANSACTIONS');
+		if (!this.isWebSearchEnabled() || webSearchMaxTransactions < 1) return;
+
+		const rows = await this.repository
+			.createQueryBuilder('transaction')
+			.select('transaction.id', 'id')
+			.where('transaction."category" = \'OTHER\'')
+			.andWhere('transaction."categoryStatus" = \'COMPLETED\'')
+			.andWhere('transaction."categorySource" IS DISTINCT FROM \'MANUAL\'')
+			.andWhere('transaction."categoryPromptVersion" IS DISTINCT FROM :webSearchPromptVersion', {
+				webSearchPromptVersion: BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_PROMPT_VERSION,
+			})
+			.getRawMany<{id: string}>();
+		if (rows.length === 0) return;
+
+		const transactionIds = rows.map(({id}) => id);
+		await this.repository
+			.createQueryBuilder()
+			.update(BankTransaction)
+			.set({
+				category: null,
+				categoryStatus: 'PENDING',
+				categorySource: null,
+				categoryConfidence: null,
+				categoryAppliedInputHash: null,
+				categoryProvider: null,
+				categoryModel: null,
+				categoryPromptVersion: null,
+				categoryUpdatedAt: new Date(),
+				categoryLastError: null,
+			})
+			.where('"id" IN (:...transactionIds)', {transactionIds})
+			.andWhere('"category" = \'OTHER\'')
+			.andWhere('"categoryStatus" = \'COMPLETED\'')
+			.andWhere('"categorySource" IS DISTINCT FROM \'MANUAL\'')
+			.andWhere('"categoryPromptVersion" IS DISTINCT FROM :webSearchPromptVersion', {
+				webSearchPromptVersion: BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_PROMPT_VERSION,
+			})
+			.execute();
+
+		await this.enqueueForTransactionsInBatches(transactionIds, webSearchMaxTransactions);
 	}
 
 	private async categorizeClaimedBatch(batch: readonly ClaimedTransaction[]): Promise<void> {
