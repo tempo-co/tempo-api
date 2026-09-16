@@ -6,9 +6,23 @@ import {
 } from '@core/queue/queue.constants';
 
 import {BankTransaction} from '../bank-transaction.entity';
+import {
+	createBankTransactionCategorizationInputHash,
+	toBankTransactionCategorizationInput,
+} from './bank-transaction-categorization-input';
+import {
+	BANK_TRANSACTION_CATEGORIZATION_PROMPT_VERSION,
+	BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_FAILED_PROMPT_VERSION,
+	BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_PROMPT_VERSION,
+	BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_SKIPPED_PROMPT_VERSION,
+} from './bank-transaction-categorization.constants';
 import {BankTransactionCategorizationProviderError} from './bank-transaction-categorization.provider';
 import {BankTransactionCategorizationService} from './bank-transaction-categorization.service';
-import {BankTransactionCategorizationInput} from './bank-transaction-categorization.types';
+import {
+	BankTransactionCategorizationInput,
+	BankTransactionCategorizationResult,
+	BankTransactionCategorizationWebSearchInput,
+} from './bank-transaction-categorization.types';
 
 function createTransaction(overrides: Partial<BankTransaction> = {}): BankTransaction {
 	return {
@@ -59,14 +73,19 @@ function createTransaction(overrides: Partial<BankTransaction> = {}): BankTransa
 	} as unknown as BankTransaction;
 }
 
-function createUpdateQueryBuilder(results: readonly {affected: number}[] = [{affected: 1}] as const) {
+function createUpdateQueryBuilder(
+	results: readonly {affected: number; raw?: readonly {id: string}[]}[] = [{affected: 1}] as const,
+	rawRows: readonly {id: string}[] = [],
+) {
 	const builder = {
 		update: jest.fn().mockReturnThis(),
+		select: jest.fn().mockReturnThis(),
 		set: jest.fn().mockReturnThis(),
 		where: jest.fn().mockReturnThis(),
 		andWhere: jest.fn().mockReturnThis(),
 		returning: jest.fn().mockReturnThis(),
 		execute: jest.fn().mockResolvedValue({affected: 1}),
+		getRawMany: jest.fn().mockResolvedValue(rawRows),
 	};
 	for (const result of results) builder.execute.mockResolvedValueOnce(result);
 	return builder;
@@ -74,15 +93,23 @@ function createUpdateQueryBuilder(results: readonly {affected: number}[] = [{aff
 
 function createService({
 	enabled = true,
+	webSearchEnabled = false,
+	webSearchMaxTransactions = 5,
 	rows = [],
 	providerResult = [],
 	providerError,
+	webSearchResult,
+	webSearchError,
 	queryBuilder,
 }: {
 	enabled?: boolean;
+	webSearchEnabled?: boolean;
+	webSearchMaxTransactions?: number;
 	rows?: BankTransaction[];
-	providerResult?: readonly BankTransactionCategorizationInput[];
+	providerResult?: readonly BankTransactionCategorizationResult[];
 	providerError?: BankTransactionCategorizationProviderError;
+	webSearchResult?: readonly BankTransactionCategorizationResult[];
+	webSearchError?: BankTransactionCategorizationProviderError;
 	queryBuilder?: ReturnType<typeof createUpdateQueryBuilder>;
 } = {}) {
 	const queue = {addBulk: jest.fn().mockResolvedValue([])};
@@ -97,10 +124,24 @@ function createService({
 						confidence: 0.5,
 					}));
 		}),
+		categorizeWithWebSearch: jest
+			.fn()
+			.mockImplementation(async (inputs: readonly BankTransactionCategorizationWebSearchInput[]) => {
+				if (webSearchError) throw webSearchError;
+				return webSearchResult && webSearchResult.length > 0
+					? webSearchResult
+					: inputs.map((input) => ({
+							correlationId: input.correlationId,
+							category: 'SHOPPING' as const,
+							confidence: 0.75,
+						}));
+			}),
 	};
 	const config = {
 		get: jest.fn((key: string) => {
 			if (key === 'AI_CATEGORIZATION_ENABLED') return enabled;
+			if (key === 'AI_CATEGORIZATION_WEB_SEARCH_ENABLED') return webSearchEnabled;
+			if (key === 'AI_CATEGORIZATION_WEB_SEARCH_MAX_TRANSACTIONS') return webSearchMaxTransactions;
 			if (key === 'AI_CATEGORIZATION_PROVIDER') return 'openai';
 			if (key === 'AI_CATEGORIZATION_MODEL') return 'configured-model';
 			throw new Error(`Unexpected config key: ${key}`);
@@ -170,7 +211,415 @@ describe('BankTransactionCategorizationService queue scheduling', () => {
 	});
 });
 
+describe('BankTransactionCategorizationService web-search reconciliation', () => {
+	it('resets and enqueues completed OTHER rows in bounded batches when web search is enabled', async () => {
+		const rows = Array.from({length: 114}, (_, index) =>
+			createTransaction({
+				id: `other-transaction-${index}`,
+				category: 'OTHER',
+				categoryStatus: 'COMPLETED',
+				categorySource: 'AI',
+				categoryInputHash: `input-hash-${index}`,
+				categoryAppliedInputHash: `input-hash-${index}`,
+				categoryPromptVersion: BANK_TRANSACTION_CATEGORIZATION_PROMPT_VERSION,
+			}),
+		);
+		const queryBuilder = createUpdateQueryBuilder();
+		queryBuilder.getRawMany.mockResolvedValueOnce([]).mockResolvedValueOnce(rows.map(({id}) => ({id})));
+		const {service, queue} = createService({rows, webSearchEnabled: true, queryBuilder});
+
+		await service.onApplicationBootstrap();
+
+		expect(queryBuilder.getRawMany).toHaveBeenCalledTimes(2);
+		const selectionQueries = [...queryBuilder.where.mock.calls, ...queryBuilder.andWhere.mock.calls]
+			.map(([query]) => query)
+			.join('\n');
+		expect(selectionQueries).toContain('"category" = \'OTHER\'');
+		expect(selectionQueries).toContain('"categoryStatus" = \'COMPLETED\'');
+		expect(selectionQueries).toContain('"categorySource" IS DISTINCT FROM \'MANUAL\'');
+		expect(selectionQueries).toContain('"categoryPromptVersion" IS DISTINCT FROM :webSearchPromptVersion');
+		expect(selectionQueries).toContain('"categoryPromptVersion" IS DISTINCT FROM :webSearchSkippedPromptVersion');
+		expect(selectionQueries).toContain('"categoryPromptVersion" IS DISTINCT FROM :webSearchFailedPromptVersion');
+		expect(queryBuilder.set).not.toHaveBeenCalled();
+		expect(queue.addBulk).toHaveBeenCalledTimes(1);
+		const jobs = queue.addBulk.mock.calls[0][0];
+		expect(jobs).toHaveLength(23);
+		expect(jobs.every(({data}: {data: {webSearchBackfill?: boolean}}) => data.webSearchBackfill === true)).toBe(
+			true,
+		);
+		expect(
+			jobs.slice(0, 22).every(({data}: {data: {transactionIds: string[]}}) => data.transactionIds.length === 5),
+		).toBe(true);
+		expect(jobs[22].data.transactionIds).toHaveLength(4);
+		expect(jobs.flatMap(({data}: {data: {transactionIds: string[]}}) => data.transactionIds)).toEqual(
+			rows.map(({id}) => id).sort(),
+		);
+	});
+
+	it('leaves completed OTHER rows eligible when queue enqueue fails', async () => {
+		const transaction = createTransaction({
+			id: 'queue-failure-transaction',
+			category: 'OTHER',
+			categoryStatus: 'COMPLETED',
+			categorySource: 'AI',
+			categoryInputHash: 'queue-failure-hash',
+			categoryAppliedInputHash: 'queue-failure-hash',
+			categoryPromptVersion: BANK_TRANSACTION_CATEGORIZATION_PROMPT_VERSION,
+		});
+		const queryBuilder = createUpdateQueryBuilder();
+		queryBuilder.getRawMany
+			.mockResolvedValueOnce([])
+			.mockResolvedValueOnce([{id: transaction.id}])
+			.mockResolvedValueOnce([])
+			.mockResolvedValueOnce([{id: transaction.id}]);
+		const {service, queue} = createService({rows: [transaction], webSearchEnabled: true, queryBuilder});
+		queue.addBulk.mockRejectedValueOnce(new Error('Redis unavailable.'));
+
+		await service.onApplicationBootstrap();
+
+		expect(queryBuilder.set).not.toHaveBeenCalled();
+		expect(transaction).toMatchObject({
+			category: 'OTHER',
+			categoryStatus: 'COMPLETED',
+			categoryPromptVersion: BANK_TRANSACTION_CATEGORIZATION_PROMPT_VERSION,
+		});
+
+		await service.onApplicationBootstrap();
+
+		expect(queue.addBulk).toHaveBeenCalledTimes(2);
+	});
+
+	it('enqueues selected completed OTHER rows as web-search backfill jobs', async () => {
+		const reset = createTransaction({
+			id: 'reset-transaction',
+			category: 'OTHER',
+			categoryStatus: 'COMPLETED',
+			categorySource: 'AI',
+			categoryInputHash: 'reset-hash',
+			categoryAppliedInputHash: 'reset-hash',
+			categoryPromptVersion: BANK_TRANSACTION_CATEGORIZATION_PROMPT_VERSION,
+		});
+		const raced = createTransaction({
+			id: 'raced-transaction',
+			category: 'OTHER',
+			categoryStatus: 'COMPLETED',
+			categorySource: 'AI',
+			categoryInputHash: 'raced-hash',
+			categoryAppliedInputHash: 'raced-hash',
+			categoryPromptVersion: BANK_TRANSACTION_CATEGORIZATION_PROMPT_VERSION,
+		});
+		const queryBuilder = createUpdateQueryBuilder();
+		queryBuilder.getRawMany.mockResolvedValueOnce([]).mockResolvedValueOnce([{id: reset.id}, {id: raced.id}]);
+		const {service, queue} = createService({
+			rows: [reset, raced],
+			webSearchEnabled: true,
+			queryBuilder,
+		});
+
+		await service.onApplicationBootstrap();
+
+		expect(queryBuilder.set).not.toHaveBeenCalled();
+		const jobs = queue.addBulk.mock.calls[0][0];
+		expect(jobs.flatMap(({data}: {data: {transactionIds: string[]}}) => data.transactionIds)).toEqual(
+			[reset.id, raced.id].sort(),
+		);
+		expect(jobs.every(({data}: {data: {webSearchBackfill?: boolean}}) => data.webSearchBackfill === true)).toBe(
+			true,
+		);
+	});
+
+	it('does not enqueue when the completed OTHER selection is empty', async () => {
+		const queryBuilder = createUpdateQueryBuilder();
+		queryBuilder.getRawMany.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+		const {service, queue} = createService({webSearchEnabled: true, queryBuilder});
+
+		await service.onApplicationBootstrap();
+
+		expect(queue.addBulk).not.toHaveBeenCalled();
+	});
+
+	it('leaves skipped and failed web-search outcomes terminal across bootstrap reconciliation', async () => {
+		const terminalRows = [
+			createTransaction({
+				id: 'skipped-transaction',
+				category: 'OTHER',
+				categoryStatus: 'COMPLETED',
+				categorySource: 'AI',
+				categoryPromptVersion: BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_SKIPPED_PROMPT_VERSION,
+			}),
+			createTransaction({
+				id: 'failed-transaction',
+				category: 'OTHER',
+				categoryStatus: 'COMPLETED',
+				categorySource: 'AI',
+				categoryPromptVersion: BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_FAILED_PROMPT_VERSION,
+			}),
+		];
+		const queryBuilder = createUpdateQueryBuilder();
+		queryBuilder.getRawMany.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+		const {service, queue} = createService({
+			rows: terminalRows,
+			webSearchEnabled: true,
+			queryBuilder,
+		});
+
+		await service.onApplicationBootstrap();
+
+		expect(queryBuilder.getRawMany).toHaveBeenCalledTimes(2);
+		expect(queue.addBulk).not.toHaveBeenCalled();
+	});
+
+	it('does not scan or enqueue completed OTHER rows when the web-search cap is zero', async () => {
+		const queryBuilder = createUpdateQueryBuilder();
+		const {service, queue} = createService({webSearchEnabled: true, webSearchMaxTransactions: 0, queryBuilder});
+
+		await service.onApplicationBootstrap();
+
+		expect(queryBuilder.getRawMany).toHaveBeenCalledTimes(1);
+		expect(queryBuilder.set).not.toHaveBeenCalled();
+		expect(queue.addBulk).not.toHaveBeenCalled();
+	});
+
+	it('does not scan or enqueue completed OTHER rows when web search is disabled', async () => {
+		const queryBuilder = createUpdateQueryBuilder();
+		const {service, queue} = createService({webSearchEnabled: false, queryBuilder});
+
+		await service.onApplicationBootstrap();
+
+		expect(queryBuilder.getRawMany).toHaveBeenCalledTimes(1);
+		expect(queryBuilder.set).not.toHaveBeenCalled();
+		expect(queue.addBulk).not.toHaveBeenCalled();
+	});
+});
+
 describe('BankTransactionCategorizationService worker', () => {
+	it('resets and claims a completed OTHER row from a web-search backfill job', async () => {
+		const transaction = createTransaction({
+			id: 'backfill-transaction',
+			category: 'OTHER',
+			categoryStatus: 'COMPLETED',
+			categorySource: 'AI',
+			categoryPromptVersion: BANK_TRANSACTION_CATEGORIZATION_PROMPT_VERSION,
+		});
+		const inputHash = createBankTransactionCategorizationInputHash(
+			toBankTransactionCategorizationInput(transaction),
+		);
+		transaction.categoryInputHash = inputHash;
+		transaction.categoryAppliedInputHash = inputHash;
+		const {service, provider} = createService({rows: [transaction], webSearchEnabled: true});
+
+		await service.processTransactionJob([transaction.id], true);
+
+		expect(provider.categorizeWithWebSearch).toHaveBeenCalledWith(
+			[expect.objectContaining({correlationId: transaction.id})],
+			expect.any(Array),
+		);
+		expect(transaction.category).toBe('SHOPPING');
+		expect(transaction.categoryStatus).toBe('COMPLETED');
+		expect(transaction.categoryPromptVersion).toBe(BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_PROMPT_VERSION);
+	});
+
+	it('sends only normal OTHER results to the web fallback and applies the web result', async () => {
+		const specific = createTransaction({id: 'specific-transaction', counterpartyName: 'Cafe'});
+		const other = createTransaction({id: 'other-transaction', counterpartyName: 'Ambiguous Cafe'});
+		const {service, provider} = createService({
+			rows: [specific, other],
+			webSearchEnabled: true,
+			providerResult: [
+				{correlationId: specific.id, category: 'FOOD_AND_DRINK', confidence: 0.9},
+				{correlationId: other.id, category: 'OTHER', confidence: 0.2},
+			],
+			webSearchResult: [{correlationId: other.id, category: 'SHOPPING', confidence: 0.8}],
+		});
+
+		await service.processTransactionJob([specific.id, other.id]);
+
+		expect(provider.categorizeWithWebSearch).toHaveBeenCalledTimes(1);
+		expect(provider.categorizeWithWebSearch.mock.calls[0][0]).toEqual([
+			expect.objectContaining({
+				correlationId: other.id,
+				amount: '-12.50',
+				currency: 'EUR',
+				direction: 'EXPENSE',
+				transactionType: 'CARD_PAYMENT',
+				merchantName: 'Ambiguous Cafe',
+				merchantCategoryCode: null,
+			}),
+		]);
+		expect(specific.category).toBe('FOOD_AND_DRINK');
+		expect(specific.categoryPromptVersion).toBe(BANK_TRANSACTION_CATEGORIZATION_PROMPT_VERSION);
+		expect(other.category).toBe('SHOPPING');
+		expect(other.categoryPromptVersion).toBe(BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_PROMPT_VERSION);
+	});
+
+	it('does not call web search when the fallback is disabled', async () => {
+		const transaction = createTransaction({id: 'other-transaction'});
+		const {service, provider} = createService({
+			rows: [transaction],
+			providerResult: [{correlationId: transaction.id, category: 'OTHER', confidence: 0.5}],
+		});
+
+		await service.processTransactionJob([transaction.id]);
+
+		expect(provider.categorizeWithWebSearch).not.toHaveBeenCalled();
+		expect(transaction.category).toBe('OTHER');
+		expect(transaction.categoryPromptVersion).toBe(BANK_TRANSACTION_CATEGORIZATION_PROMPT_VERSION);
+	});
+
+	it('does not call web search when the configured candidate bound is zero', async () => {
+		const transaction = createTransaction({id: 'other-transaction'});
+		const {service, provider} = createService({
+			rows: [transaction],
+			webSearchEnabled: true,
+			webSearchMaxTransactions: 0,
+		});
+
+		await service.processTransactionJob([transaction.id]);
+
+		expect(provider.categorizeWithWebSearch).not.toHaveBeenCalled();
+		expect(transaction.category).toBe('OTHER');
+		expect(transaction.categoryPromptVersion).toBe(BANK_TRANSACTION_CATEGORIZATION_PROMPT_VERSION);
+	});
+
+	it('bounds web-search candidates per worker job and enqueues the remainder', async () => {
+		const rows = Array.from({length: 6}, (_, index) =>
+			createTransaction({id: `other-transaction-${index}`, counterpartyName: `Merchant ${index}`}),
+		);
+		const {service, provider, queue} = createService({
+			rows,
+			webSearchEnabled: true,
+			webSearchMaxTransactions: 5,
+			providerResult: rows
+				.slice(0, 5)
+				.map(({id}) => ({correlationId: id, category: 'OTHER' as const, confidence: 0.5})),
+		});
+
+		await service.processTransactionJob(rows.map(({id}) => id));
+
+		expect(provider.categorizeWithWebSearch).toHaveBeenCalledTimes(5);
+		expect(provider.categorizeWithWebSearch.mock.calls.map(([inputs]) => inputs.length)).toEqual([1, 1, 1, 1, 1]);
+		expect(
+			provider.categorizeWithWebSearch.mock.calls.map(
+				([inputs]) => (inputs as BankTransactionCategorizationWebSearchInput[])[0].correlationId,
+			),
+		).toEqual(rows.slice(0, 5).map(({id}) => id));
+		expect(queue.addBulk).toHaveBeenCalledTimes(1);
+		expect(queue.addBulk.mock.calls[0][0][0].data.transactionIds).toEqual([rows[5].id]);
+		expect(rows.slice(0, 5).every(({category}) => category === 'SHOPPING')).toBe(true);
+		expect(rows[5].category).toBeNull();
+		expect(
+			rows
+				.slice(0, 5)
+				.every(
+					({categoryPromptVersion}) =>
+						categoryPromptVersion === BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_PROMPT_VERSION,
+				),
+		).toBe(true);
+	});
+
+	it('keeps valid results and terminalizes only failed web-search chunks', async () => {
+		const rows = Array.from({length: 5}, (_, index) =>
+			createTransaction({id: `other-transaction-${index}`, counterpartyName: `Merchant ${index}`}),
+		);
+		const failure = new BankTransactionCategorizationProviderError(
+			'OpenAI categorization request failed (503).',
+			true,
+		);
+		const {service, provider} = createService({
+			rows,
+			webSearchEnabled: true,
+			webSearchMaxTransactions: 5,
+			providerResult: rows.map(({id}) => ({correlationId: id, category: 'OTHER' as const, confidence: 0.5})),
+		});
+		provider.categorizeWithWebSearch
+			.mockImplementationOnce(async (inputs: readonly BankTransactionCategorizationWebSearchInput[]) =>
+				inputs.map(({correlationId}) => ({correlationId, category: 'SHOPPING' as const, confidence: 0.75})),
+			)
+			.mockImplementationOnce(async (inputs: readonly BankTransactionCategorizationWebSearchInput[]) =>
+				inputs.map(({correlationId}) => ({correlationId, category: 'SHOPPING' as const, confidence: 0.75})),
+			)
+			.mockImplementationOnce(async (inputs: readonly BankTransactionCategorizationWebSearchInput[]) =>
+				inputs.map(({correlationId}) => ({correlationId, category: 'SHOPPING' as const, confidence: 0.75})),
+			)
+			.mockImplementationOnce(async (inputs: readonly BankTransactionCategorizationWebSearchInput[]) =>
+				inputs.map(({correlationId}) => ({correlationId, category: 'SHOPPING' as const, confidence: 0.75})),
+			)
+			.mockRejectedValueOnce(failure);
+		const logger = (service as unknown as {logger: {warn(message: string): void}}).logger;
+		const warn = jest.spyOn(logger, 'warn').mockImplementation();
+
+		try {
+			await service.processTransactionJob(rows.map(({id}) => id));
+
+			expect(provider.categorizeWithWebSearch.mock.calls.map(([inputs]) => inputs.length)).toEqual([
+				1, 1, 1, 1, 1,
+			]);
+			expect(rows.slice(0, 4).every(({category}) => category === 'SHOPPING')).toBe(true);
+			expect(
+				rows
+					.slice(0, 4)
+					.every(
+						({categoryPromptVersion}) =>
+							categoryPromptVersion === BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_PROMPT_VERSION,
+					),
+			).toBe(true);
+			expect(rows[4].category).toBe('OTHER');
+			expect(rows[4].categoryPromptVersion).toBe(
+				BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_FAILED_PROMPT_VERSION,
+			);
+		} finally {
+			warn.mockRestore();
+		}
+	});
+
+	it('skips OTHER rows without a usable merchant name', async () => {
+		const transaction = createTransaction({
+			id: 'merchantless-transaction',
+			counterpartyName: null,
+			description: null,
+			bankTransactionDescription: null,
+		});
+		const {service, provider} = createService({rows: [transaction], webSearchEnabled: true});
+
+		await service.processTransactionJob([transaction.id]);
+
+		expect(provider.categorizeWithWebSearch).not.toHaveBeenCalled();
+		expect(transaction.category).toBe('OTHER');
+		expect(transaction.categoryPromptVersion).toBe(
+			BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_SKIPPED_PROMPT_VERSION,
+		);
+	});
+
+	it('keeps the normal result when web-search fallback fails', async () => {
+		const transaction = createTransaction({id: 'web-failure-transaction'});
+		const failure = new BankTransactionCategorizationProviderError(
+			'OpenAI categorization request failed (503).',
+			true,
+		);
+		const {service, provider} = createService({
+			rows: [transaction],
+			webSearchEnabled: true,
+			webSearchError: failure,
+		});
+		const logger = (service as unknown as {logger: {warn(message: string): void}}).logger;
+		const warn = jest.spyOn(logger, 'warn').mockImplementation();
+
+		try {
+			await expect(service.processTransactionJob([transaction.id])).resolves.toBeUndefined();
+			expect(provider.categorizeWithWebSearch).toHaveBeenCalledTimes(1);
+			expect(transaction.category).toBe('OTHER');
+			expect(transaction.categoryStatus).toBe('COMPLETED');
+			expect(transaction.categoryPromptVersion).toBe(
+				BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_FAILED_PROMPT_VERSION,
+			);
+			expect(warn).toHaveBeenCalledWith(
+				'Transaction web-search fallback failed: BankTransactionCategorizationProviderError',
+			);
+		} finally {
+			warn.mockRestore();
+		}
+	});
+
 	it('sends completed non-AI classifications to the provider', async () => {
 		const transaction = createTransaction({
 			category: 'INCOME',
@@ -196,13 +645,14 @@ describe('BankTransactionCategorizationService worker', () => {
 		const rows = Array.from({length: 51}, (_, index) =>
 			createTransaction({id: `transaction-${index}`, providerTransactionId: `provider-${index}`}),
 		);
-		const {service, provider} = createService({rows});
+		const {service, provider, queue} = createService({rows});
 
 		await service.processTransactionJob(rows.map(({id}) => id));
 
-		expect(provider.categorize).toHaveBeenCalledTimes(2);
+		expect(provider.categorize).toHaveBeenCalledTimes(1);
 		expect(provider.categorize.mock.calls[0][0]).toHaveLength(50);
-		expect(provider.categorize.mock.calls[1][0]).toHaveLength(1);
+		expect(queue.addBulk).toHaveBeenCalledTimes(1);
+		expect(queue.addBulk.mock.calls[0][0][0].data.transactionIds).toHaveLength(1);
 	});
 
 	it('excludes manual rows from claims and provider calls', async () => {
