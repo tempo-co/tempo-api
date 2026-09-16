@@ -317,7 +317,7 @@ export class OpenAiBankTransactionCategorizationProvider implements BankTransact
 			model: this.model,
 			instructions,
 			input: this.createInput(categories, transactions),
-			reasoning: {effort: 'low'},
+			reasoning: {effort: 'medium'},
 			tools: [
 				{
 					type: 'web_search',
