@@ -62,6 +62,16 @@ type CategorizationUpdate = {
 const STALE_PROCESSING_AFTER_MS = 15 * 60 * 1000;
 const MAX_ERROR_LENGTH = 500;
 const CLAIMABLE_STATUSES = ['PENDING', 'FAILED'] as const;
+const CATEGORIZATION_RESET_VALUES = {
+	category: null,
+	categorySource: null,
+	categoryConfidence: null,
+	categoryAppliedInputHash: null,
+	categoryProvider: null,
+	categoryModel: null,
+	categoryPromptVersion: null,
+	categoryLastError: null,
+} as const;
 
 @Injectable()
 export class BankTransactionCategorizationService {
@@ -144,16 +154,9 @@ export class BankTransactionCategorizationService {
 				const reset = await this.resetCompletedOtherTransactionForWebSearch(transaction.id, inputHash);
 				if (reset)
 					this.applyLocalUpdate(transaction, {
-						category: null,
+						...CATEGORIZATION_RESET_VALUES,
 						categoryStatus: 'PENDING',
-						categorySource: null,
-						categoryConfidence: null,
-						categoryAppliedInputHash: null,
-						categoryProvider: null,
-						categoryModel: null,
-						categoryPromptVersion: null,
 						categoryUpdatedAt: new Date(),
-						categoryLastError: null,
 					});
 			}
 
@@ -248,16 +251,9 @@ export class BankTransactionCategorizationService {
 			.createQueryBuilder()
 			.update(BankTransaction)
 			.set({
-				category: null,
+				...CATEGORIZATION_RESET_VALUES,
 				categoryStatus: 'PENDING',
-				categorySource: null,
-				categoryConfidence: null,
-				categoryAppliedInputHash: null,
-				categoryProvider: null,
-				categoryModel: null,
-				categoryPromptVersion: null,
 				categoryUpdatedAt: new Date(),
-				categoryLastError: null,
 			})
 			.where('id = :id', {id})
 			.andWhere('"category" = \'OTHER\'')
@@ -398,28 +394,14 @@ export class BankTransactionCategorizationService {
 		if (!appliedHashIsStale && !completedByNonAiSource && !(hashChanged && completedHashIsStale)) return true;
 
 		const reset = await this.updateCategorizationWithGuard(transaction.id, inputHash, {
-			category: null,
+			...CATEGORIZATION_RESET_VALUES,
 			categoryStatus: 'PENDING',
-			categorySource: null,
-			categoryConfidence: null,
-			categoryAppliedInputHash: null,
-			categoryProvider: null,
-			categoryModel: null,
-			categoryPromptVersion: null,
 			categoryUpdatedAt: new Date(),
-			categoryLastError: null,
 		});
 		if (reset)
 			this.applyLocalUpdate(transaction, {
-				category: null,
+				...CATEGORIZATION_RESET_VALUES,
 				categoryStatus: 'PENDING',
-				categorySource: null,
-				categoryConfidence: null,
-				categoryAppliedInputHash: null,
-				categoryProvider: null,
-				categoryModel: null,
-				categoryPromptVersion: null,
-				categoryLastError: null,
 			});
 		return true;
 	}
@@ -477,14 +459,8 @@ export class BankTransactionCategorizationService {
 					transaction.id,
 					inputHash,
 					{
-						category: null,
+						...CATEGORIZATION_RESET_VALUES,
 						categoryStatus: 'FAILED',
-						categorySource: null,
-						categoryConfidence: null,
-						categoryAppliedInputHash: null,
-						categoryProvider: null,
-						categoryModel: null,
-						categoryPromptVersion: null,
 						categoryUpdatedAt: new Date(),
 						categoryLastError: safeMessage,
 					},
@@ -492,14 +468,8 @@ export class BankTransactionCategorizationService {
 				);
 				if (failed)
 					this.applyLocalUpdate(transaction, {
-						category: null,
+						...CATEGORIZATION_RESET_VALUES,
 						categoryStatus: 'FAILED',
-						categorySource: null,
-						categoryConfidence: null,
-						categoryAppliedInputHash: null,
-						categoryProvider: null,
-						categoryModel: null,
-						categoryPromptVersion: null,
 						categoryLastError: safeMessage,
 					});
 			}),

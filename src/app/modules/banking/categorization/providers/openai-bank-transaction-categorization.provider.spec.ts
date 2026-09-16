@@ -3,7 +3,6 @@ import {ConfigurationService} from '@core/config/config.service';
 import {BankTransactionCategorizationProviderError} from '../bank-transaction-categorization.provider';
 import {
 	BankTransactionCategorizationInput,
-	BankTransactionCategorizationResult,
 	BankTransactionCategorizationWebSearchInput,
 } from '../bank-transaction-categorization.types';
 import {BANK_TRANSACTION_CATEGORIES, BANK_TRANSACTION_CATEGORY_DEFINITIONS} from '../bank-transaction-category';
@@ -56,11 +55,7 @@ function createProvider() {
 	return {provider, responsesCreate};
 }
 
-function output(classifications: readonly BankTransactionCategorizationResult[]) {
-	return JSON.stringify({classifications});
-}
-
-function webSearchOutput(classifications: readonly (BankTransactionCategorizationResult & {needsFollowUp: boolean})[]) {
+function output<T extends object>(classifications: readonly T[]) {
 	return JSON.stringify({classifications});
 }
 
@@ -118,7 +113,7 @@ describe('OpenAiBankTransactionCategorizationProvider', () => {
 	it('uses the hosted web-search tool for a sanitized fallback request', async () => {
 		const {provider, responsesCreate} = createProvider();
 		responsesCreate.mockResolvedValue({
-			output_text: webSearchOutput([
+			output_text: output([
 				{correlationId: '0', category: 'FOOD_AND_DRINK', confidence: 0.93, needsFollowUp: false},
 			]),
 		});
@@ -167,17 +162,15 @@ describe('OpenAiBankTransactionCategorizationProvider', () => {
 		const {provider, responsesCreate} = createProvider();
 		responsesCreate
 			.mockResolvedValueOnce({
-				output_text: webSearchOutput([
+				output_text: output([
 					{correlationId: '0', category: 'FOOD_AND_DRINK', confidence: 0.93, needsFollowUp: false},
 				]),
 			})
 			.mockResolvedValueOnce({
-				output_text: webSearchOutput([
-					{correlationId: '0', category: 'OTHER', confidence: 0.4, needsFollowUp: true},
-				]),
+				output_text: output([{correlationId: '0', category: 'OTHER', confidence: 0.4, needsFollowUp: true}]),
 			})
 			.mockResolvedValueOnce({
-				output_text: webSearchOutput([
+				output_text: output([
 					{correlationId: '0', category: 'TRANSPORTATION', confidence: 0.88, needsFollowUp: false},
 				]),
 			});
@@ -209,14 +202,10 @@ describe('OpenAiBankTransactionCategorizationProvider', () => {
 		const {provider, responsesCreate} = createProvider();
 		responsesCreate
 			.mockResolvedValueOnce({
-				output_text: webSearchOutput([
-					{correlationId: '0', category: 'OTHER', confidence: 0.3, needsFollowUp: true},
-				]),
+				output_text: output([{correlationId: '0', category: 'OTHER', confidence: 0.3, needsFollowUp: true}]),
 			})
 			.mockResolvedValueOnce({
-				output_text: webSearchOutput([
-					{correlationId: '0', category: 'OTHER', confidence: 0.2, needsFollowUp: false},
-				]),
+				output_text: output([{correlationId: '0', category: 'OTHER', confidence: 0.2, needsFollowUp: false}]),
 			});
 
 		await expect(
@@ -231,7 +220,7 @@ describe('OpenAiBankTransactionCategorizationProvider', () => {
 	it('drops invalid merchant category codes from web-search requests', async () => {
 		const {provider, responsesCreate} = createProvider();
 		responsesCreate.mockResolvedValue({
-			output_text: webSearchOutput([
+			output_text: output([
 				{correlationId: '0', category: 'FOOD_AND_DRINK', confidence: 0.93, needsFollowUp: false},
 			]),
 		});
@@ -248,9 +237,7 @@ describe('OpenAiBankTransactionCategorizationProvider', () => {
 	it('keeps a clear OTHER result without a follow-up lookup', async () => {
 		const {provider, responsesCreate} = createProvider();
 		responsesCreate.mockResolvedValue({
-			output_text: webSearchOutput([
-				{correlationId: '0', category: 'OTHER', confidence: 0.7, needsFollowUp: false},
-			]),
+			output_text: output([{correlationId: '0', category: 'OTHER', confidence: 0.7, needsFollowUp: false}]),
 		});
 
 		await expect(
@@ -266,9 +253,7 @@ describe('OpenAiBankTransactionCategorizationProvider', () => {
 		const {provider, responsesCreate} = createProvider();
 		responsesCreate
 			.mockResolvedValueOnce({
-				output_text: webSearchOutput([
-					{correlationId: '0', category: 'OTHER', confidence: 0.3, needsFollowUp: true},
-				]),
+				output_text: output([{correlationId: '0', category: 'OTHER', confidence: 0.3, needsFollowUp: true}]),
 			})
 			.mockRejectedValueOnce({status: 503, name: 'APIError'});
 
@@ -285,14 +270,10 @@ describe('OpenAiBankTransactionCategorizationProvider', () => {
 		const {provider, responsesCreate} = createProvider();
 		responsesCreate
 			.mockResolvedValueOnce({
-				output_text: webSearchOutput([
-					{correlationId: '0', category: 'OTHER', confidence: 0.3, needsFollowUp: true},
-				]),
+				output_text: output([{correlationId: '0', category: 'OTHER', confidence: 0.3, needsFollowUp: true}]),
 			})
 			.mockResolvedValueOnce({
-				output_text: webSearchOutput([
-					{correlationId: '0', category: 'OTHER', confidence: 0.2, needsFollowUp: true},
-				]),
+				output_text: output([{correlationId: '0', category: 'OTHER', confidence: 0.2, needsFollowUp: true}]),
 			});
 
 		await expect(

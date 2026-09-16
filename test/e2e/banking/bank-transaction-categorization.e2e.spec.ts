@@ -12,6 +12,7 @@ import {
 } from '@modules/banking/categorization/bank-transaction-categorization-input';
 import {
 	BANK_TRANSACTION_CATEGORIZATION_PROMPT_VERSION,
+	BANK_TRANSACTION_CATEGORIZATION_PROVIDER_NAME,
 	BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_PROMPT_VERSION,
 } from '@modules/banking/categorization/bank-transaction-categorization.constants';
 import {BankTransactionCategorizationProviderError} from '@modules/banking/categorization/bank-transaction-categorization.provider';
@@ -98,7 +99,9 @@ describe('Bank transaction categorization integration', () => {
 
 		const configurationService = app.get(ConfigurationService);
 		expect(configurationService.get('AI_CATEGORIZATION_ENABLED')).toBe(true);
-		expect(configurationService.get('AI_CATEGORIZATION_PROVIDER')).toBe('openai');
+		expect(configurationService.get('AI_CATEGORIZATION_PROVIDER')).toBe(
+			BANK_TRANSACTION_CATEGORIZATION_PROVIDER_NAME,
+		);
 		expect(configurationService.get('AI_CATEGORIZATION_WEB_SEARCH_ENABLED')).toBe(true);
 		expect(configurationService.get('AI_CATEGORIZATION_WEB_SEARCH_MAX_TRANSACTIONS')).toBe(5);
 		expect(configurationService.get('OPENAI_API_KEY')).toBeTruthy();
@@ -155,7 +158,7 @@ describe('Bank transaction categorization integration', () => {
 			categoryStatus: 'COMPLETED',
 			categorySource: 'AI',
 			categoryConfidence: String(AI_CONFIDENCE),
-			categoryProvider: 'openai',
+			categoryProvider: BANK_TRANSACTION_CATEGORIZATION_PROVIDER_NAME,
 		});
 	});
 
@@ -193,7 +196,7 @@ describe('Bank transaction categorization integration', () => {
 		expect(persisted).toMatchObject({
 			category: WEB_CATEGORY,
 			categorySource: 'AI',
-			categoryPromptVersion: 'bank-transaction-categorization-web-search-v2',
+			categoryPromptVersion: BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_PROMPT_VERSION,
 		});
 	});
 
@@ -239,7 +242,7 @@ describe('Bank transaction categorization integration', () => {
 			categoryConfidence: '0.250',
 			categoryInputHash: inputHash,
 			categoryAppliedInputHash: inputHash,
-			categoryProvider: 'openai',
+			categoryProvider: BANK_TRANSACTION_CATEGORIZATION_PROVIDER_NAME,
 			categoryModel: 'test-model',
 			categoryPromptVersion: BANK_TRANSACTION_CATEGORIZATION_PROMPT_VERSION,
 			categoryUpdatedAt: new Date(),
