@@ -2,6 +2,7 @@ import {BankTransaction} from '../bank-transaction.entity';
 import {
 	createBankTransactionCategorizationInputHash,
 	toBankTransactionCategorizationInput,
+	toBankTransactionCategorizationWebSearchInput,
 } from './bank-transaction-categorization-input';
 
 function createTransaction(overrides: Partial<BankTransaction> = {}): BankTransaction {
@@ -162,5 +163,92 @@ describe('bank transaction categorization input', () => {
 		);
 
 		expect(input.remittanceInformation).toBe('IBAN [REDACTED] contact [REDACTED] [REDACTED] [REDACTED]');
+	});
+
+	it('keeps only compact transaction context and the selected merchant name', () => {
+		const input = toBankTransactionCategorizationInput(
+			createTransaction({
+				amount: '-39.99',
+				currency: 'EUR',
+				creditDebitIndicator: 'DBIT',
+				bankTransactionCode: null,
+				bankTransactionSubCode: null,
+				counterpartyName: 'Jaemy VOF via Stichting',
+				merchantCategoryCode: null,
+				description: 'SEPA iDEAL IBAN: NL00TEST0123456789 Order 123456789',
+				remittanceInformation: 'Order 123456789',
+			}),
+		);
+
+		const result = toBankTransactionCategorizationWebSearchInput(input);
+
+		expect(result).toEqual({
+			correlationId: 'transaction-id',
+			amount: '-39.99',
+			currency: 'EUR',
+			direction: 'EXPENSE',
+			transactionType: 'OTHER',
+			merchantName: 'Jaemy VOF via Stichting',
+			merchantCategoryCode: null,
+		});
+
+		const serialized = JSON.stringify(result);
+		expect(serialized).not.toContain('NL00TEST0123456789');
+		expect(serialized).not.toContain('123456789');
+		expect(serialized).not.toContain('provider-id');
+		expect(serialized).not.toContain('account-id');
+		expect(serialized).not.toContain('Order 123456789');
+	});
+
+	it.each(['Google Pay', 'Apple Pay', 'Bancontact', 'ACH', 'SEPA Wero'])(
+		'does not depend on a locale-specific payment-prefix list for %s',
+		(paymentPrefix) => {
+			const result = toBankTransactionCategorizationWebSearchInput(
+				toBankTransactionCategorizationInput(
+					createTransaction({
+						counterpartyName: `${paymentPrefix} ACME email@example.com IBAN NL00TEST0123456789 Order 123456789 NS Almelo 1234`,
+					}),
+				),
+			);
+
+			expect(result?.merchantName).toBe(`${paymentPrefix} ACME NS Almelo`);
+			expect(JSON.stringify(result)).not.toMatch(/email@example\.com|NL00TEST0123456789|123456789|1234/);
+		},
+	);
+
+	it.each([
+		['unlabelled alphanumeric references', 'ACME invoice ABC123456', 'ACME'],
+		['short unlabelled mixed identifiers', 'ACME C12345', 'ACME'],
+		['URLs', 'ACME https://example.com/invoices/ABC123456', 'ACME'],
+		['domains', 'ACME merchant.example.com', 'ACME'],
+		['formatted phone identifiers', 'ACME +31 (0)6 1234 5678', 'ACME'],
+		['formatted account identifiers', 'ACME 1234-5678-9012', 'ACME'],
+		['underscore-delimited identifiers', 'ACME_123456', undefined],
+		['underscore-delimited IBAN', 'ACME NL91_ABNA_0417_1643_00', 'ACME'],
+		['short labeled numeric identifiers', 'ACME Order 123', 'ACME'],
+		['short labeled ID references', 'ACME ID ABC12', 'ACME'],
+		['short labeled invoice references', 'ACME invoice AB12', 'ACME'],
+		['underscore-separated identifiers', 'ACME order_ABC123', 'ACME'],
+		['short labeled mixed identifiers', 'ACME ref: ABC12', 'ACME'],
+		['ordinary numeric brand tokens', '3M Store', '3M Store'],
+		['ordinary hyphenated brand tokens', '7-Eleven', '7-Eleven'],
+	] as const)('removes %s from web-search merchant names', (_case, counterpartyName, expected) => {
+		const result = toBankTransactionCategorizationWebSearchInput(
+			toBankTransactionCategorizationInput(createTransaction({counterpartyName})),
+		);
+
+		expect(result?.merchantName).toBe(expected);
+	});
+
+	it('returns null when all merchant text is empty or redacted', () => {
+		const input = toBankTransactionCategorizationInput(
+			createTransaction({
+				counterpartyName: '',
+				description: 'IBAN NL00TEST0123456789 Order 123456789',
+				bankTransactionDescription: 'Card payment',
+			}),
+		);
+
+		expect(toBankTransactionCategorizationWebSearchInput(input)).toBeNull();
 	});
 });

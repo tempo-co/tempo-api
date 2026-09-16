@@ -16,8 +16,14 @@ import {BankTransaction} from '../bank-transaction.entity';
 import {
 	createBankTransactionCategorizationInputHash,
 	toBankTransactionCategorizationInput,
+	toBankTransactionCategorizationWebSearchInput,
 } from './bank-transaction-categorization-input';
-import {BANK_TRANSACTION_CATEGORIZATION_PROMPT_VERSION} from './bank-transaction-categorization.constants';
+import {
+	BANK_TRANSACTION_CATEGORIZATION_PROMPT_VERSION,
+	BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_FAILED_PROMPT_VERSION,
+	BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_PROMPT_VERSION,
+	BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_SKIPPED_PROMPT_VERSION,
+} from './bank-transaction-categorization.constants';
 import {
 	BANK_TRANSACTION_CATEGORIZATION_PROVIDER,
 	BankTransactionCategorizationProvider,
@@ -31,6 +37,7 @@ import {BANK_TRANSACTION_CATEGORIES, BANK_TRANSACTION_CATEGORY_DEFINITIONS} from
 
 export type BankTransactionCategorizationJobData = {
 	transactionIds: string[];
+	webSearchBackfill?: boolean;
 };
 
 type ClaimedTransaction = {
@@ -55,6 +62,16 @@ type CategorizationUpdate = {
 const STALE_PROCESSING_AFTER_MS = 15 * 60 * 1000;
 const MAX_ERROR_LENGTH = 500;
 const CLAIMABLE_STATUSES = ['PENDING', 'FAILED'] as const;
+const CATEGORIZATION_RESET_VALUES = {
+	category: null,
+	categorySource: null,
+	categoryConfidence: null,
+	categoryAppliedInputHash: null,
+	categoryProvider: null,
+	categoryModel: null,
+	categoryPromptVersion: null,
+	categoryLastError: null,
+} as const;
 
 @Injectable()
 export class BankTransactionCategorizationService {
@@ -71,6 +88,14 @@ export class BankTransactionCategorizationService {
 	) {}
 
 	async enqueueForTransactions(transactionIds: readonly string[]): Promise<void> {
+		await this.enqueueForTransactionsInBatches(transactionIds, this.getCategorizationBatchSize());
+	}
+
+	private async enqueueForTransactionsInBatches(
+		transactionIds: readonly string[],
+		batchSize: number,
+		webSearchBackfill = false,
+	): Promise<void> {
 		if (!this.isEnabled()) return;
 
 		const uniqueIds = [...new Set(transactionIds.filter((id) => id.length > 0))].sort();
@@ -82,28 +107,41 @@ export class BankTransactionCategorizationService {
 		});
 		const inputHashes = new Map(transactions.map(({id, categoryInputHash}) => [id, categoryInputHash]));
 		const jobs = [];
-		for (let index = 0; index < uniqueIds.length; index += BANK_TRANSACTION_CATEGORIZATION_BATCH_SIZE) {
-			const batch = uniqueIds.slice(index, index + BANK_TRANSACTION_CATEGORIZATION_BATCH_SIZE);
+		for (let index = 0; index < uniqueIds.length; index += batchSize) {
+			const batch = uniqueIds.slice(index, index + batchSize);
 			jobs.push({
 				name: CATEGORIZE_BANK_TRANSACTIONS_JOB,
-				data: {transactionIds: batch},
-				opts: {jobId: this.createJobId(batch, inputHashes), removeOnFail: true},
+				data: {
+					transactionIds: batch,
+					...(webSearchBackfill ? {webSearchBackfill: true} : {}),
+				},
+				opts: {
+					jobId: this.createJobId(batch, inputHashes, webSearchBackfill),
+					removeOnFail: true,
+				},
 			});
 		}
 		await this.queue.addBulk(jobs);
 	}
 
-	async processTransactionJob(transactionIds: readonly string[]): Promise<void> {
+	async processTransactionJob(transactionIds: readonly string[], webSearchBackfill = false): Promise<void> {
 		if (!this.isEnabled()) return;
 
 		const uniqueIds = [...new Set(transactionIds.filter((id) => id.length > 0))];
 		if (uniqueIds.length === 0) return;
 
-		const transactions = await this.repository.find({where: {id: In(uniqueIds)}});
+		const batchSize = this.getCategorizationBatchSize();
+		const batchIds = uniqueIds.slice(0, batchSize);
+		const remainingIds = uniqueIds.slice(batchSize);
+		if (remainingIds.length > 0) {
+			await this.enqueueForTransactionsInBatches(remainingIds, batchSize, webSearchBackfill);
+		}
+
+		const transactions = await this.repository.find({where: {id: In(batchIds)}});
 		const transactionsById = new Map(transactions.map((transaction) => [transaction.id, transaction]));
 		const claimed: ClaimedTransaction[] = [];
 
-		for (const id of uniqueIds) {
+		for (const id of batchIds) {
 			const transaction = transactionsById.get(id);
 			if (!transaction) continue;
 
@@ -111,6 +149,16 @@ export class BankTransactionCategorizationService {
 			const inputHash = createBankTransactionCategorizationInputHash(input);
 			if (!(await this.refreshInputHashAndResetStaleClassification(transaction, inputHash))) continue;
 			if (transaction.categorySource === 'MANUAL') continue;
+
+			if (webSearchBackfill) {
+				const reset = await this.resetCompletedOtherTransactionForWebSearch(transaction.id, inputHash);
+				if (reset)
+					this.applyLocalUpdate(transaction, {
+						...CATEGORIZATION_RESET_VALUES,
+						categoryStatus: 'PENDING',
+						categoryUpdatedAt: new Date(),
+					});
+			}
 
 			if (!this.isClaimable(transaction)) continue;
 			if (await this.claimTransaction(transaction.id, inputHash)) {
@@ -159,6 +207,7 @@ export class BankTransactionCategorizationService {
 				.getRawMany<{id: string}>();
 
 			await this.enqueueForTransactions(rows.map(({id}) => id));
+			await this.reconcileCompletedOtherTransactionsForWebSearch();
 		} catch (error) {
 			this.logger.warn(`Transaction categorization reconciliation failed: ${this.safeErrorName(error)}`);
 		}
@@ -168,23 +217,123 @@ export class BankTransactionCategorizationService {
 		await this.reconcilePendingTransactions();
 	}
 
+	private async reconcileCompletedOtherTransactionsForWebSearch(): Promise<void> {
+		const webSearchMaxTransactions = this.configurationService.get('AI_CATEGORIZATION_WEB_SEARCH_MAX_TRANSACTIONS');
+		if (!this.isWebSearchEnabled() || webSearchMaxTransactions < 1) return;
+
+		const rows = await this.repository
+			.createQueryBuilder('transaction')
+			.select('transaction.id', 'id')
+			.where('transaction."category" = \'OTHER\'')
+			.andWhere('transaction."categoryStatus" = \'COMPLETED\'')
+			.andWhere('transaction."categorySource" IS DISTINCT FROM \'MANUAL\'')
+			.andWhere('transaction."categoryPromptVersion" IS DISTINCT FROM :webSearchPromptVersion', {
+				webSearchPromptVersion: BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_PROMPT_VERSION,
+			})
+			.andWhere('transaction."categoryPromptVersion" IS DISTINCT FROM :webSearchSkippedPromptVersion', {
+				webSearchSkippedPromptVersion: BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_SKIPPED_PROMPT_VERSION,
+			})
+			.andWhere('transaction."categoryPromptVersion" IS DISTINCT FROM :webSearchFailedPromptVersion', {
+				webSearchFailedPromptVersion: BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_FAILED_PROMPT_VERSION,
+			})
+			.getRawMany<{id: string}>();
+
+		const transactionIds = rows
+			.map(({id}) => id)
+			.filter((id): id is string => typeof id === 'string' && id.length > 0);
+		if (transactionIds.length === 0) return;
+
+		await this.enqueueForTransactionsInBatches(transactionIds, webSearchMaxTransactions, true);
+	}
+
+	private async resetCompletedOtherTransactionForWebSearch(id: string, inputHash: string): Promise<boolean> {
+		const result = await this.repository
+			.createQueryBuilder()
+			.update(BankTransaction)
+			.set({
+				...CATEGORIZATION_RESET_VALUES,
+				categoryStatus: 'PENDING',
+				categoryUpdatedAt: new Date(),
+			})
+			.where('id = :id', {id})
+			.andWhere('"category" = \'OTHER\'')
+			.andWhere('"categoryStatus" = \'COMPLETED\'')
+			.andWhere('"categorySource" IS DISTINCT FROM \'MANUAL\'')
+			.andWhere('"categoryInputHash" = :inputHash', {inputHash})
+			.andWhere('"categoryPromptVersion" IS DISTINCT FROM :webSearchPromptVersion', {
+				webSearchPromptVersion: BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_PROMPT_VERSION,
+			})
+			.andWhere('"categoryPromptVersion" IS DISTINCT FROM :webSearchSkippedPromptVersion', {
+				webSearchSkippedPromptVersion: BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_SKIPPED_PROMPT_VERSION,
+			})
+			.andWhere('"categoryPromptVersion" IS DISTINCT FROM :webSearchFailedPromptVersion', {
+				webSearchFailedPromptVersion: BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_FAILED_PROMPT_VERSION,
+			})
+			.execute();
+		return (result.affected ?? 0) > 0;
+	}
+
 	private async categorizeClaimedBatch(batch: readonly ClaimedTransaction[]): Promise<void> {
 		const inputs = batch.map(({input}) => input);
-		let results: readonly BankTransactionCategorizationResult[];
+		let standardResults: readonly BankTransactionCategorizationResult[];
 
 		try {
-			results = await this.provider.categorize(inputs, BANK_TRANSACTION_CATEGORY_DEFINITIONS);
-			this.assertCompleteResults(inputs, results);
+			standardResults = await this.provider.categorize(inputs, BANK_TRANSACTION_CATEGORY_DEFINITIONS);
+			this.assertCompleteResults(inputs, standardResults);
 		} catch (error) {
 			await this.markBatchFailed(batch, error);
 			if (this.isRetryable(error)) throw error;
 			return;
 		}
 
-		const resultById = new Map(results.map((result) => [result.correlationId, result]));
+		const standardResultById = new Map(standardResults.map((result) => [result.correlationId, result]));
+		const webSearchMaxTransactions = this.configurationService.get('AI_CATEGORIZATION_WEB_SEARCH_MAX_TRANSACTIONS');
+		const webSearchEnabled = this.isWebSearchEnabled();
+		const webSearchCanRun = webSearchEnabled && webSearchMaxTransactions > 0;
+		const skippedWebSearchIds = new Set<string>();
+		const webCandidates = inputs
+			.filter((input) => standardResultById.get(input.correlationId)?.category === 'OTHER')
+			.map((input) => {
+				const webSearchInput = toBankTransactionCategorizationWebSearchInput(input);
+				if (webSearchCanRun && webSearchInput === null) skippedWebSearchIds.add(input.correlationId);
+				return webSearchInput;
+			})
+			.filter((input): input is NonNullable<typeof input> => input !== null);
+
+		const webResults: BankTransactionCategorizationResult[] = [];
+		const failedWebSearchIds = new Set<string>();
+		if (webSearchCanRun && webCandidates.length > 0) {
+			for (let index = 0; index < webCandidates.length; index += webSearchMaxTransactions) {
+				const webSearchChunk = webCandidates.slice(index, index + webSearchMaxTransactions);
+				for (const webSearchInput of webSearchChunk) {
+					try {
+						const candidateResults = await this.provider.categorizeWithWebSearch(
+							[webSearchInput],
+							BANK_TRANSACTION_CATEGORY_DEFINITIONS,
+						);
+						this.assertCompleteResults([webSearchInput], candidateResults);
+						webResults.push(...candidateResults);
+					} catch (error) {
+						this.logger.warn(`Transaction web-search fallback failed: ${this.safeErrorName(error)}`);
+						failedWebSearchIds.add(webSearchInput.correlationId);
+					}
+				}
+			}
+		}
+
+		const resultById = new Map(standardResults.map((result) => [result.correlationId, result]));
+		for (const result of webResults) resultById.set(result.correlationId, result);
+		const webResultIds = new Set(webResults.map(({correlationId}) => correlationId));
 		for (const claimed of batch) {
 			const result = resultById.get(claimed.input.correlationId);
 			if (!result) continue;
+			const promptVersion = webResultIds.has(claimed.input.correlationId)
+				? BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_PROMPT_VERSION
+				: skippedWebSearchIds.has(claimed.input.correlationId)
+					? BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_SKIPPED_PROMPT_VERSION
+					: failedWebSearchIds.has(claimed.input.correlationId)
+						? BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_FAILED_PROMPT_VERSION
+						: BANK_TRANSACTION_CATEGORIZATION_PROMPT_VERSION;
 			const applied = await this.updateCategorizationWithGuard(
 				claimed.transaction.id,
 				claimed.inputHash,
@@ -196,7 +345,7 @@ export class BankTransactionCategorizationService {
 					categoryAppliedInputHash: claimed.inputHash,
 					categoryProvider: this.configurationService.get('AI_CATEGORIZATION_PROVIDER'),
 					categoryModel: this.configurationService.get('AI_CATEGORIZATION_MODEL'),
-					categoryPromptVersion: BANK_TRANSACTION_CATEGORIZATION_PROMPT_VERSION,
+					categoryPromptVersion: promptVersion,
 					categoryUpdatedAt: new Date(),
 					categoryLastError: null,
 				},
@@ -211,7 +360,7 @@ export class BankTransactionCategorizationService {
 					categoryAppliedInputHash: claimed.inputHash,
 					categoryProvider: this.configurationService.get('AI_CATEGORIZATION_PROVIDER'),
 					categoryModel: this.configurationService.get('AI_CATEGORIZATION_MODEL'),
-					categoryPromptVersion: BANK_TRANSACTION_CATEGORIZATION_PROMPT_VERSION,
+					categoryPromptVersion: promptVersion,
 					categoryLastError: null,
 				});
 		}
@@ -245,28 +394,14 @@ export class BankTransactionCategorizationService {
 		if (!appliedHashIsStale && !completedByNonAiSource && !(hashChanged && completedHashIsStale)) return true;
 
 		const reset = await this.updateCategorizationWithGuard(transaction.id, inputHash, {
-			category: null,
+			...CATEGORIZATION_RESET_VALUES,
 			categoryStatus: 'PENDING',
-			categorySource: null,
-			categoryConfidence: null,
-			categoryAppliedInputHash: null,
-			categoryProvider: null,
-			categoryModel: null,
-			categoryPromptVersion: null,
 			categoryUpdatedAt: new Date(),
-			categoryLastError: null,
 		});
 		if (reset)
 			this.applyLocalUpdate(transaction, {
-				category: null,
+				...CATEGORIZATION_RESET_VALUES,
 				categoryStatus: 'PENDING',
-				categorySource: null,
-				categoryConfidence: null,
-				categoryAppliedInputHash: null,
-				categoryProvider: null,
-				categoryModel: null,
-				categoryPromptVersion: null,
-				categoryLastError: null,
 			});
 		return true;
 	}
@@ -324,14 +459,8 @@ export class BankTransactionCategorizationService {
 					transaction.id,
 					inputHash,
 					{
-						category: null,
+						...CATEGORIZATION_RESET_VALUES,
 						categoryStatus: 'FAILED',
-						categorySource: null,
-						categoryConfidence: null,
-						categoryAppliedInputHash: null,
-						categoryProvider: null,
-						categoryModel: null,
-						categoryPromptVersion: null,
 						categoryUpdatedAt: new Date(),
 						categoryLastError: safeMessage,
 					},
@@ -339,14 +468,8 @@ export class BankTransactionCategorizationService {
 				);
 				if (failed)
 					this.applyLocalUpdate(transaction, {
-						category: null,
+						...CATEGORIZATION_RESET_VALUES,
 						categoryStatus: 'FAILED',
-						categorySource: null,
-						categoryConfidence: null,
-						categoryAppliedInputHash: null,
-						categoryProvider: null,
-						categoryModel: null,
-						categoryPromptVersion: null,
 						categoryLastError: safeMessage,
 					});
 			}),
@@ -354,7 +477,7 @@ export class BankTransactionCategorizationService {
 	}
 
 	private assertCompleteResults(
-		inputs: readonly BankTransactionCategorizationInput[],
+		inputs: readonly {correlationId: string}[],
 		results: readonly BankTransactionCategorizationResult[],
 	): void {
 		const inputIds = inputs.map(({correlationId}) => correlationId);
@@ -392,13 +515,28 @@ export class BankTransactionCategorizationService {
 		Object.assign(transaction, values);
 	}
 
-	private createJobId(transactionIds: readonly string[], inputHashes: ReadonlyMap<string, string | null>): string {
-		const jobInput = transactionIds.map((id) => `${id}:${inputHashes.get(id) ?? ''}`).join('\n');
+	private createJobId(
+		transactionIds: readonly string[],
+		inputHashes: ReadonlyMap<string, string | null>,
+		webSearchBackfill = false,
+	): string {
+		const mode = webSearchBackfill ? 'web-search-backfill\n' : '';
+		const jobInput = `${mode}${transactionIds.map((id) => `${id}:${inputHashes.get(id) ?? ''}`).join('\n')}`;
 		return `categorize-${createHash('sha256').update(jobInput).digest('hex')}`;
+	}
+
+	private getCategorizationBatchSize(): number {
+		if (!this.isWebSearchEnabled()) return BANK_TRANSACTION_CATEGORIZATION_BATCH_SIZE;
+		const webSearchMaxTransactions = this.configurationService.get('AI_CATEGORIZATION_WEB_SEARCH_MAX_TRANSACTIONS');
+		return webSearchMaxTransactions > 0 ? webSearchMaxTransactions : BANK_TRANSACTION_CATEGORIZATION_BATCH_SIZE;
 	}
 
 	private isEnabled(): boolean {
 		return this.configurationService.get('AI_CATEGORIZATION_ENABLED');
+	}
+
+	private isWebSearchEnabled(): boolean {
+		return this.configurationService.get('AI_CATEGORIZATION_WEB_SEARCH_ENABLED');
 	}
 
 	private isRetryable(error: unknown): boolean {
