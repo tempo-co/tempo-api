@@ -7,11 +7,6 @@ import {Repository} from 'typeorm';
 import {ConfigurationService} from '@core/config/config.service';
 import {BankTransaction} from '@modules/banking/bank-transaction.entity';
 import {
-	createBankTransactionCategorizationInputHash,
-	toBankTransactionCategorizationInput,
-} from '@modules/banking/categorization/bank-transaction-categorization-input';
-import {
-	BANK_TRANSACTION_CATEGORIZATION_PROMPT_VERSION,
 	BANK_TRANSACTION_CATEGORIZATION_PROVIDER_NAME,
 	BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_PROMPT_VERSION,
 } from '@modules/banking/categorization/bank-transaction-categorization.constants';
@@ -103,7 +98,6 @@ describe('Bank transaction categorization integration', () => {
 			BANK_TRANSACTION_CATEGORIZATION_PROVIDER_NAME,
 		);
 		expect(configurationService.get('AI_CATEGORIZATION_WEB_SEARCH_ENABLED')).toBe(true);
-		expect(configurationService.get('AI_CATEGORIZATION_WEB_SEARCH_MAX_TRANSACTIONS')).toBe(5);
 		expect(configurationService.get('OPENAI_API_KEY')).toBeTruthy();
 
 		bankTransactionRepository = app.get<Repository<BankTransaction>>(getRepositoryToken(BankTransaction));
@@ -162,13 +156,16 @@ describe('Bank transaction categorization integration', () => {
 		});
 	});
 
-	it('uses the mocked web-search fallback only after a normal OTHER result', async () => {
+	it('runs one normal pass and one web-search fallback for an OTHER result', async () => {
 		const categorizationService = app.get(BankTransactionCategorizationService);
 		await categorizationService.enqueueForTransactions([CATEGORIZATION_E2E_WEB_TRANSACTION_ID]);
 
 		const response = await waitFor(
 			() => verifiedAgent.get(`/bank-transactions/${CATEGORIZATION_E2E_WEB_TRANSACTION_ID}`),
-			(value) => value.status === 200 && value.body.categoryStatus === 'COMPLETED',
+			(value) =>
+				value.status === 200 &&
+				value.body.categoryStatus === 'COMPLETED' &&
+				value.body.category === WEB_CATEGORY,
 		);
 
 		expect(response.body).toMatchObject({
@@ -203,6 +200,19 @@ describe('Bank transaction categorization integration', () => {
 	it('persists a provider failure through the real worker path without calling an external provider', async () => {
 		shouldFail = true;
 		try {
+			await bankTransactionRepository.update(CATEGORIZATION_E2E_FAILURE_TRANSACTION_ID, {
+				category: null,
+				categoryStatus: 'PENDING',
+				categorySource: null,
+				categoryConfidence: null,
+				categoryInputHash: null,
+				categoryAppliedInputHash: null,
+				categoryProvider: null,
+				categoryModel: null,
+				categoryPromptVersion: null,
+				categoryUpdatedAt: null,
+				categoryLastError: null,
+			});
 			const categorizationService = app.get(BankTransactionCategorizationService);
 			await categorizationService.enqueueForTransactions([CATEGORIZATION_E2E_FAILURE_TRANSACTION_ID]);
 
@@ -225,56 +235,5 @@ describe('Bank transaction categorization integration', () => {
 		} finally {
 			shouldFail = false;
 		}
-	});
-
-	it('automatically requeues completed OTHER rows during reconciliation and skips them after web search', async () => {
-		const categorizationService = app.get(BankTransactionCategorizationService);
-		const transaction = await bankTransactionRepository.findOneByOrFail({
-			id: CATEGORIZATION_E2E_WEB_TRANSACTION_ID,
-		});
-		const inputHash = createBankTransactionCategorizationInputHash(
-			toBankTransactionCategorizationInput(transaction),
-		);
-		await bankTransactionRepository.update(transaction.id, {
-			category: 'OTHER',
-			categoryStatus: 'COMPLETED',
-			categorySource: 'AI',
-			categoryConfidence: '0.250',
-			categoryInputHash: inputHash,
-			categoryAppliedInputHash: inputHash,
-			categoryProvider: BANK_TRANSACTION_CATEGORIZATION_PROVIDER_NAME,
-			categoryModel: 'test-model',
-			categoryPromptVersion: BANK_TRANSACTION_CATEGORIZATION_PROMPT_VERSION,
-			categoryUpdatedAt: new Date(),
-			categoryLastError: null,
-		});
-
-		await categorizationService.reconcilePendingTransactions();
-		const response = await waitFor(
-			() => verifiedAgent.get(`/bank-transactions/${CATEGORIZATION_E2E_WEB_TRANSACTION_ID}`),
-			(value) =>
-				value.status === 200 &&
-				value.body.categoryStatus === 'COMPLETED' &&
-				value.body.category === WEB_CATEGORY,
-		);
-
-		expect(response.body).toMatchObject({
-			id: CATEGORIZATION_E2E_WEB_TRANSACTION_ID,
-			category: WEB_CATEGORY,
-			categoryStatus: 'COMPLETED',
-		});
-		expect(
-			await bankTransactionRepository.findOneByOrFail({id: CATEGORIZATION_E2E_WEB_TRANSACTION_ID}),
-		).toMatchObject({categoryPromptVersion: BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_PROMPT_VERSION});
-		expect(categorizeWithWebSearchSpy).toHaveBeenCalledWith(
-			expect.arrayContaining([expect.objectContaining({correlationId: CATEGORIZATION_E2E_WEB_TRANSACTION_ID})]),
-			expect.any(Array),
-		);
-
-		const normalCallCount = categorizeSpy.mock.calls.length;
-		const webSearchCallCount = categorizeWithWebSearchSpy.mock.calls.length;
-		await categorizationService.reconcilePendingTransactions();
-		expect(categorizeSpy).toHaveBeenCalledTimes(normalCallCount);
-		expect(categorizeWithWebSearchSpy).toHaveBeenCalledTimes(webSearchCallCount);
 	});
 });

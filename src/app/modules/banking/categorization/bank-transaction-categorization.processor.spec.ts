@@ -9,7 +9,7 @@ import {
 } from './bank-transaction-categorization.service';
 
 describe('BankTransactionCategorizationProcessor', () => {
-	it('forwards the web-search backfill flag to the categorization service', async () => {
+	it('forwards only transaction IDs to the categorization service', async () => {
 		const service = {
 			processTransactionJob: jest.fn().mockResolvedValue(undefined),
 		};
@@ -18,11 +18,11 @@ describe('BankTransactionCategorizationProcessor', () => {
 		);
 		const job = {
 			name: CATEGORIZE_BANK_TRANSACTIONS_JOB,
-			data: {transactionIds: ['transaction-id'], webSearchBackfill: true},
+			data: {transactionIds: ['transaction-id']},
 		} as unknown as Job<BankTransactionCategorizationJobData>;
 
 		await processor.process(job);
 
-		expect(service.processTransactionJob).toHaveBeenCalledWith(['transaction-id'], true);
+		expect(service.processTransactionJob).toHaveBeenCalledWith(['transaction-id']);
 	});
 });
