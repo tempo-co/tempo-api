@@ -51,7 +51,6 @@ export const configSchema = z
 			.default('openai'),
 		AI_CATEGORIZATION_MODEL: z.string().min(1).max(128).default('gpt-5.6-luna'),
 		AI_CATEGORIZATION_WEB_SEARCH_ENABLED: strictBooleanEnvSchema.default(false),
-		AI_CATEGORIZATION_WEB_SEARCH_MAX_TRANSACTIONS: z.coerce.number().int().min(0).max(5).default(5),
 		OPENAI_API_KEY: z.string().min(1).optional(),
 
 		// --- APIs ---

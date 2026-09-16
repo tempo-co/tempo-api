@@ -21,7 +21,6 @@ beforeAll(async () => {
 	process.env.NODE_ENV = 'test';
 	process.env.AI_CATEGORIZATION_ENABLED = String(aiCategorizationEnabled);
 	process.env.AI_CATEGORIZATION_WEB_SEARCH_ENABLED = String(aiCategorizationWebSearchEnabled);
-	process.env.AI_CATEGORIZATION_WEB_SEARCH_MAX_TRANSACTIONS = '5';
 
 	if (aiCategorizationEnabled) {
 		process.env.AI_CATEGORIZATION_PROVIDER = 'openai';

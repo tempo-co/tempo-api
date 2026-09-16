@@ -16,9 +16,6 @@ export class BankTransactionCategorizationProcessor extends WorkerHost {
 
 	async process(job: Job<BankTransactionCategorizationJobData>): Promise<void> {
 		if (job.name !== CATEGORIZE_BANK_TRANSACTIONS_JOB) return;
-		await this.categorizationService.processTransactionJob(
-			job.data.transactionIds,
-			job.data.webSearchBackfill === true,
-		);
+		await this.categorizationService.processTransactionJob(job.data.transactionIds);
 	}
 }

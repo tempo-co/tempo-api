@@ -113,9 +113,7 @@ describe('OpenAiBankTransactionCategorizationProvider', () => {
 	it('uses the hosted web-search tool for a sanitized fallback request', async () => {
 		const {provider, responsesCreate} = createProvider();
 		responsesCreate.mockResolvedValue({
-			output_text: output([
-				{correlationId: '0', category: 'FOOD_AND_DRINK', confidence: 0.93, needsFollowUp: false},
-			]),
+			output_text: output([{correlationId: '0', category: 'FOOD_AND_DRINK', confidence: 0.93}]),
 		});
 		const transactions = [createWebSearchInput('opaque-transaction-id')];
 
@@ -148,9 +146,10 @@ describe('OpenAiBankTransactionCategorizationProvider', () => {
 		const sentInput = JSON.parse(request.input);
 		expect(sentInput.transactions).toEqual([{...transactions[0], correlationId: '0'}]);
 		expect(sentInput.categories).toEqual(BANK_TRANSACTION_CATEGORY_DEFINITIONS);
-		expect(request.text.format.schema.properties.classifications.items.properties.needsFollowUp).toEqual({
-			type: 'boolean',
-		});
+		expect(request.text.format.schema.properties.classifications.items.properties).not.toHaveProperty(
+			'needsFollowUp',
+		);
+		expect(request.instructions).toContain('Do not perform a follow-up lookup.');
 		expect(request.input).not.toContain('opaque-transaction-id');
 		expect(request.input).not.toContain('provider-id');
 		expect(request.input).not.toContain('account-id');
@@ -158,72 +157,49 @@ describe('OpenAiBankTransactionCategorizationProvider', () => {
 		expect(request.input).not.toContain('remittance');
 	});
 
-	it('performs one follow-up lookup only for genuinely ambiguous first results', async () => {
+	it('does not perform a follow-up lookup when the initial result is ambiguous', async () => {
 		const {provider, responsesCreate} = createProvider();
-		responsesCreate
-			.mockResolvedValueOnce({
-				output_text: output([
-					{correlationId: '0', category: 'FOOD_AND_DRINK', confidence: 0.93, needsFollowUp: false},
-				]),
-			})
-			.mockResolvedValueOnce({
-				output_text: output([{correlationId: '0', category: 'OTHER', confidence: 0.4, needsFollowUp: true}]),
-			})
-			.mockResolvedValueOnce({
-				output_text: output([
-					{correlationId: '0', category: 'TRANSPORTATION', confidence: 0.88, needsFollowUp: false},
-				]),
-			});
-		const transactions = [createWebSearchInput('transaction-1'), createWebSearchInput('transaction-2')];
-
-		await expect(
-			provider.categorizeWithWebSearch(transactions, BANK_TRANSACTION_CATEGORY_DEFINITIONS),
-		).resolves.toEqual([
-			{correlationId: 'transaction-1', category: 'FOOD_AND_DRINK', confidence: 0.93},
-			{correlationId: 'transaction-2', category: 'TRANSPORTATION', confidence: 0.88},
-		]);
-
-		expect(responsesCreate).toHaveBeenCalledTimes(3);
-		expect(responsesCreate.mock.calls.every(([request]) => request.max_tool_calls === 1)).toBe(true);
-		expect(responsesCreate.mock.calls.every(([request]) => request.reasoning?.effort === 'medium')).toBe(true);
-		const followUpRequest = responsesCreate.mock.calls[2][0];
-		expect(followUpRequest.instructions).toContain('Perform at most one single follow-up lookup per transaction');
-		expect(JSON.parse(followUpRequest.input).transactions).toEqual([
-			{
-				...transactions[1],
-				correlationId: '0',
-				initialCategory: 'OTHER',
-				initialConfidence: 0.4,
-			},
-		]);
-		expect(followUpRequest.input).not.toContain('transaction-2');
-	});
-
-	it('keeps OTHER when the single follow-up remains ambiguous', async () => {
-		const {provider, responsesCreate} = createProvider();
-		responsesCreate
-			.mockResolvedValueOnce({
-				output_text: output([{correlationId: '0', category: 'OTHER', confidence: 0.3, needsFollowUp: true}]),
-			})
-			.mockResolvedValueOnce({
-				output_text: output([{correlationId: '0', category: 'OTHER', confidence: 0.2, needsFollowUp: false}]),
-			});
+		responsesCreate.mockResolvedValue({
+			output_text: output([{correlationId: '0', category: 'OTHER', confidence: 0.3}]),
+		});
 
 		await expect(
 			provider.categorizeWithWebSearch(
 				[createWebSearchInput('transaction-1')],
 				BANK_TRANSACTION_CATEGORY_DEFINITIONS,
 			),
-		).resolves.toEqual([{correlationId: 'transaction-1', category: 'OTHER', confidence: 0.2}]);
+		).resolves.toEqual([{correlationId: 'transaction-1', category: 'OTHER', confidence: 0.3}]);
+
+		expect(responsesCreate).toHaveBeenCalledTimes(1);
+	});
+
+	it('performs one lookup per transaction even when results are ambiguous', async () => {
+		const {provider, responsesCreate} = createProvider();
+		responsesCreate.mockResolvedValue({
+			output_text: output([{correlationId: '0', category: 'OTHER', confidence: 0.4}]),
+		});
+		const transactions = [createWebSearchInput('transaction-1'), createWebSearchInput('transaction-2')];
+
+		await expect(
+			provider.categorizeWithWebSearch(transactions, BANK_TRANSACTION_CATEGORY_DEFINITIONS),
+		).resolves.toEqual([
+			{correlationId: 'transaction-1', category: 'OTHER', confidence: 0.4},
+			{correlationId: 'transaction-2', category: 'OTHER', confidence: 0.4},
+		]);
+
 		expect(responsesCreate).toHaveBeenCalledTimes(2);
+		expect(responsesCreate.mock.calls.every(([request]) => request.max_tool_calls === 1)).toBe(true);
+		expect(
+			responsesCreate.mock.calls.every(([request]) =>
+				request.instructions.includes('Do not perform a follow-up lookup.'),
+			),
+		).toBe(true);
 	});
 
 	it('drops invalid merchant category codes from web-search requests', async () => {
 		const {provider, responsesCreate} = createProvider();
 		responsesCreate.mockResolvedValue({
-			output_text: output([
-				{correlationId: '0', category: 'FOOD_AND_DRINK', confidence: 0.93, needsFollowUp: false},
-			]),
+			output_text: output([{correlationId: '0', category: 'FOOD_AND_DRINK', confidence: 0.93}]),
 		});
 
 		await provider.categorizeWithWebSearch(
@@ -238,7 +214,7 @@ describe('OpenAiBankTransactionCategorizationProvider', () => {
 	it('keeps a clear OTHER result without a follow-up lookup', async () => {
 		const {provider, responsesCreate} = createProvider();
 		responsesCreate.mockResolvedValue({
-			output_text: output([{correlationId: '0', category: 'OTHER', confidence: 0.7, needsFollowUp: false}]),
+			output_text: output([{correlationId: '0', category: 'OTHER', confidence: 0.7}]),
 		});
 
 		await expect(
@@ -248,42 +224,6 @@ describe('OpenAiBankTransactionCategorizationProvider', () => {
 			),
 		).resolves.toEqual([{correlationId: 'transaction-1', category: 'OTHER', confidence: 0.7}]);
 		expect(responsesCreate).toHaveBeenCalledTimes(1);
-	});
-
-	it('does not return partial web results when a follow-up lookup fails', async () => {
-		const {provider, responsesCreate} = createProvider();
-		responsesCreate
-			.mockResolvedValueOnce({
-				output_text: output([{correlationId: '0', category: 'OTHER', confidence: 0.3, needsFollowUp: true}]),
-			})
-			.mockRejectedValueOnce({status: 503, name: 'APIError'});
-
-		await expect(
-			provider.categorizeWithWebSearch(
-				[createWebSearchInput('transaction-1')],
-				BANK_TRANSACTION_CATEGORY_DEFINITIONS,
-			),
-		).rejects.toMatchObject<Partial<BankTransactionCategorizationProviderError>>({retryable: true});
-		expect(responsesCreate).toHaveBeenCalledTimes(2);
-	});
-
-	it('does not perform a third lookup when the follow-up remains ambiguous', async () => {
-		const {provider, responsesCreate} = createProvider();
-		responsesCreate
-			.mockResolvedValueOnce({
-				output_text: output([{correlationId: '0', category: 'OTHER', confidence: 0.3, needsFollowUp: true}]),
-			})
-			.mockResolvedValueOnce({
-				output_text: output([{correlationId: '0', category: 'OTHER', confidence: 0.2, needsFollowUp: true}]),
-			});
-
-		await expect(
-			provider.categorizeWithWebSearch(
-				[createWebSearchInput('transaction-1')],
-				BANK_TRANSACTION_CATEGORY_DEFINITIONS,
-			),
-		).resolves.toEqual([{correlationId: 'transaction-1', category: 'OTHER', confidence: 0.2}]);
-		expect(responsesCreate).toHaveBeenCalledTimes(2);
 	});
 
 	it.each([
