@@ -37,30 +37,18 @@ const baseConfig = {
 };
 
 describe('categorization web-search configuration', () => {
-	it('defaults the fallback off with a maximum of five transactions', () => {
+	it('defaults the fallback off', () => {
 		const parsed = configSchema.parse(baseConfig);
 
 		expect(parsed.AI_CATEGORIZATION_WEB_SEARCH_ENABLED).toBe(false);
-		expect(parsed.AI_CATEGORIZATION_WEB_SEARCH_MAX_TRANSACTIONS).toBe(5);
 	});
 
-	it('accepts an explicit bounded fallback configuration', () => {
+	it('accepts an explicit fallback toggle', () => {
 		const parsed = configSchema.parse({
 			...baseConfig,
 			AI_CATEGORIZATION_WEB_SEARCH_ENABLED: 'true',
-			AI_CATEGORIZATION_WEB_SEARCH_MAX_TRANSACTIONS: '3',
 		});
 
 		expect(parsed.AI_CATEGORIZATION_WEB_SEARCH_ENABLED).toBe(true);
-		expect(parsed.AI_CATEGORIZATION_WEB_SEARCH_MAX_TRANSACTIONS).toBe(3);
-	});
-
-	it.each(['-1', '6', '1.5', 'not-a-number'])('rejects an invalid fallback bound: %s', (value) => {
-		expect(() =>
-			configSchema.parse({
-				...baseConfig,
-				AI_CATEGORIZATION_WEB_SEARCH_MAX_TRANSACTIONS: value,
-			}),
-		).toThrow();
 	});
 });
