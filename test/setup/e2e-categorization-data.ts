@@ -14,10 +14,12 @@ export const CATEGORIZATION_E2E_CONNECTION_ID = '00000000-0000-4000-8000-0000000
 export const CATEGORIZATION_E2E_ACCOUNT_ID = '00000000-0000-4000-8000-000000000102';
 export const CATEGORIZATION_E2E_AI_TRANSACTION_ID = '00000000-0000-4000-8000-000000000103';
 export const CATEGORIZATION_E2E_FAILURE_TRANSACTION_ID = '00000000-0000-4000-8000-000000000104';
+export const CATEGORIZATION_E2E_WEB_TRANSACTION_ID = '00000000-0000-4000-8000-000000000105';
 
 const CATEGORIZATION_E2E_TRANSACTION_IDS = [
 	CATEGORIZATION_E2E_AI_TRANSACTION_ID,
 	CATEGORIZATION_E2E_FAILURE_TRANSACTION_ID,
+	CATEGORIZATION_E2E_WEB_TRANSACTION_ID,
 ] as const;
 
 export async function seedBankTransactionCategorizationData(app: INestApplicationContext): Promise<void> {
@@ -96,6 +98,18 @@ export async function seedBankTransactionCategorizationData(app: INestApplicatio
 				description: 'Synthetic provider failure',
 				displayDescription: 'Synthetic provider failure',
 				counterpartyName: 'Synthetic provider failure',
+			}),
+			createCategorizationTransaction(bankAccount.id, {
+				id: CATEGORIZATION_E2E_WEB_TRANSACTION_ID,
+				providerTransactionId: 'categorization-e2e-web',
+				entryReference: 'categorization-e2e-web-entry',
+				transactionDate: '2026-09-03',
+				bookingDate: '2026-09-03',
+				valueDate: '2026-09-03',
+				amount: '-23.00',
+				description: 'Synthetic ambiguous merchant',
+				displayDescription: 'Synthetic ambiguous merchant',
+				counterpartyName: 'Synthetic ambiguous merchant',
 			}),
 		].map((transaction) => bankTransactionRepository.create(transaction)),
 	);

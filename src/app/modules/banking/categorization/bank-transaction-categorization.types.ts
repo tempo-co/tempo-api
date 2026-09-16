@@ -26,6 +26,13 @@ export type BankTransactionCategorizationInput = {
 	remittanceInformation: string | null;
 };
 
+export type BankTransactionCategorizationWebSearchInput = Pick<
+	BankTransactionCategorizationInput,
+	'correlationId' | 'amount' | 'currency' | 'direction' | 'transactionType' | 'merchantCategoryCode'
+> & {
+	merchantName: string;
+};
+
 export type BankTransactionCategorizationResult = {
 	correlationId: string;
 	category: BankTransactionCategory;

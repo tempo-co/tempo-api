@@ -1,6 +1,7 @@
 import type {
 	BankTransactionCategorizationInput,
 	BankTransactionCategorizationResult,
+	BankTransactionCategorizationWebSearchInput,
 	BankTransactionCategoryDefinition,
 } from './bank-transaction-categorization.types';
 import type {BankTransactionCategory} from './bank-transaction-category';
@@ -10,6 +11,10 @@ export const BANK_TRANSACTION_CATEGORIZATION_PROVIDER = Symbol('BANK_TRANSACTION
 export interface BankTransactionCategorizationProvider {
 	categorize(
 		transactions: readonly BankTransactionCategorizationInput[],
+		categories: readonly BankTransactionCategoryDefinition[],
+	): Promise<readonly BankTransactionCategorizationResult[]>;
+	categorizeWithWebSearch(
+		transactions: readonly BankTransactionCategorizationWebSearchInput[],
 		categories: readonly BankTransactionCategoryDefinition[],
 	): Promise<readonly BankTransactionCategorizationResult[]>;
 }

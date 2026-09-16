@@ -39,12 +39,18 @@ describe('BankTransactionController', () => {
 	let fixtureTransaction: BankTransaction;
 	let fixtureGroceriesTransaction: BankTransaction;
 	let categorizeSpy: jest.SpyInstance;
+	let categorizeWithWebSearchSpy: jest.SpyInstance;
 
 	beforeAll(async () => {
 		app = getApp();
 		httpServer = app.getHttpServer();
 		expect(app.get(ConfigurationService).get('AI_CATEGORIZATION_ENABLED')).toBe(false);
+		expect(app.get(ConfigurationService).get('AI_CATEGORIZATION_WEB_SEARCH_ENABLED')).toBe(false);
 		categorizeSpy = jest.spyOn(app.get(OpenAiBankTransactionCategorizationProvider), 'categorize');
+		categorizeWithWebSearchSpy = jest.spyOn(
+			app.get(OpenAiBankTransactionCategorizationProvider),
+			'categorizeWithWebSearch',
+		);
 		const accountService = app.get(AccountService);
 		const seededAccount = await accountService.findByEmail(VERIFIED_ACCOUNT_EMAIL);
 		if (!seededAccount) throw new Error('Verified test account was not seeded.');
@@ -207,6 +213,7 @@ describe('BankTransactionController', () => {
 
 		expect(response.body.total).toBe(4);
 		expect(categorizeSpy).not.toHaveBeenCalled();
+		expect(categorizeWithWebSearchSpy).not.toHaveBeenCalled();
 		expect(response.body.transactions[0]).toMatchObject({
 			id: fixtureTransaction.id,
 			transactionDate: '2026-08-24',
