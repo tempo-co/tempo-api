@@ -162,13 +162,36 @@ describe('Bank transaction categorization integration', () => {
 		});
 	});
 
-	it('uses the mocked web-search fallback only after a normal OTHER result', async () => {
+	it('keeps ordinary jobs search-free and uses backfill only during reconciliation', async () => {
 		const categorizationService = app.get(BankTransactionCategorizationService);
 		await categorizationService.enqueueForTransactions([CATEGORIZATION_E2E_WEB_TRANSACTION_ID]);
 
+		const normalResponse = await waitFor(
+			() => verifiedAgent.get(`/bank-transactions/${CATEGORIZATION_E2E_WEB_TRANSACTION_ID}`),
+			(value) =>
+				value.status === 200 && value.body.categoryStatus === 'COMPLETED' && value.body.category === 'OTHER',
+		);
+		expect(normalResponse.body).toMatchObject({
+			id: CATEGORIZATION_E2E_WEB_TRANSACTION_ID,
+			category: 'OTHER',
+			categoryStatus: 'COMPLETED',
+			categorySource: 'AI',
+		});
+		expect(
+			await bankTransactionRepository.findOneByOrFail({id: CATEGORIZATION_E2E_WEB_TRANSACTION_ID}),
+		).toMatchObject({
+			categoryPromptVersion: BANK_TRANSACTION_CATEGORIZATION_PROMPT_VERSION,
+		});
+		expect(categorizeSpy).toHaveBeenCalledTimes(1);
+		expect(categorizeWithWebSearchSpy).not.toHaveBeenCalled();
+
+		await categorizationService.reconcilePendingTransactions();
 		const response = await waitFor(
 			() => verifiedAgent.get(`/bank-transactions/${CATEGORIZATION_E2E_WEB_TRANSACTION_ID}`),
-			(value) => value.status === 200 && value.body.categoryStatus === 'COMPLETED',
+			(value) =>
+				value.status === 200 &&
+				value.body.categoryStatus === 'COMPLETED' &&
+				value.body.category === WEB_CATEGORY,
 		);
 
 		expect(response.body).toMatchObject({
@@ -178,7 +201,7 @@ describe('Bank transaction categorization integration', () => {
 			categorySource: 'AI',
 			categoryConfidence: String(WEB_CONFIDENCE),
 		});
-		expect(categorizeSpy).toHaveBeenCalledTimes(1);
+		expect(categorizeSpy).toHaveBeenCalledTimes(3);
 		expect(categorizeWithWebSearchSpy).toHaveBeenCalledTimes(1);
 		expect(categorizeWithWebSearchSpy.mock.calls[0][0]).toEqual([
 			{
@@ -203,6 +226,19 @@ describe('Bank transaction categorization integration', () => {
 	it('persists a provider failure through the real worker path without calling an external provider', async () => {
 		shouldFail = true;
 		try {
+			await bankTransactionRepository.update(CATEGORIZATION_E2E_FAILURE_TRANSACTION_ID, {
+				category: null,
+				categoryStatus: 'PENDING',
+				categorySource: null,
+				categoryConfidence: null,
+				categoryInputHash: null,
+				categoryAppliedInputHash: null,
+				categoryProvider: null,
+				categoryModel: null,
+				categoryPromptVersion: null,
+				categoryUpdatedAt: null,
+				categoryLastError: null,
+			});
 			const categorizationService = app.get(BankTransactionCategorizationService);
 			await categorizationService.enqueueForTransactions([CATEGORIZATION_E2E_FAILURE_TRANSACTION_ID]);
 

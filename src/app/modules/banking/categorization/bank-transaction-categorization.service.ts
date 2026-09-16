@@ -134,7 +134,7 @@ export class BankTransactionCategorizationService {
 		const batchIds = uniqueIds.slice(0, batchSize);
 		const remainingIds = uniqueIds.slice(batchSize);
 		if (remainingIds.length > 0) {
-			await this.enqueueForTransactionsInBatches(remainingIds, batchSize, webSearchBackfill);
+			await this.enqueueForTransactionsInBatches(remainingIds, batchSize, false);
 		}
 
 		const transactions = await this.repository.find({where: {id: In(batchIds)}});
@@ -169,7 +169,7 @@ export class BankTransactionCategorizationService {
 
 		for (let index = 0; index < claimed.length; index += BANK_TRANSACTION_CATEGORIZATION_BATCH_SIZE) {
 			const batch = claimed.slice(index, index + BANK_TRANSACTION_CATEGORIZATION_BATCH_SIZE);
-			await this.categorizeClaimedBatch(batch);
+			await this.categorizeClaimedBatch(batch, webSearchBackfill);
 		}
 	}
 
@@ -236,11 +236,14 @@ export class BankTransactionCategorizationService {
 			.andWhere('transaction."categoryPromptVersion" IS DISTINCT FROM :webSearchFailedPromptVersion', {
 				webSearchFailedPromptVersion: BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_FAILED_PROMPT_VERSION,
 			})
+			.orderBy('transaction.id', 'ASC')
+			.take(webSearchMaxTransactions)
 			.getRawMany<{id: string}>();
 
 		const transactionIds = rows
 			.map(({id}) => id)
-			.filter((id): id is string => typeof id === 'string' && id.length > 0);
+			.filter((id): id is string => typeof id === 'string' && id.length > 0)
+			.slice(0, webSearchMaxTransactions);
 		if (transactionIds.length === 0) return;
 
 		await this.enqueueForTransactionsInBatches(transactionIds, webSearchMaxTransactions, true);
@@ -273,7 +276,10 @@ export class BankTransactionCategorizationService {
 		return (result.affected ?? 0) > 0;
 	}
 
-	private async categorizeClaimedBatch(batch: readonly ClaimedTransaction[]): Promise<void> {
+	private async categorizeClaimedBatch(
+		batch: readonly ClaimedTransaction[],
+		webSearchBackfill: boolean,
+	): Promise<void> {
 		const inputs = batch.map(({input}) => input);
 		let standardResults: readonly BankTransactionCategorizationResult[];
 
@@ -289,7 +295,7 @@ export class BankTransactionCategorizationService {
 		const standardResultById = new Map(standardResults.map((result) => [result.correlationId, result]));
 		const webSearchMaxTransactions = this.configurationService.get('AI_CATEGORIZATION_WEB_SEARCH_MAX_TRANSACTIONS');
 		const webSearchEnabled = this.isWebSearchEnabled();
-		const webSearchCanRun = webSearchEnabled && webSearchMaxTransactions > 0;
+		const webSearchCanRun = webSearchBackfill && webSearchEnabled && webSearchMaxTransactions > 0;
 		const skippedWebSearchIds = new Set<string>();
 		const webCandidates = inputs
 			.filter((input) => standardResultById.get(input.correlationId)?.category === 'OTHER')
@@ -299,24 +305,22 @@ export class BankTransactionCategorizationService {
 				return webSearchInput;
 			})
 			.filter((input): input is NonNullable<typeof input> => input !== null);
+		const cappedWebCandidates = webCandidates.slice(0, webSearchMaxTransactions);
 
 		const webResults: BankTransactionCategorizationResult[] = [];
 		const failedWebSearchIds = new Set<string>();
-		if (webSearchCanRun && webCandidates.length > 0) {
-			for (let index = 0; index < webCandidates.length; index += webSearchMaxTransactions) {
-				const webSearchChunk = webCandidates.slice(index, index + webSearchMaxTransactions);
-				for (const webSearchInput of webSearchChunk) {
-					try {
-						const candidateResults = await this.provider.categorizeWithWebSearch(
-							[webSearchInput],
-							BANK_TRANSACTION_CATEGORY_DEFINITIONS,
-						);
-						this.assertCompleteResults([webSearchInput], candidateResults);
-						webResults.push(...candidateResults);
-					} catch (error) {
-						this.logger.warn(`Transaction web-search fallback failed: ${this.safeErrorName(error)}`);
-						failedWebSearchIds.add(webSearchInput.correlationId);
-					}
+		if (webSearchCanRun) {
+			for (const webSearchInput of cappedWebCandidates) {
+				try {
+					const candidateResults = await this.provider.categorizeWithWebSearch(
+						[webSearchInput],
+						BANK_TRANSACTION_CATEGORY_DEFINITIONS,
+					);
+					this.assertCompleteResults([webSearchInput], candidateResults);
+					webResults.push(...candidateResults);
+				} catch (error) {
+					this.logger.warn(`Transaction web-search fallback failed: ${this.safeErrorName(error)}`);
+					failedWebSearchIds.add(webSearchInput.correlationId);
 				}
 			}
 		}
@@ -526,9 +530,7 @@ export class BankTransactionCategorizationService {
 	}
 
 	private getCategorizationBatchSize(): number {
-		if (!this.isWebSearchEnabled()) return BANK_TRANSACTION_CATEGORIZATION_BATCH_SIZE;
-		const webSearchMaxTransactions = this.configurationService.get('AI_CATEGORIZATION_WEB_SEARCH_MAX_TRANSACTIONS');
-		return webSearchMaxTransactions > 0 ? webSearchMaxTransactions : BANK_TRANSACTION_CATEGORIZATION_BATCH_SIZE;
+		return BANK_TRANSACTION_CATEGORIZATION_BATCH_SIZE;
 	}
 
 	private isEnabled(): boolean {
