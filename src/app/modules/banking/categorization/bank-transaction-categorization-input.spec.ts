@@ -216,6 +216,30 @@ describe('bank transaction categorization input', () => {
 		},
 	);
 
+	it.each([
+		['unlabelled alphanumeric references', 'ACME invoice ABC123456', 'ACME'],
+		['short unlabelled mixed identifiers', 'ACME C12345', 'ACME'],
+		['URLs', 'ACME https://example.com/invoices/ABC123456', 'ACME'],
+		['domains', 'ACME merchant.example.com', 'ACME'],
+		['formatted phone identifiers', 'ACME +31 (0)6 1234 5678', 'ACME'],
+		['formatted account identifiers', 'ACME 1234-5678-9012', 'ACME'],
+		['underscore-delimited identifiers', 'ACME_123456', undefined],
+		['underscore-delimited IBAN', 'ACME NL91_ABNA_0417_1643_00', 'ACME'],
+		['short labeled numeric identifiers', 'ACME Order 123', 'ACME'],
+		['short labeled ID references', 'ACME ID ABC12', 'ACME'],
+		['short labeled invoice references', 'ACME invoice AB12', 'ACME'],
+		['underscore-separated identifiers', 'ACME order_ABC123', 'ACME'],
+		['short labeled mixed identifiers', 'ACME ref: ABC12', 'ACME'],
+		['ordinary numeric brand tokens', '3M Store', '3M Store'],
+		['ordinary hyphenated brand tokens', '7-Eleven', '7-Eleven'],
+	] as const)('removes %s from web-search merchant names', (_case, counterpartyName, expected) => {
+		const result = toBankTransactionCategorizationWebSearchInput(
+			toBankTransactionCategorizationInput(createTransaction({counterpartyName})),
+		);
+
+		expect(result?.merchantName).toBe(expected);
+	});
+
 	it('returns null when all merchant text is empty or redacted', () => {
 		const input = toBankTransactionCategorizationInput(
 			createTransaction({

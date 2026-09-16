@@ -12,9 +12,14 @@ import {
 const MAX_REMITTANCE_INFORMATION_LENGTH = 2_000;
 const MAX_WEB_SEARCH_MERCHANT_NAME_LENGTH = 160;
 const EMAIL_PATTERN = /\b[\w.+-]+@[\w.-]+\.[A-Z]{2,}\b/gi;
-const IBAN_PATTERN = /\b[A-Z]{2}\d{2}(?:[\s-]?[A-Z0-9]{2,4}){4,8}\b/gi;
+const URL_PATTERN = /\b(?:https?|ftp):\/\/[^\s]+|\bwww\.[^\s]+/gi;
+const DOMAIN_PATTERN = /\b(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[^\s]*)?\b/gi;
+const IBAN_PATTERN = /\b[A-Z]{2}[\s_-]?\d{2}(?:[\s_-]?[A-Z0-9]{2,4}){4,8}\b/gi;
 const LABELED_IDENTIFIER_PATTERN =
-	/\b(?:iban|account|acct|rekening|reference|ref|order|pas|nr)\s*[:#-]?\s*[A-Z0-9][A-Z0-9-]{3,}\b/gi;
+	/\b(?:iban|account|acct|rekening|reference|ref|order|invoice|identifier|id|pas|nr)\s*[:#=_-]?\s*(?=[A-Z0-9_-]*\d)[A-Z0-9_-]+\b/gi;
+const FORMATTED_NUMERIC_IDENTIFIER_PATTERN = /(?<![A-Z0-9])\+?\d[\d\s()./-]{5,}\d(?![A-Z0-9])/gi;
+const UNLABELED_ALPHANUMERIC_IDENTIFIER_PATTERN =
+	/\b(?=[A-Z0-9_-]*[A-Z])(?=[A-Z0-9_-]*\d[A-Z0-9_-]*\d[A-Z0-9_-]*\d)[A-Z0-9_-]+\b/gi;
 const LONG_DIGIT_PATTERN = /\b\d{4,}\b/g;
 
 type CategorizationHashInput = Omit<BankTransactionCategorizationInput, 'correlationId'>;
@@ -142,9 +147,13 @@ function sanitizeWebSearchMerchantName(value: string | null | undefined): string
 	if (!normalized) return null;
 
 	const sanitized = normalized
+		.replace(URL_PATTERN, ' ')
 		.replace(EMAIL_PATTERN, ' ')
+		.replace(DOMAIN_PATTERN, ' ')
 		.replace(IBAN_PATTERN, ' ')
 		.replace(LABELED_IDENTIFIER_PATTERN, ' ')
+		.replace(FORMATTED_NUMERIC_IDENTIFIER_PATTERN, ' ')
+		.replace(UNLABELED_ALPHANUMERIC_IDENTIFIER_PATTERN, ' ')
 		.replace(LONG_DIGIT_PATTERN, ' ')
 		.replace(/[,:;|]+/g, ' ')
 		.replace(/\s+/g, ' ')

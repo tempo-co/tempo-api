@@ -122,7 +122,10 @@ const WEB_SEARCH_FOLLOW_UP_INSTRUCTIONS = [
 ].join(' ');
 
 type OpenAiResponsesClient = Pick<OpenAI, 'responses'>;
-type OpenAiResponseRequest = Parameters<OpenAiResponsesClient['responses']['create']>[0];
+type OpenAiResponseRequest = Parameters<OpenAiResponsesClient['responses']['create']>[0] & {
+	/** Supported by the Responses API; absent from the pinned SDK request type. */
+	max_tool_calls?: number | null;
+};
 type CategorizationClassification = z.infer<typeof categorizationClassificationSchema>;
 type WebSearchAttemptClassification = z.infer<typeof webSearchAttemptClassificationSchema>;
 type CategorizationResponse<T extends CategorizationClassification> = {classifications: T[]};
@@ -185,50 +188,41 @@ export class OpenAiBankTransactionCategorizationProvider implements BankTransact
 		categories: readonly BankTransactionCategoryDefinition[],
 	): Promise<readonly BankTransactionCategorizationResult[]> {
 		this.assertUniqueCorrelationIds(transactions);
-		const requestTransactions = transactions.map((transaction, index) =>
-			this.toWebSearchRequestTransaction(transaction, String(index)),
-		);
-		const firstResults = await this.requestWebSearchCategorization(
-			this.createWebSearchRequest(WEB_SEARCH_CATEGORIZATION_INSTRUCTIONS, categories, requestTransactions),
-			requestTransactions,
-			transactions,
-		);
-		const firstResultsById = new Map(firstResults.map((result) => [result.correlationId, result] as const));
-		const followUpTransactions = transactions.filter(
-			(transaction) => firstResultsById.get(transaction.correlationId)?.needsFollowUp === true,
-		);
+		const results: BankTransactionCategorizationResult[] = [];
 
-		if (followUpTransactions.length === 0) {
-			return firstResults.map((result) => this.toCategorizationResult(result));
-		}
+		for (const transaction of transactions) {
+			const requestTransaction = this.toWebSearchRequestTransaction(transaction, '0');
+			const firstResults = await this.requestWebSearchCategorization(
+				this.createWebSearchRequest(WEB_SEARCH_CATEGORIZATION_INSTRUCTIONS, categories, [requestTransaction]),
+				[requestTransaction],
+				[transaction],
+			);
+			const firstResult = firstResults[0];
+			if (!firstResult) throw this.invalidResponseError();
 
-		const followUpRequestTransactions = followUpTransactions.map((transaction, index) => {
-			const initialResult = firstResultsById.get(transaction.correlationId);
-			if (!initialResult) throw this.invalidResponseError();
+			if (!firstResult.needsFollowUp) {
+				results.push(this.toCategorizationResult(firstResult));
+				continue;
+			}
 
-			return {
-				...this.toWebSearchRequestTransaction(transaction, String(index)),
-				initialCategory: initialResult.category,
-				initialConfidence: initialResult.confidence,
+			const followUpRequestTransaction = {
+				...requestTransaction,
+				initialCategory: firstResult.category,
+				initialConfidence: firstResult.confidence,
 			};
-		});
-		const followUpResults = await this.requestWebSearchCategorization(
-			this.createWebSearchRequest(WEB_SEARCH_FOLLOW_UP_INSTRUCTIONS, categories, followUpRequestTransactions),
-			followUpRequestTransactions,
-			followUpTransactions,
-		);
-		const finalResults = new Map(
-			firstResults.map((result) => [result.correlationId, this.toCategorizationResult(result)] as const),
-		);
-		for (const result of followUpResults) {
-			finalResults.set(result.correlationId, this.toCategorizationResult(result));
+			const followUpResults = await this.requestWebSearchCategorization(
+				this.createWebSearchRequest(WEB_SEARCH_FOLLOW_UP_INSTRUCTIONS, categories, [
+					followUpRequestTransaction,
+				]),
+				[followUpRequestTransaction],
+				[transaction],
+			);
+			const followUpResult = followUpResults[0];
+			if (!followUpResult) throw this.invalidResponseError();
+			results.push(this.toCategorizationResult(followUpResult));
 		}
 
-		return transactions.map(({correlationId}) => {
-			const result = finalResults.get(correlationId);
-			if (!result) throw this.invalidResponseError();
-			return result;
-		});
+		return results;
 	}
 
 	private async requestCategorization(
@@ -325,6 +319,7 @@ export class OpenAiBankTransactionCategorizationProvider implements BankTransact
 				},
 			],
 			tool_choice: 'required',
+			max_tool_calls: 1,
 			parallel_tool_calls: false,
 			store: false,
 			text: {
@@ -349,8 +344,12 @@ export class OpenAiBankTransactionCategorizationProvider implements BankTransact
 			direction: transaction.direction,
 			transactionType: transaction.transactionType,
 			merchantName: transaction.merchantName,
-			merchantCategoryCode: transaction.merchantCategoryCode,
+			merchantCategoryCode: this.toSafeMerchantCategoryCode(transaction.merchantCategoryCode),
 		};
+	}
+
+	private toSafeMerchantCategoryCode(value: string | null): string | null {
+		return value !== null && /^\d{4}$/.test(value) ? value : null;
 	}
 
 	private toCategorizationResult(result: CategorizationClassification): BankTransactionCategorizationResult {

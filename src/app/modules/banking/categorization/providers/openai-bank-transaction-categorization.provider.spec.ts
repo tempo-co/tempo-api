@@ -134,6 +134,7 @@ describe('OpenAiBankTransactionCategorizationProvider', () => {
 			model: 'configured-model',
 			reasoning: {effort: 'low'},
 			tool_choice: 'required',
+			max_tool_calls: 1,
 			parallel_tool_calls: false,
 			store: false,
 		});
@@ -168,7 +169,11 @@ describe('OpenAiBankTransactionCategorizationProvider', () => {
 			.mockResolvedValueOnce({
 				output_text: webSearchOutput([
 					{correlationId: '0', category: 'FOOD_AND_DRINK', confidence: 0.93, needsFollowUp: false},
-					{correlationId: '1', category: 'OTHER', confidence: 0.4, needsFollowUp: true},
+				]),
+			})
+			.mockResolvedValueOnce({
+				output_text: webSearchOutput([
+					{correlationId: '0', category: 'OTHER', confidence: 0.4, needsFollowUp: true},
 				]),
 			})
 			.mockResolvedValueOnce({
@@ -185,8 +190,9 @@ describe('OpenAiBankTransactionCategorizationProvider', () => {
 			{correlationId: 'transaction-2', category: 'TRANSPORTATION', confidence: 0.88},
 		]);
 
-		expect(responsesCreate).toHaveBeenCalledTimes(2);
-		const followUpRequest = responsesCreate.mock.calls[1][0];
+		expect(responsesCreate).toHaveBeenCalledTimes(3);
+		expect(responsesCreate.mock.calls.every(([request]) => request.max_tool_calls === 1)).toBe(true);
+		const followUpRequest = responsesCreate.mock.calls[2][0];
 		expect(followUpRequest.instructions).toContain('Perform at most one single follow-up lookup per transaction');
 		expect(JSON.parse(followUpRequest.input).transactions).toEqual([
 			{
@@ -220,6 +226,23 @@ describe('OpenAiBankTransactionCategorizationProvider', () => {
 			),
 		).resolves.toEqual([{correlationId: 'transaction-1', category: 'OTHER', confidence: 0.2}]);
 		expect(responsesCreate).toHaveBeenCalledTimes(2);
+	});
+
+	it('drops invalid merchant category codes from web-search requests', async () => {
+		const {provider, responsesCreate} = createProvider();
+		responsesCreate.mockResolvedValue({
+			output_text: webSearchOutput([
+				{correlationId: '0', category: 'FOOD_AND_DRINK', confidence: 0.93, needsFollowUp: false},
+			]),
+		});
+
+		await provider.categorizeWithWebSearch(
+			[{...createWebSearchInput('transaction-1'), merchantCategoryCode: 'not-an-mcc'}],
+			BANK_TRANSACTION_CATEGORY_DEFINITIONS,
+		);
+
+		const sentInput = JSON.parse(responsesCreate.mock.calls[0][0].input);
+		expect(sentInput.transactions[0].merchantCategoryCode).toBeNull();
 	});
 
 	it('keeps a clear OTHER result without a follow-up lookup', async () => {
