@@ -104,6 +104,9 @@ describe('OpenAiBankTransactionCategorizationProvider', () => {
 			'A clearly specialized merchant can support a category from merchant identity alone when its primary business maps directly to that category.',
 		);
 		expect(request.instructions).toContain(
+			'Do not treat missing merchantCategoryCode or counterpartyName as evidence for OTHER',
+		);
+		expect(request.instructions).not.toContain(
 			'For a card payment with no merchantCategoryCode and no counterpartyName, do not guess a specific category',
 		);
 		expect(request.input).not.toContain('test-secret-api-key');
