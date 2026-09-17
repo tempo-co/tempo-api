@@ -258,6 +258,26 @@ describe('BankTransactionCategorizationService worker', () => {
 		expect(other.categoryPromptVersion).toBe(BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_PROMPT_VERSION);
 	});
 
+	it('passes the transaction ASPSP when normalizing provider-specific codes', async () => {
+		const transaction = createTransaction({
+			id: 'numeric-card-transaction',
+			transactionType: 'OTHER',
+			bankTransactionCode: '426',
+			bankTransactionSubCode: null,
+			bankAccount: {bankConnection: {aspspName: 'ABN AMRO'}} as never,
+		});
+		const {service, provider} = createService({
+			rows: [transaction],
+			providerResult: [{correlationId: transaction.id, category: 'OTHER', confidence: 0.5}],
+		});
+
+		await service.processTransactionJob([transaction.id]);
+
+		expect(provider.categorize.mock.calls[0][0]).toEqual([
+			expect.objectContaining({correlationId: transaction.id, transactionType: 'CARD_PAYMENT'}),
+		]);
+	});
+
 	it('uses one web-search fallback for OTHER results in ordinary jobs', async () => {
 		const transaction = createTransaction({id: 'ordinary-other-transaction'});
 		const {service, provider} = createService({
