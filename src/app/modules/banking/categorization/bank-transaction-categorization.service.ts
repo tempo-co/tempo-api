@@ -30,8 +30,10 @@ import {
 	BankTransactionCategorizationProviderError,
 } from './bank-transaction-categorization.provider';
 import {
+	BANK_TRANSACTION_CATEGORIZATION_SEARCH_EVIDENCE_TYPES,
 	BankTransactionCategorizationInput,
 	BankTransactionCategorizationResult,
+	BankTransactionCategorizationSearchTrace,
 } from './bank-transaction-categorization.types';
 import {BANK_TRANSACTION_CATEGORIES, BANK_TRANSACTION_CATEGORY_DEFINITIONS} from './bank-transaction-category';
 
@@ -54,6 +56,7 @@ type CategorizationUpdate = {
 	categoryProvider?: string | null;
 	categoryModel?: string | null;
 	categoryPromptVersion?: string | null;
+	categorySearchTrace?: BankTransactionCategorizationSearchTrace | null;
 	categoryUpdatedAt?: Date;
 	categoryLastError?: string | null;
 };
@@ -69,6 +72,7 @@ const CATEGORIZATION_RESET_VALUES = {
 	categoryProvider: null,
 	categoryModel: null,
 	categoryPromptVersion: null,
+	categorySearchTrace: null,
 	categoryLastError: null,
 } as const;
 
@@ -213,12 +217,16 @@ export class BankTransactionCategorizationService {
 			return;
 		}
 
-		const standardResultById = new Map(standardResults.map((result) => [result.correlationId, result]));
+		const inputById = new Map(inputs.map((input) => [input.correlationId, input]));
+		const normalizedStandardResults = standardResults.map((result) =>
+			this.normalizeStandardResult(inputById.get(result.correlationId), result),
+		);
+		const standardResultById = new Map(normalizedStandardResults.map((result) => [result.correlationId, result]));
 		const webSearchEnabled = this.isWebSearchEnabled();
 		const webSearchCanRun = webSearchEnabled;
 		const skippedWebSearchIds = new Set<string>();
 		const webCandidates = inputs
-			.filter((input) => standardResultById.get(input.correlationId)?.category === 'OTHER')
+			.filter((input) => webSearchCanRun && standardResultById.get(input.correlationId)?.category === 'OTHER')
 			.map((input) => {
 				const webSearchInput = toBankTransactionCategorizationWebSearchInput(input);
 				if (webSearchCanRun && webSearchInput === null) skippedWebSearchIds.add(input.correlationId);
@@ -236,7 +244,7 @@ export class BankTransactionCategorizationService {
 						BANK_TRANSACTION_CATEGORY_DEFINITIONS,
 					);
 					this.assertCompleteResults([webSearchInput], candidateResults);
-					webResults.push(...candidateResults);
+					webResults.push(...candidateResults.map((result) => this.normalizeWebSearchResult(result)));
 				} catch (error) {
 					this.logger.warn(`Transaction web-search fallback failed: ${this.safeErrorName(error)}`);
 					failedWebSearchIds.add(webSearchInput.correlationId);
@@ -244,7 +252,7 @@ export class BankTransactionCategorizationService {
 			}
 		}
 
-		const resultById = new Map(standardResults.map((result) => [result.correlationId, result]));
+		const resultById = new Map(normalizedStandardResults.map((result) => [result.correlationId, result]));
 		for (const result of webResults) resultById.set(result.correlationId, result);
 		const webResultIds = new Set(webResults.map(({correlationId}) => correlationId));
 		for (const claimed of batch) {
@@ -269,6 +277,7 @@ export class BankTransactionCategorizationService {
 					categoryProvider: this.configurationService.get('AI_CATEGORIZATION_PROVIDER'),
 					categoryModel: this.configurationService.get('AI_CATEGORIZATION_MODEL'),
 					categoryPromptVersion: promptVersion,
+					categorySearchTrace: result.searchTrace ?? null,
 					categoryUpdatedAt: new Date(),
 					categoryLastError: null,
 				},
@@ -284,6 +293,7 @@ export class BankTransactionCategorizationService {
 					categoryProvider: this.configurationService.get('AI_CATEGORIZATION_PROVIDER'),
 					categoryModel: this.configurationService.get('AI_CATEGORIZATION_MODEL'),
 					categoryPromptVersion: promptVersion,
+					categorySearchTrace: result.searchTrace ?? null,
 					categoryLastError: null,
 				});
 		}
@@ -415,11 +425,66 @@ export class BankTransactionCategorizationService {
 					!(BANK_TRANSACTION_CATEGORIES as readonly string[]).includes(result.category) ||
 					!Number.isFinite(result.confidence) ||
 					result.confidence < 0 ||
-					result.confidence > 1,
+					result.confidence > 1 ||
+					!this.isValidSearchTrace(result.searchTrace),
 			)
 		) {
 			throw new BankTransactionCategorizationProviderError('Invalid categorization provider result.', false);
 		}
+	}
+
+	private normalizeStandardResult(
+		input: BankTransactionCategorizationInput | undefined,
+		result: BankTransactionCategorizationResult,
+	): BankTransactionCategorizationResult {
+		if (
+			input &&
+			result.category === 'TRANSPORTATION' &&
+			input.transactionType === 'CARD_PAYMENT' &&
+			!this.isValidMerchantCategoryCode(input.merchantCategoryCode) &&
+			input.counterpartyName === null
+		) {
+			return {...result, category: 'OTHER', confidence: 0};
+		}
+		return result;
+	}
+
+	private normalizeWebSearchResult(result: BankTransactionCategorizationResult): BankTransactionCategorizationResult {
+		const evidenceType = result.searchTrace?.evidenceType;
+		if (result.category === 'TRANSPORTATION' && evidenceType !== 'PURCHASE_CONTEXT' && evidenceType !== 'MCC') {
+			return {...result, category: 'OTHER', confidence: 0};
+		}
+		return result;
+	}
+
+	private isValidMerchantCategoryCode(value: string | null): boolean {
+		return value !== null && /^\d{4}$/.test(value);
+	}
+
+	private isValidSearchTrace(trace: BankTransactionCategorizationSearchTrace | undefined): boolean {
+		if (trace === undefined) return true;
+		return (
+			Array.isArray(trace.queries) &&
+			trace.queries.length <= 1 &&
+			trace.queries.every(
+				(query) =>
+					typeof query === 'string' &&
+					query.length > 0 &&
+					query.length <= 240 &&
+					!/[\u0000-\u001f\u007f]/.test(query),
+			) &&
+			Array.isArray(trace.sourceDomains) &&
+			trace.sourceDomains.length <= 20 &&
+			trace.sourceDomains.every((domain) => this.isValidSearchTraceDomain(domain)) &&
+			(BANK_TRANSACTION_CATEGORIZATION_SEARCH_EVIDENCE_TYPES as readonly string[]).includes(trace.evidenceType)
+		);
+	}
+
+	private isValidSearchTraceDomain(domain: unknown): boolean {
+		return (
+			typeof domain === 'string' &&
+			/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i.test(domain)
+		);
 	}
 
 	private isClaimable(transaction: BankTransaction): boolean {

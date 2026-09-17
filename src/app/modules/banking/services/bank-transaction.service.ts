@@ -176,6 +176,7 @@ export class BankTransactionService {
 			categoryProvider: null,
 			categoryModel: null,
 			categoryPromptVersion: null,
+			categorySearchTrace: null,
 			categoryUpdatedAt: new Date(),
 			categoryLastError: null,
 		};

@@ -479,6 +479,7 @@ export class BankingSyncService {
 					categoryProvider: null,
 					categoryModel: null,
 					categoryPromptVersion: null,
+					categorySearchTrace: null,
 					categoryUpdatedAt: null,
 					categoryLastError: null,
 				})

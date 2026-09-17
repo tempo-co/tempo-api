@@ -165,6 +165,12 @@ describe('bank transaction categorization input', () => {
 		expect(input.remittanceInformation).toBe('IBAN [REDACTED] contact [REDACTED] [REDACTED] [REDACTED]');
 	});
 
+	it('treats malformed merchant category codes as absent evidence', () => {
+		const input = toBankTransactionCategorizationInput(createTransaction({merchantCategoryCode: 'not-an-mcc'}));
+
+		expect(input.merchantCategoryCode).toBeNull();
+	});
+
 	it('keeps only compact transaction context and the selected merchant name', () => {
 		const input = toBankTransactionCategorizationInput(
 			createTransaction({
@@ -173,7 +179,7 @@ describe('bank transaction categorization input', () => {
 				creditDebitIndicator: 'DBIT',
 				bankTransactionCode: null,
 				bankTransactionSubCode: null,
-				counterpartyName: 'Jaemy VOF via Stichting',
+				counterpartyName: 'Example Merchant via Payment Service',
 				merchantCategoryCode: null,
 				description: 'SEPA iDEAL IBAN: NL00TEST0123456789 Order 123456789',
 				remittanceInformation: 'Order 123456789',
@@ -188,7 +194,9 @@ describe('bank transaction categorization input', () => {
 			currency: 'EUR',
 			direction: 'EXPENSE',
 			transactionType: 'OTHER',
-			merchantName: 'Jaemy VOF via Stichting',
+			merchantName: 'Example Merchant via Payment Service',
+			merchantLocation: null,
+			searchQuery: 'Example Merchant via Payment Service',
 			merchantCategoryCode: null,
 		});
 
@@ -208,9 +216,99 @@ describe('bank transaction categorization input', () => {
 			}),
 		);
 
-		expect(toBankTransactionCategorizationWebSearchInput(input)?.merchantName).toBe(
-			'Example Coffee Shop Sampletown',
+		expect(toBankTransactionCategorizationWebSearchInput(input)).toMatchObject({
+			merchantName: 'Example Coffee Shop',
+			merchantLocation: 'Sampletown',
+			searchQuery: 'Example Coffee Shop Sampletown',
+		});
+	});
+
+	it('separates the merchant and location from a noisy Example Vending Cafe card description', () => {
+		const input = toBankTransactionCategorizationInput(
+			createTransaction({
+				counterpartyName: null,
+				description: 'BEA, Google Pay Example Vending Cafe,PAS999 NR:TEST12345, 04.09.26/19:00 TESTVILLE',
+			}),
 		);
+
+		expect(toBankTransactionCategorizationWebSearchInput(input)).toMatchObject({
+			merchantName: 'Example Vending Cafe',
+			merchantLocation: 'TESTVILLE',
+			searchQuery: 'Example Vending Cafe TESTVILLE',
+		});
+	});
+
+	it('keeps the location when a counterparty name is present', () => {
+		const input = toBankTransactionCategorizationInput(
+			createTransaction({
+				counterpartyName: 'Example Vending Cafe',
+				description: 'BEA, Google Pay Example Vending Cafe,PAS999 NR:TEST12345, 04.09.26/19:00 TESTVILLE',
+			}),
+		);
+
+		expect(toBankTransactionCategorizationWebSearchInput(input)).toMatchObject({
+			merchantName: 'Example Vending Cafe',
+			merchantLocation: 'TESTVILLE',
+			searchQuery: 'Example Vending Cafe TESTVILLE',
+		});
+	});
+
+	it('separates the location from the Example Vending Cafe - Lobby card merchant', () => {
+		const input = toBankTransactionCategorizationInput(
+			createTransaction({
+				counterpartyName: null,
+				description:
+					'BEA, Google Pay Example Vending Cafe - Lobby,PAS999 NR:TEST12345, 04.09.26/19:00 TESTVILLE',
+			}),
+		);
+
+		expect(toBankTransactionCategorizationWebSearchInput(input)).toMatchObject({
+			merchantName: 'Example Vending Cafe - Lobby',
+			merchantLocation: 'TESTVILLE',
+			searchQuery: 'Example Vending Cafe - Lobby TESTVILLE',
+		});
+	});
+
+	it('uses a bare merchant as the query when no location is available', () => {
+		const input = toBankTransactionCategorizationInput(
+			createTransaction({counterpartyName: 'Example Merchant', description: null}),
+		);
+
+		expect(toBankTransactionCategorizationWebSearchInput(input)).toMatchObject({
+			merchantName: 'Example Merchant',
+			merchantLocation: null,
+			searchQuery: 'Example Merchant',
+		});
+	});
+
+	it('preserves a payment-domain merchant identity for web search', () => {
+		const input = toBankTransactionCategorizationInput(
+			createTransaction({
+				counterpartyName: null,
+				description: 'Www.payment.examplefitness',
+				bankTransactionDescription: null,
+			}),
+		);
+
+		expect(toBankTransactionCategorizationWebSearchInput(input)).toMatchObject({
+			merchantName: 'examplefitness',
+			merchantLocation: null,
+			searchQuery: 'examplefitness',
+		});
+	});
+
+	it('does not preserve numeric payment-domain identifiers for web search', () => {
+		const input = toBankTransactionCategorizationInput(
+			createTransaction({
+				counterpartyName: null,
+				description: 'Www.payment.123456789',
+				bankTransactionDescription: null,
+			}),
+		);
+
+		const result = toBankTransactionCategorizationWebSearchInput(input);
+
+		expect(result).toBeNull();
 	});
 
 	it('prefers a nonblank counterparty over a noisy card description', () => {
@@ -242,12 +340,12 @@ describe('bank transaction categorization input', () => {
 			const result = toBankTransactionCategorizationWebSearchInput(
 				toBankTransactionCategorizationInput(
 					createTransaction({
-						counterpartyName: `${paymentPrefix} ACME email@example.com IBAN NL00TEST0123456789 Order 123456789 NS Almelo 1234`,
+						counterpartyName: `${paymentPrefix} ACME email@example.com IBAN NL00TEST0123456789 Order 123456789 Transitville 1234`,
 					}),
 				),
 			);
 
-			expect(result?.merchantName).toBe(`${paymentPrefix} ACME NS Almelo`);
+			expect(result?.merchantName).toBe(`${paymentPrefix} ACME Transitville`);
 			expect(JSON.stringify(result)).not.toMatch(/email@example\.com|NL00TEST0123456789|123456789|1234/);
 		},
 	);

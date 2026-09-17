@@ -12,6 +12,7 @@ import {
 
 const MAX_REMITTANCE_INFORMATION_LENGTH = 2_000;
 const MAX_WEB_SEARCH_MERCHANT_NAME_LENGTH = 160;
+const MAX_WEB_SEARCH_QUERY_LENGTH = 240;
 const EMAIL_PATTERN = /\b[\w.+-]+@[\w.-]+\.[A-Z]{2,}\b/gi;
 const URL_PATTERN = /\b(?:https?|ftp):\/\/[^\s]+|\bwww\.[^\s]+/gi;
 const DOMAIN_PATTERN = /\b(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[^\s]*)?\b/gi;
@@ -69,7 +70,7 @@ export function toBankTransactionCategorizationInput(
 		description: normalizeNullableText(transaction.description),
 		counterpartyName: normalizeNullableText(transaction.counterpartyName),
 		bankTransactionDescription,
-		merchantCategoryCode: normalizeNullableText(transaction.merchantCategoryCode),
+		merchantCategoryCode: normalizeMerchantCategoryCode(transaction.merchantCategoryCode),
 		remittanceInformation: sanitizeRemittanceInformation(transaction.remittanceInformation),
 	};
 }
@@ -77,9 +78,15 @@ export function toBankTransactionCategorizationInput(
 export function toBankTransactionCategorizationWebSearchInput(
 	input: BankTransactionCategorizationInput,
 ): BankTransactionCategorizationWebSearchInput | null {
-	const merchantText = getWebSearchMerchantText(input);
-	const merchantName = sanitizeWebSearchMerchantName(merchantText);
+	const merchantDetails = getWebSearchMerchantDetails(input);
+	const merchantName = sanitizeWebSearchMerchantName(merchantDetails.merchantName);
 	if (!merchantName) return null;
+	const merchantLocation = sanitizeWebSearchMerchantName(merchantDetails.merchantLocation);
+	const searchTerms = [
+		merchantName,
+		merchantLocation && !containsSearchTerm(merchantName, merchantLocation) ? merchantLocation : null,
+	].filter(Boolean);
+	const searchQuery = truncate(searchTerms.join(' '), MAX_WEB_SEARCH_QUERY_LENGTH) ?? merchantName;
 
 	return {
 		correlationId: input.correlationId,
@@ -88,22 +95,25 @@ export function toBankTransactionCategorizationWebSearchInput(
 		direction: input.direction,
 		transactionType: input.transactionType,
 		merchantName,
+		merchantLocation,
+		searchQuery,
 		merchantCategoryCode: input.merchantCategoryCode,
 	};
 }
 
-function getWebSearchMerchantText(input: BankTransactionCategorizationInput): string | null {
+function getWebSearchMerchantDetails(input: BankTransactionCategorizationInput): {
+	merchantName: string | null;
+	merchantLocation: string | null;
+} {
 	const counterpartyName = normalizeNullableText(input.counterpartyName);
-	if (counterpartyName) return counterpartyName;
-
 	const description = normalizeNullableText(input.description);
-	if (description) {
-		const merchantName = getBankTransactionDisplayDescription({description, counterpartyName: null});
-		const location = description.match(CARD_LOCATION_PATTERN)?.[1]?.trim();
-		return [merchantName, location].filter(Boolean).join(', ');
-	}
+	const merchantName =
+		counterpartyName ??
+		(description ? getBankTransactionDisplayDescription({description, counterpartyName: null}) : null) ??
+		normalizeNullableText(input.bankTransactionDescription);
+	const merchantLocation = description?.match(CARD_LOCATION_PATTERN)?.[1]?.trim() ?? null;
 
-	return normalizeNullableText(input.bankTransactionDescription);
+	return {merchantName, merchantLocation};
 }
 
 export function createBankTransactionCategorizationInputHash(
@@ -160,6 +170,11 @@ function sanitizeWebSearchMerchantName(value: string | null | undefined): string
 	const normalized = normalizeNullableText(value);
 	if (!normalized) return null;
 
+	const paymentDomainMerchantName = normalized.match(
+		/^(?:https?:\/\/)?(?:www\.)?(?:payment|pay|checkout)\.([a-z][a-z-]*(?:\.[a-z][a-z-]*)*)$/i,
+	)?.[1];
+	if (paymentDomainMerchantName) return truncate(paymentDomainMerchantName, MAX_WEB_SEARCH_MERCHANT_NAME_LENGTH);
+
 	const sanitized = normalized
 		.replace(URL_PATTERN, ' ')
 		.replace(EMAIL_PATTERN, ' ')
@@ -176,6 +191,11 @@ function sanitizeWebSearchMerchantName(value: string | null | undefined): string
 	return sanitized.length > 0 ? truncate(sanitized, MAX_WEB_SEARCH_MERCHANT_NAME_LENGTH) : null;
 }
 
+function containsSearchTerm(value: string, term: string): boolean {
+	const escapedTerm = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+	return new RegExp(`(?:^|\\s)${escapedTerm}(?:$|\\s)`, 'i').test(value);
+}
+
 function normalizeNullableText(value: string | null | undefined): string | null {
 	const normalized = value?.trim() ?? '';
 	return normalized.length > 0 ? normalized : null;
@@ -188,6 +208,11 @@ function normalizeRequiredText(value: string | null | undefined): string {
 function normalizeUppercase(value: string | null | undefined): string | null {
 	const normalized = normalizeNullableText(value);
 	return normalized?.toUpperCase() ?? null;
+}
+
+function normalizeMerchantCategoryCode(value: string | null | undefined): string | null {
+	const normalized = normalizeNullableText(value);
+	return normalized !== null && /^\d{4}$/.test(normalized) ? normalized : null;
 }
 
 function normalizeAmountForHash(value: string): string {
