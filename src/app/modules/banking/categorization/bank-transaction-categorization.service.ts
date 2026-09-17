@@ -226,7 +226,10 @@ export class BankTransactionCategorizationService {
 		const webSearchEnabled = this.isWebSearchEnabled();
 		const skippedWebSearchIds = new Set<string>();
 		const webCandidates = inputs
-			.filter((input) => webSearchEnabled && standardResultById.get(input.correlationId)?.category === 'OTHER')
+			.filter((input) => {
+				const category = standardResultById.get(input.correlationId)?.category;
+				return webSearchEnabled && (category === 'OTHER' || category === null);
+			})
 			.map((input) => {
 				const webSearchInput = toBankTransactionCategorizationWebSearchInput(input);
 				if (webSearchEnabled && webSearchInput === null) skippedWebSearchIds.add(input.correlationId);
@@ -266,9 +269,9 @@ export class BankTransactionCategorizationService {
 						: BANK_TRANSACTION_CATEGORIZATION_PROMPT_VERSION;
 			const completionValues = {
 				category: result.category,
-				categoryStatus: 'COMPLETED',
+				categoryStatus: result.category === null ? 'NEEDS_REVIEW' : 'COMPLETED',
 				categorySource: 'AI',
-				categoryConfidence: String(result.confidence),
+				categoryConfidence: result.category === null ? null : String(result.confidence),
 				categoryAppliedInputHash: claimed.inputHash,
 				categoryProvider: this.configurationService.get('AI_CATEGORIZATION_PROVIDER'),
 				categoryModel: this.configurationService.get('AI_CATEGORIZATION_MODEL'),
@@ -412,7 +415,8 @@ export class BankTransactionCategorizationService {
 			inputIds.some((id) => !resultIdSet.has(id)) ||
 			results.some(
 				(result) =>
-					!(BANK_TRANSACTION_CATEGORIES as readonly string[]).includes(result.category) ||
+					(result.category !== null &&
+						!(BANK_TRANSACTION_CATEGORIES as readonly string[]).includes(result.category)) ||
 					!Number.isFinite(result.confidence) ||
 					result.confidence < 0 ||
 					result.confidence > 1 ||
@@ -434,15 +438,19 @@ export class BankTransactionCategorizationService {
 			!normalizeMerchantCategoryCode(input.merchantCategoryCode) &&
 			input.counterpartyName === null
 		) {
-			return {...result, category: 'OTHER', confidence: 0};
+			return {...result, category: null, confidence: 0};
 		}
 		return result;
 	}
 
 	private normalizeWebSearchResult(result: BankTransactionCategorizationResult): BankTransactionCategorizationResult {
 		const evidenceType = result.searchTrace?.evidenceType;
-		if (result.category === 'TRANSPORTATION' && evidenceType !== 'PURCHASE_CONTEXT' && evidenceType !== 'MCC') {
-			return {...result, category: 'OTHER', confidence: 0};
+		if (
+			evidenceType === 'INSUFFICIENT' ||
+			evidenceType === 'CONFLICTING' ||
+			(result.category === 'TRANSPORTATION' && evidenceType !== 'PURCHASE_CONTEXT' && evidenceType !== 'MCC')
+		) {
+			return {...result, category: null, confidence: 0};
 		}
 		return result;
 	}

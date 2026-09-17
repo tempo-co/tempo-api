@@ -38,6 +38,7 @@ describe('BankTransactionController', () => {
 	let fixtureBankAccount: BankAccount;
 	let fixtureTransaction: BankTransaction;
 	let fixtureGroceriesTransaction: BankTransaction;
+	let fixtureReviewTransaction: BankTransaction;
 	let categorizeSpy: jest.SpyInstance;
 	let categorizeWithWebSearchSpy: jest.SpyInstance;
 
@@ -189,6 +190,7 @@ describe('BankTransactionController', () => {
 		]);
 		fixtureTransaction = transactions[0];
 		fixtureGroceriesTransaction = transactions[1];
+		fixtureReviewTransaction = transactions[2];
 	});
 
 	afterAll(async () => {
@@ -461,6 +463,18 @@ describe('BankTransactionController', () => {
 			{id: fixtureGroceriesTransaction.id},
 			{category: 'SHOPPING', categoryStatus: 'COMPLETED', categorySource: 'AI'},
 		);
+		await bankTransactionRepository.update(
+			{id: fixtureReviewTransaction.id},
+			{
+				category: 'OTHER',
+				categoryStatus: 'COMPLETED',
+				categorySource: 'AI',
+				categoryConfidence: '0.980',
+				categoryPromptVersion: 'bank-transaction-categorization-web-search-v2',
+				counterpartyName: null,
+				merchantCategoryCode: null,
+			},
+		);
 
 		try {
 			const uncategorizedResponse = await verifiedAgent
@@ -468,22 +482,36 @@ describe('BankTransactionController', () => {
 				.query({'filter[categories][]': 'UNCATEGORIZED'})
 				.expect(200);
 
-			expect(uncategorizedResponse.body.total).toBe(2);
+			expect(uncategorizedResponse.body.total).toBe(1);
 			expect(
 				uncategorizedResponse.body.transactions.every(
 					({category}: {category: string | null}) => category === null,
 				),
 			).toBe(true);
 
+			const needsReviewResponse = await verifiedAgent
+				.get('/bank-transactions')
+				.query({'filter[categories][]': 'NEEDS_REVIEW'})
+				.expect(200);
+
+			expect(needsReviewResponse.body.total).toBe(1);
+			expect(needsReviewResponse.body.transactions[0]).toMatchObject({
+				description: 'Salary',
+				category: null,
+				categoryStatus: 'NEEDS_REVIEW',
+				categorySource: 'AI',
+				categoryConfidence: null,
+			});
+
 			const mixedCategoryResponse = await verifiedAgent
 				.get('/bank-transactions')
 				.query({'filter[categories][]': ['FOOD_AND_DRINK', 'UNCATEGORIZED']})
 				.expect(200);
 
-			expect(mixedCategoryResponse.body.total).toBe(3);
+			expect(mixedCategoryResponse.body.total).toBe(2);
 			expect(
 				mixedCategoryResponse.body.transactions.map(({description}: {description: string}) => description),
-			).toEqual(['Coffee shop', 'Salary', 'Transfer']);
+			).toEqual(['Coffee shop', 'Transfer']);
 
 			const manualResponse = await verifiedAgent
 				.get('/bank-transactions')
@@ -498,8 +526,11 @@ describe('BankTransactionController', () => {
 				.query({'filter[categorySources][]': 'AI'})
 				.expect(200);
 
-			expect(aiResponse.body.total).toBe(1);
-			expect(aiResponse.body.transactions[0].description).toBe('Groceries');
+			expect(aiResponse.body.total).toBe(2);
+			expect(aiResponse.body.transactions.map(({description}: {description: string}) => description)).toEqual([
+				'Groceries',
+				'Salary',
+			]);
 		} finally {
 			await bankTransactionRepository.update(
 				{id: fixtureTransaction.id},
@@ -508,6 +539,18 @@ describe('BankTransactionController', () => {
 			await bankTransactionRepository.update(
 				{id: fixtureGroceriesTransaction.id},
 				{category: null, categoryStatus: 'PENDING', categorySource: null},
+			);
+			await bankTransactionRepository.update(
+				{id: fixtureReviewTransaction.id},
+				{
+					category: null,
+					categoryStatus: 'PENDING',
+					categorySource: null,
+					categoryConfidence: null,
+					categoryPromptVersion: null,
+					counterpartyName: 'Employer',
+					merchantCategoryCode: null,
+				},
 			);
 		}
 	});

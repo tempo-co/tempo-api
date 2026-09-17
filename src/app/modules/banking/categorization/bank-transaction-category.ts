@@ -25,9 +25,11 @@ export const BANK_TRANSACTION_CATEGORIES = [
 export type BankTransactionCategory = (typeof BANK_TRANSACTION_CATEGORIES)[number];
 
 export const BANK_TRANSACTION_UNCATEGORIZED = 'UNCATEGORIZED' as const;
+export const BANK_TRANSACTION_NEEDS_REVIEW = 'NEEDS_REVIEW' as const;
 export const BANK_TRANSACTION_CATEGORY_FILTER_VALUES = [
 	...BANK_TRANSACTION_CATEGORIES,
 	BANK_TRANSACTION_UNCATEGORIZED,
+	BANK_TRANSACTION_NEEDS_REVIEW,
 ] as const;
 export type BankTransactionCategoryFilterValue = (typeof BANK_TRANSACTION_CATEGORY_FILTER_VALUES)[number];
 
@@ -143,6 +145,6 @@ export const BANK_TRANSACTION_CATEGORY_DEFINITIONS: readonly BankTransactionCate
 		value: 'OTHER',
 		label: 'Other',
 		description:
-			'Use when the available transaction and merchant evidence cannot support a more specific category; prefer it over guessing.',
+			'Use when evidence supports that the transaction falls outside the other categories; use Needs review when the merchant or purchase remains ambiguous.',
 	},
 ];

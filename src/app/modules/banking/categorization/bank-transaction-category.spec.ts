@@ -42,7 +42,13 @@ describe('bank transaction categorization contract', () => {
 	});
 
 	it('defines only the supported categorization statuses and sources', () => {
-		expect(BANK_TRANSACTION_CATEGORIZATION_STATUSES).toEqual(['PENDING', 'PROCESSING', 'COMPLETED', 'FAILED']);
+		expect(BANK_TRANSACTION_CATEGORIZATION_STATUSES).toEqual([
+			'PENDING',
+			'PROCESSING',
+			'COMPLETED',
+			'FAILED',
+			'NEEDS_REVIEW',
+		]);
 		expect(BANK_TRANSACTION_CATEGORIZATION_SOURCES).toEqual(['AI', 'MANUAL']);
 	});
 
