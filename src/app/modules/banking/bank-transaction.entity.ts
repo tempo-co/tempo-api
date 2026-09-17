@@ -11,6 +11,7 @@ import {
 
 import {BankAccount} from './bank-account.entity';
 import {BankTransactionType} from './bank-transaction-type';
+import type {BankTransactionCategorizationSearchTrace} from './categorization/bank-transaction-categorization.types';
 
 @Entity('bank_transactions')
 @Index('idx_bank_transactions_account_dedupe', ['bankAccountId', 'dedupeKey'], {unique: true})
@@ -115,6 +116,9 @@ export class BankTransaction {
 
 	@Column({type: 'text', nullable: true})
 	categoryLastError: string | null;
+
+	@Column({type: 'jsonb', nullable: true})
+	categorySearchTrace: BankTransactionCategorizationSearchTrace | null;
 
 	@Column({type: 'numeric', precision: 20, scale: 8, nullable: true})
 	balanceAfterAmount: string | null;

@@ -36,7 +36,9 @@ function createWebSearchInput(correlationId: string): BankTransactionCategorizat
 		currency: 'EUR',
 		direction: 'EXPENSE',
 		transactionType: 'CARD_PAYMENT',
-		merchantName: 'ACME Coffee',
+		merchantName: 'Example Cafe',
+		merchantLocation: 'Testville',
+		searchQuery: 'Example Cafe Testville',
 		merchantCategoryCode: '5814',
 	};
 }
@@ -57,6 +59,10 @@ function createProvider() {
 
 function output<T extends object>(classifications: readonly T[]) {
 	return JSON.stringify({classifications});
+}
+
+function webOutput(classifications: readonly Omit<Record<string, unknown>, 'evidenceType'>[]) {
+	return output(classifications.map((classification) => ({...classification, evidenceType: 'PURCHASE_CONTEXT'})));
 }
 
 describe('OpenAiBankTransactionCategorizationProvider', () => {
@@ -91,6 +97,15 @@ describe('OpenAiBankTransactionCategorizationProvider', () => {
 		const sentInput = JSON.parse(request.input);
 		expect(sentInput.transactions).toEqual([{...transactions[0], correlationId: '0'}]);
 		expect(sentInput.categories).toEqual(BANK_TRANSACTION_CATEGORY_DEFINITIONS);
+		expect(request.instructions).toContain(
+			'Treat each category description as scope and boundary guidance, not as a list of keywords.',
+		);
+		expect(request.instructions).toContain(
+			'A clearly specialized merchant can support a category from merchant identity alone when its primary business maps directly to that category.',
+		);
+		expect(request.instructions).toContain(
+			'For a card payment with no merchantCategoryCode and no counterpartyName, do not guess a specific category',
+		);
 		expect(request.input).not.toContain('test-secret-api-key');
 	});
 
@@ -113,13 +128,38 @@ describe('OpenAiBankTransactionCategorizationProvider', () => {
 	it('uses the hosted web-search tool for a sanitized fallback request', async () => {
 		const {provider, responsesCreate} = createProvider();
 		responsesCreate.mockResolvedValue({
-			output_text: output([{correlationId: '0', category: 'FOOD_AND_DRINK', confidence: 0.93}]),
+			output_text: webOutput([{correlationId: '0', category: 'FOOD_AND_DRINK', confidence: 0.93}]),
+			output: [
+				{
+					type: 'web_search_call',
+					status: 'completed',
+					action: {
+						type: 'search',
+						queries: ['Example Cafe Testville coffee vending Testland'],
+						sources: [
+							{type: 'url', url: 'https://www.example.com/acme'},
+							{type: 'url', url: 'https://news.example.org/acme'},
+						],
+					},
+				},
+			],
 		});
 		const transactions = [createWebSearchInput('opaque-transaction-id')];
 
 		await expect(
 			provider.categorizeWithWebSearch(transactions, BANK_TRANSACTION_CATEGORY_DEFINITIONS),
-		).resolves.toEqual([{correlationId: 'opaque-transaction-id', category: 'FOOD_AND_DRINK', confidence: 0.93}]);
+		).resolves.toEqual([
+			{
+				correlationId: 'opaque-transaction-id',
+				category: 'FOOD_AND_DRINK',
+				confidence: 0.93,
+				searchTrace: {
+					queries: ['Example Cafe Testville'],
+					sourceDomains: ['example.com', 'news.example.org'],
+					evidenceType: 'PURCHASE_CONTEXT',
+				},
+			},
+		]);
 
 		expect(responsesCreate).toHaveBeenCalledTimes(1);
 		const request = responsesCreate.mock.calls[0][0];
@@ -135,9 +175,10 @@ describe('OpenAiBankTransactionCategorizationProvider', () => {
 			{
 				type: 'web_search',
 				external_web_access: true,
-				search_context_size: 'low',
+				search_context_size: 'medium',
 			},
 		]);
+		expect(request.include).toEqual(['web_search_call.action.sources']);
 		expect(request.text.format).toMatchObject({
 			type: 'json_schema',
 			strict: true,
@@ -150,6 +191,19 @@ describe('OpenAiBankTransactionCategorizationProvider', () => {
 			'needsFollowUp',
 		);
 		expect(request.instructions).toContain('Do not perform a follow-up lookup.');
+		expect(request.instructions).toContain('Use exactly the supplied searchQuery as the only search query.');
+		expect(request.instructions).toContain(
+			'Treat each category description as scope and boundary guidance, not as a list of keywords.',
+		);
+		expect(request.instructions).toContain(
+			'A clearly specialized merchant can support a category from merchant identity alone when its primary business maps directly to that category.',
+		);
+		expect(request.instructions).not.toContain('Do not choose Transportation from incidental corporate activity');
+		expect(request.instructions).not.toContain('A merchant evidenced as supplying workplace coffee');
+		expect(request.input).toContain('Require evidence of an actual transportation purchase');
+		expect(request.input).toContain(
+			'equipment, installation, servicing, fuel, and other non-food purchases are excluded',
+		);
 		expect(request.input).not.toContain('opaque-transaction-id');
 		expect(request.input).not.toContain('provider-id');
 		expect(request.input).not.toContain('account-id');
@@ -157,10 +211,42 @@ describe('OpenAiBankTransactionCategorizationProvider', () => {
 		expect(request.input).not.toContain('remittance');
 	});
 
+	it('stores only the supplied search query and source hostnames in the search trace', async () => {
+		const {provider, responsesCreate} = createProvider();
+		responsesCreate.mockResolvedValue({
+			output_text: webOutput([{correlationId: '0', category: 'OTHER', confidence: 0.2}]),
+			output: [
+				{
+					type: 'web_search_call',
+					status: 'completed',
+					action: {
+						type: 'search',
+						queries: ['ACME 1234567 someone@example.com NL91ABNA0417164300'],
+						sources: [{type: 'url', url: 'https://www.example.com/private/path?token=secret'}],
+					},
+				},
+			],
+		});
+
+		const [result] = await provider.categorizeWithWebSearch(
+			[createWebSearchInput('transaction-1')],
+			BANK_TRANSACTION_CATEGORY_DEFINITIONS,
+		);
+
+		expect(result.searchTrace).toEqual({
+			queries: ['Example Cafe Testville'],
+			sourceDomains: ['example.com'],
+			evidenceType: 'PURCHASE_CONTEXT',
+		});
+		expect(JSON.stringify(result)).not.toContain('someone@example.com');
+		expect(JSON.stringify(result)).not.toContain('1234567');
+		expect(JSON.stringify(result)).not.toContain('private/path');
+	});
+
 	it('does not perform a follow-up lookup when the initial result is ambiguous', async () => {
 		const {provider, responsesCreate} = createProvider();
 		responsesCreate.mockResolvedValue({
-			output_text: output([{correlationId: '0', category: 'OTHER', confidence: 0.3}]),
+			output_text: webOutput([{correlationId: '0', category: 'OTHER', confidence: 0.3}]),
 		});
 
 		await expect(
@@ -168,7 +254,14 @@ describe('OpenAiBankTransactionCategorizationProvider', () => {
 				[createWebSearchInput('transaction-1')],
 				BANK_TRANSACTION_CATEGORY_DEFINITIONS,
 			),
-		).resolves.toEqual([{correlationId: 'transaction-1', category: 'OTHER', confidence: 0.3}]);
+		).resolves.toEqual([
+			{
+				correlationId: 'transaction-1',
+				category: 'OTHER',
+				confidence: 0.3,
+				searchTrace: {queries: ['Example Cafe Testville'], sourceDomains: [], evidenceType: 'PURCHASE_CONTEXT'},
+			},
+		]);
 
 		expect(responsesCreate).toHaveBeenCalledTimes(1);
 	});
@@ -176,15 +269,25 @@ describe('OpenAiBankTransactionCategorizationProvider', () => {
 	it('performs one lookup per transaction even when results are ambiguous', async () => {
 		const {provider, responsesCreate} = createProvider();
 		responsesCreate.mockResolvedValue({
-			output_text: output([{correlationId: '0', category: 'OTHER', confidence: 0.4}]),
+			output_text: webOutput([{correlationId: '0', category: 'OTHER', confidence: 0.4}]),
 		});
 		const transactions = [createWebSearchInput('transaction-1'), createWebSearchInput('transaction-2')];
 
 		await expect(
 			provider.categorizeWithWebSearch(transactions, BANK_TRANSACTION_CATEGORY_DEFINITIONS),
 		).resolves.toEqual([
-			{correlationId: 'transaction-1', category: 'OTHER', confidence: 0.4},
-			{correlationId: 'transaction-2', category: 'OTHER', confidence: 0.4},
+			{
+				correlationId: 'transaction-1',
+				category: 'OTHER',
+				confidence: 0.4,
+				searchTrace: {queries: ['Example Cafe Testville'], sourceDomains: [], evidenceType: 'PURCHASE_CONTEXT'},
+			},
+			{
+				correlationId: 'transaction-2',
+				category: 'OTHER',
+				confidence: 0.4,
+				searchTrace: {queries: ['Example Cafe Testville'], sourceDomains: [], evidenceType: 'PURCHASE_CONTEXT'},
+			},
 		]);
 
 		expect(responsesCreate).toHaveBeenCalledTimes(2);
@@ -199,7 +302,7 @@ describe('OpenAiBankTransactionCategorizationProvider', () => {
 	it('drops invalid merchant category codes from web-search requests', async () => {
 		const {provider, responsesCreate} = createProvider();
 		responsesCreate.mockResolvedValue({
-			output_text: output([{correlationId: '0', category: 'FOOD_AND_DRINK', confidence: 0.93}]),
+			output_text: webOutput([{correlationId: '0', category: 'FOOD_AND_DRINK', confidence: 0.93}]),
 		});
 
 		await provider.categorizeWithWebSearch(
@@ -214,7 +317,7 @@ describe('OpenAiBankTransactionCategorizationProvider', () => {
 	it('keeps a clear OTHER result without a follow-up lookup', async () => {
 		const {provider, responsesCreate} = createProvider();
 		responsesCreate.mockResolvedValue({
-			output_text: output([{correlationId: '0', category: 'OTHER', confidence: 0.7}]),
+			output_text: webOutput([{correlationId: '0', category: 'OTHER', confidence: 0.7}]),
 		});
 
 		await expect(
@@ -222,7 +325,14 @@ describe('OpenAiBankTransactionCategorizationProvider', () => {
 				[createWebSearchInput('transaction-1')],
 				BANK_TRANSACTION_CATEGORY_DEFINITIONS,
 			),
-		).resolves.toEqual([{correlationId: 'transaction-1', category: 'OTHER', confidence: 0.7}]);
+		).resolves.toEqual([
+			{
+				correlationId: 'transaction-1',
+				category: 'OTHER',
+				confidence: 0.7,
+				searchTrace: {queries: ['Example Cafe Testville'], sourceDomains: [], evidenceType: 'PURCHASE_CONTEXT'},
+			},
+		]);
 		expect(responsesCreate).toHaveBeenCalledTimes(1);
 	});
 
