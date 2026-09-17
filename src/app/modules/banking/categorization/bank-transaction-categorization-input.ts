@@ -27,24 +27,28 @@ const CARD_LOCATION_PATTERN = /,\s*\d{2}[./]\d{2}[./]\d{2}\/\d{2}:\d{2}\s+(.+)$/
 
 type CategorizationHashInput = Omit<BankTransactionCategorizationInput, 'correlationId'>;
 
+type BankTransactionCategorizationTransaction = Pick<
+	BankTransaction,
+	| 'id'
+	| 'transactionDate'
+	| 'bookingDate'
+	| 'valueDate'
+	| 'amount'
+	| 'currency'
+	| 'creditDebitIndicator'
+	| 'bankTransactionCode'
+	| 'bankTransactionSubCode'
+	| 'description'
+	| 'counterpartyName'
+	| 'bankTransactionDescription'
+	| 'merchantCategoryCode'
+	| 'remittanceInformation'
+> & {
+	aspspName?: string | null;
+};
+
 export function toBankTransactionCategorizationInput(
-	transaction: Pick<
-		BankTransaction,
-		| 'id'
-		| 'transactionDate'
-		| 'bookingDate'
-		| 'valueDate'
-		| 'amount'
-		| 'currency'
-		| 'creditDebitIndicator'
-		| 'bankTransactionCode'
-		| 'bankTransactionSubCode'
-		| 'description'
-		| 'counterpartyName'
-		| 'bankTransactionDescription'
-		| 'merchantCategoryCode'
-		| 'remittanceInformation'
-	>,
+	transaction: BankTransactionCategorizationTransaction,
 ): BankTransactionCategorizationInput {
 	const creditDebitIndicator = normalizeUppercase(transaction.creditDebitIndicator);
 	const bankTransactionCode = normalizeUppercase(transaction.bankTransactionCode);
@@ -53,6 +57,7 @@ export function toBankTransactionCategorizationInput(
 	const transactionType = normalizeBankTransactionType({
 		code: bankTransactionCode ?? undefined,
 		subCode: bankTransactionSubCode ?? undefined,
+		aspspName: transaction.aspspName,
 	});
 
 	return {
@@ -120,7 +125,12 @@ function getWebSearchMerchantDetails(input: BankTransactionCategorizationInput):
 export function createBankTransactionCategorizationInputHash(
 	value: BankTransaction | BankTransactionCategorizationInput,
 ): string {
-	const input = isCategorizationInput(value) ? value : toBankTransactionCategorizationInput(value);
+	const input = isCategorizationInput(value)
+		? value
+		: toBankTransactionCategorizationInput({
+				...value,
+				aspspName: value.bankAccount?.bankConnection?.aspspName,
+			});
 	const hashInput: CategorizationHashInput = {
 		transactionDate: input.transactionDate,
 		bookingDate: input.bookingDate,

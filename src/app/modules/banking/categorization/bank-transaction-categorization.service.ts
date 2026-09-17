@@ -128,7 +128,10 @@ export class BankTransactionCategorizationService {
 			await this.enqueueForTransactionsInBatches(remainingIds, batchSize);
 		}
 
-		const transactions = await this.repository.find({where: {id: In(batchIds)}});
+		const transactions = await this.repository.find({
+			where: {id: In(batchIds)},
+			relations: {bankAccount: {bankConnection: true}},
+		});
 		const transactionsById = new Map(transactions.map((transaction) => [transaction.id, transaction]));
 		const claimed: ClaimedTransaction[] = [];
 
@@ -136,7 +139,10 @@ export class BankTransactionCategorizationService {
 			const transaction = transactionsById.get(id);
 			if (!transaction) continue;
 
-			const input = toBankTransactionCategorizationInput(transaction);
+			const input = toBankTransactionCategorizationInput({
+				...transaction,
+				aspspName: transaction.bankAccount?.bankConnection?.aspspName,
+			});
 			const inputHash = createBankTransactionCategorizationInputHash(input);
 			if (!(await this.refreshInputHashAndResetStaleClassification(transaction, inputHash))) continue;
 			if (transaction.categorySource === 'MANUAL') continue;
