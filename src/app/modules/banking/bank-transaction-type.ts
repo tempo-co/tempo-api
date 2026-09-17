@@ -16,6 +16,7 @@ type BankTransactionClassification = {
 	code?: string;
 	subCode?: string;
 	description?: string;
+	aspspName?: string | null;
 };
 
 const STRUCTURED_CODE_TYPES: Record<string, BankTransactionType> = {
@@ -51,12 +52,28 @@ const STRUCTURED_CODE_TYPES: Record<string, BankTransactionType> = {
 	WITHDRAWAL: BANK_TRANSACTION_TYPES.CASH_WITHDRAWAL,
 };
 
+// Numeric mutation codes are scoped to an ASPSP because their namespace is not global.
+const ASPSP_CODE_TYPES: Record<string, Record<string, BankTransactionType>> = {
+	'ABN AMRO': {
+		'426': BANK_TRANSACTION_TYPES.CARD_PAYMENT,
+	},
+};
+
 // Only structured provider codes are trusted for deterministic transaction-type inference.
 
-export function normalizeBankTransactionType({code, subCode}: BankTransactionClassification): BankTransactionType {
+export function normalizeBankTransactionType({
+	code,
+	subCode,
+	aspspName,
+}: BankTransactionClassification): BankTransactionType {
 	const structuredType = [subCode, code]
 		.map((value) => value?.trim().toUpperCase())
 		.map((value) => (value ? STRUCTURED_CODE_TYPES[value] : undefined))
 		.find((type): type is BankTransactionType => type !== undefined);
-	return structuredType ?? BANK_TRANSACTION_TYPES.OTHER;
+	if (structuredType) return structuredType;
+
+	const aspspType = aspspName
+		? ASPSP_CODE_TYPES[aspspName.trim().toUpperCase()]?.[code?.trim().toUpperCase() ?? '']
+		: undefined;
+	return aspspType ?? BANK_TRANSACTION_TYPES.OTHER;
 }

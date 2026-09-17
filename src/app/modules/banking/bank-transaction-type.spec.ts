@@ -8,6 +8,11 @@ describe('normalizeBankTransactionType', () => {
 			BANK_TRANSACTION_TYPES.CARD_PAYMENT,
 		],
 		[
+			'provider-scoped numeric card classifications',
+			{code: '426', aspspName: 'ABN AMRO'},
+			BANK_TRANSACTION_TYPES.CARD_PAYMENT,
+		],
+		[
 			'structured transfer classifications',
 			{code: 'PMNT', subCode: 'TRANSFER', description: 'SEPA transfer'},
 			BANK_TRANSACTION_TYPES.TRANSFER,
@@ -46,6 +51,12 @@ describe('normalizeBankTransactionType', () => {
 			BANK_TRANSACTION_TYPES.OTHER,
 		],
 		['description-only card payment', {description: 'Card payment at a merchant'}, BANK_TRANSACTION_TYPES.OTHER],
+		['unscoped numeric code remains unresolved', {code: '426'}, BANK_TRANSACTION_TYPES.OTHER],
+		[
+			'numeric code from another ASPSP remains unresolved',
+			{code: '426', aspspName: 'Synthetic Bank'},
+			BANK_TRANSACTION_TYPES.OTHER,
+		],
 		['description-only direct debit', {description: 'Direct debit'}, BANK_TRANSACTION_TYPES.OTHER],
 		['description-only cash withdrawal', {description: 'ATM cash withdrawal'}, BANK_TRANSACTION_TYPES.OTHER],
 		['description-only salary', {description: 'Salary payment'}, BANK_TRANSACTION_TYPES.OTHER],
