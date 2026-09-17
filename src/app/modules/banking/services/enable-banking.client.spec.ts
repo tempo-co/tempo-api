@@ -414,7 +414,24 @@ describe('EnableBankingClient', () => {
 								status: 'BOOK',
 								transaction_date: '2026-08-24',
 								booking_date: '2026-08-26',
-								creditor: {name: 'Shop'},
+								creditor: {
+									name: 'Shop',
+									postal_address: {
+										town_name: 'Exampletown',
+										country_sub_division: 'Example Region',
+										country: 'NL',
+										street_name: 'Private Street',
+										building_number: '99',
+										post_code: '9999 ZZ',
+									},
+								},
+								debtor: {
+									postal_address: {
+										town_name: 'Account Holder Town',
+										country_sub_division: 'Account Holder Region',
+										country: 'BE',
+									},
+								},
 								bank_transaction_code: {
 									code: 'PMNT',
 									sub_code: 'CARD',
@@ -447,7 +464,23 @@ describe('EnableBankingClient', () => {
 								credit_debit_indicator: 'CRDT',
 								status: 'BOOK',
 								value_date: '2026-08-25',
-								debtor: {name: 'Employer'},
+								creditor: {
+									postal_address: {
+										town_name: 'Creditor Town',
+										country_sub_division: 'Creditor Region',
+										country: 'DE',
+									},
+								},
+								debtor: {
+									name: 'Employer',
+									postal_address: {
+										town_name: 'Creditortown',
+										country_sub_division: 'Credit Region',
+										country: 'BE',
+										street_name: 'Another Private Street',
+										post_code: '1111 AA',
+									},
+								},
 							},
 						],
 					}),
@@ -463,6 +496,11 @@ describe('EnableBankingClient', () => {
 				entryReference: 'entry-1',
 				currency: 'EUR',
 				counterpartyName: 'Shop',
+				counterpartyLocation: {
+					city: 'Exampletown',
+					region: 'Example Region',
+					country: 'NL',
+				},
 				remittanceInformation: 'Groceries',
 				transactionDate: '2026-08-24',
 				bankTransactionCode: 'PMNT',
@@ -482,8 +520,17 @@ describe('EnableBankingClient', () => {
 				providerTransactionId: 'transaction-2',
 				currency: 'EUR',
 				counterpartyName: 'Employer',
+				counterpartyLocation: {
+					city: 'Creditortown',
+					region: 'Credit Region',
+					country: 'BE',
+				},
 			}),
 		]);
+		expect(JSON.stringify(transactions)).not.toContain('Private Street');
+		expect(JSON.stringify(transactions)).not.toContain('9999 ZZ');
+		expect(JSON.stringify(transactions)).not.toContain('Another Private Street');
+		expect(JSON.stringify(transactions)).not.toContain('1111 AA');
 		expect(fetchMock).toHaveBeenCalledTimes(2);
 
 		const firstUrl = new URL(String(fetchMock.mock.calls[0][0]));
@@ -493,6 +540,58 @@ describe('EnableBankingClient', () => {
 
 		const secondUrl = new URL(String(fetchMock.mock.calls[1][0]));
 		expect(secondUrl.searchParams.get('continuation_key')).toBe('next-page');
+	});
+
+	it('omits location when the direction-selected counterparty is missing', async () => {
+		fetchMock.mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({
+					transactions: [
+						{
+							transaction_id: 'debit-missing-creditor',
+							transaction_amount: {currency: 'EUR', amount: '1.00'},
+							credit_debit_indicator: 'DBIT',
+							debtor: {
+								postal_address: {
+									town_name: 'Account Holder Town',
+									country_sub_division: 'Account Holder Region',
+									country: 'BE',
+								},
+							},
+						},
+						{
+							transaction_id: 'credit-missing-debtor',
+							transaction_amount: {currency: 'EUR', amount: '2.00'},
+							credit_debit_indicator: 'CRDT',
+							creditor: {
+								postal_address: {
+									town_name: 'Creditor Town',
+									country_sub_division: 'Creditor Region',
+									country: 'DE',
+								},
+							},
+						},
+						{
+							transaction_id: 'unknown-direction',
+							transaction_amount: {currency: 'EUR', amount: '3.00'},
+							credit_debit_indicator: 'UNKNOWN',
+							creditor: {
+								postal_address: {town_name: 'Creditor Town', country: 'DE'},
+							},
+							debtor: {
+								postal_address: {town_name: 'Account Holder Town', country: 'BE'},
+							},
+						},
+					],
+				}),
+				{status: 200, headers: {'content-type': 'application/json'}},
+			),
+		);
+
+		const transactions = await client.getAccountTransactions('account-id', {strategy: 'default'});
+
+		expect(transactions).toHaveLength(3);
+		for (const transaction of transactions) expect(transaction).not.toHaveProperty('counterpartyLocation');
 	});
 
 	it('propagates a supplied cancellation signal to transaction requests', async () => {
