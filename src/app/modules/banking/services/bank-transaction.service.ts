@@ -19,6 +19,7 @@ import {toBankTransactionDirection} from '../bank-transaction-direction';
 import {BANK_TRANSACTION_TYPES} from '../bank-transaction-type';
 import {BankTransaction} from '../bank-transaction.entity';
 import {createBankTransactionCategorizationInputHash} from '../categorization/bank-transaction-categorization-input';
+import {BANK_TRANSACTION_CATEGORIZATION_RESET_VALUES} from '../categorization/bank-transaction-categorization.constants';
 import {
 	BANK_TRANSACTION_UNCATEGORIZED,
 	type BankTransactionCategory,
@@ -167,18 +168,13 @@ export class BankTransactionService {
 		if (!transaction) throw new NotFoundException(BANKING_TRANSACTION_NOT_FOUND);
 		const inputHash = createBankTransactionCategorizationInputHash(transaction);
 		const values = {
+			...BANK_TRANSACTION_CATEGORIZATION_RESET_VALUES,
 			category,
 			categoryStatus: 'COMPLETED',
 			categorySource: 'MANUAL',
-			categoryConfidence: null,
 			categoryInputHash: inputHash,
 			categoryAppliedInputHash: inputHash,
-			categoryProvider: null,
-			categoryModel: null,
-			categoryPromptVersion: null,
-			categorySearchTrace: null,
 			categoryUpdatedAt: new Date(),
-			categoryLastError: null,
 		};
 		const result = await this.bankTransactionRepository.update({id}, values);
 		if (result.affected === 0) throw new NotFoundException(BANKING_TRANSACTION_NOT_FOUND);

@@ -5,6 +5,7 @@ import {getBankTransactionDisplayDescription} from '../bank-transaction-display'
 import {normalizeBankTransactionType} from '../bank-transaction-type';
 import {BankTransaction} from '../bank-transaction.entity';
 import {truncate} from '../banking.utils';
+import {BANK_TRANSACTION_CATEGORIZATION_MAX_WEB_SEARCH_QUERY_LENGTH} from './bank-transaction-categorization.constants';
 import {
 	BankTransactionCategorizationInput,
 	BankTransactionCategorizationWebSearchInput,
@@ -12,7 +13,6 @@ import {
 
 const MAX_REMITTANCE_INFORMATION_LENGTH = 2_000;
 const MAX_WEB_SEARCH_MERCHANT_NAME_LENGTH = 160;
-const MAX_WEB_SEARCH_QUERY_LENGTH = 240;
 const EMAIL_PATTERN = /\b[\w.+-]+@[\w.-]+\.[A-Z]{2,}\b/gi;
 const URL_PATTERN = /\b(?:https?|ftp):\/\/[^\s]+|\bwww\.[^\s]+/gi;
 const DOMAIN_PATTERN = /\b(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[^\s]*)?\b/gi;
@@ -86,7 +86,8 @@ export function toBankTransactionCategorizationWebSearchInput(
 		merchantName,
 		merchantLocation && !containsSearchTerm(merchantName, merchantLocation) ? merchantLocation : null,
 	].filter(Boolean);
-	const searchQuery = truncate(searchTerms.join(' '), MAX_WEB_SEARCH_QUERY_LENGTH) ?? merchantName;
+	const searchQuery =
+		truncate(searchTerms.join(' '), BANK_TRANSACTION_CATEGORIZATION_MAX_WEB_SEARCH_QUERY_LENGTH) ?? merchantName;
 
 	return {
 		correlationId: input.correlationId,
@@ -210,7 +211,7 @@ function normalizeUppercase(value: string | null | undefined): string | null {
 	return normalized?.toUpperCase() ?? null;
 }
 
-function normalizeMerchantCategoryCode(value: string | null | undefined): string | null {
+export function normalizeMerchantCategoryCode(value: string | null | undefined): string | null {
 	const normalized = normalizeNullableText(value);
 	return normalized !== null && /^\d{4}$/.test(normalized) ? normalized : null;
 }

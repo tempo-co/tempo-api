@@ -26,6 +26,7 @@ import {BankTransaction} from '../bank-transaction.entity';
 import {selectPreferredBalance, truncate} from '../banking.utils';
 import {createBankTransactionCategorizationInputHash} from '../categorization/bank-transaction-categorization-input';
 import {toBankTransactionCategorizationInput} from '../categorization/bank-transaction-categorization-input';
+import {BANK_TRANSACTION_CATEGORIZATION_RESET_VALUES} from '../categorization/bank-transaction-categorization.constants';
 import {BankTransactionCategorizationService} from '../categorization/bank-transaction-categorization.service';
 import {
 	EnableBankingBalance,
@@ -471,17 +472,9 @@ export class BankingSyncService {
 				.createQueryBuilder()
 				.update(BankTransaction)
 				.set({
-					category: null,
+					...BANK_TRANSACTION_CATEGORIZATION_RESET_VALUES,
 					categoryStatus: 'PENDING',
-					categorySource: null,
-					categoryConfidence: null,
-					categoryAppliedInputHash: null,
-					categoryProvider: null,
-					categoryModel: null,
-					categoryPromptVersion: null,
-					categorySearchTrace: null,
 					categoryUpdatedAt: null,
-					categoryLastError: null,
 				})
 				.where('id = :id', {id: existingTransaction.id})
 				.andWhere("categorySource IS DISTINCT FROM 'MANUAL'")
