@@ -21,6 +21,7 @@ import {BankAccount} from '../bank-account.entity';
 import {BankConnection} from '../bank-connection.entity';
 import {BankSyncRun} from '../bank-sync-run.entity';
 import {getBankTransactionDisplayDescription} from '../bank-transaction-display';
+import {normalizeBankTransactionLocation} from '../bank-transaction-location';
 import {normalizeBankTransactionType} from '../bank-transaction-type';
 import {BankTransaction} from '../bank-transaction.entity';
 import {selectPreferredBalance, truncate} from '../banking.utils';
@@ -552,6 +553,7 @@ export class BankingSyncService {
 		const bankTransactionCode = truncate(transaction.bankTransactionCode, 64);
 		const bankTransactionSubCode = truncate(transaction.bankTransactionSubCode, 64);
 		const bankTransactionDescription = truncate(transaction.bankTransactionDescription, 255);
+		const merchantLocation = normalizeBankTransactionLocation(transaction.counterpartyLocation);
 		const transactionType = normalizeBankTransactionType({
 			code: bankTransactionCode ?? undefined,
 			subCode: bankTransactionSubCode ?? undefined,
@@ -587,6 +589,7 @@ export class BankingSyncService {
 				bankTransactionDescription,
 				merchantCategoryCode,
 				remittanceInformation,
+				merchantLocation,
 			}),
 		);
 		const hasBalanceAfter = Boolean(transaction.balanceAfterAmount && transaction.balanceAfterCurrency);
@@ -614,6 +617,7 @@ export class BankingSyncService {
 			counterpartyName,
 			merchantCategoryCode,
 			remittanceInformation,
+			merchantLocation,
 			categoryInputHash,
 			balanceAfterAmount: hasBalanceAfter ? transaction.balanceAfterAmount : null,
 			balanceAfterCurrency: hasBalanceAfter ? transaction.balanceAfterCurrency?.toUpperCase() : null,

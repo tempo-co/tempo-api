@@ -4,6 +4,7 @@ import {z} from 'zod';
 
 import {ConfigurationService} from '@core/config/config.service';
 
+import {normalizeBankTransactionLocation} from '../../bank-transaction-location';
 import {normalizeMerchantCategoryCode} from '../bank-transaction-categorization-input';
 import {
 	BANK_TRANSACTION_CATEGORIZATION_MAX_SEARCH_TRACE_ITEMS,
@@ -290,19 +291,30 @@ export class OpenAiBankTransactionCategorizationProvider implements BankTransact
 		categories: readonly BankTransactionCategoryDefinition[],
 		transactions: readonly BankTransactionCategorizationWebSearchInput[],
 	): OpenAiResponseRequest {
+		const approximateLocation = normalizeBankTransactionLocation(transactions[0]?.approximateLocation);
+		const webSearchTool = {
+			type: 'web_search' as const,
+			external_web_access: true as const,
+			search_context_size: 'medium' as const,
+			...(approximateLocation
+				? {
+						user_location: {
+							type: 'approximate' as const,
+							...(approximateLocation.city ? {city: approximateLocation.city} : {}),
+							...(approximateLocation.region ? {region: approximateLocation.region} : {}),
+							...(approximateLocation.country ? {country: approximateLocation.country} : {}),
+						},
+					}
+				: {}),
+		};
+
 		return {
 			model: this.model,
 			instructions,
 			input: this.createInput(categories, transactions),
 			reasoning: {effort: 'medium'},
 			include: ['web_search_call.action.sources'],
-			tools: [
-				{
-					type: 'web_search',
-					external_web_access: true,
-					search_context_size: 'medium',
-				},
-			],
+			tools: [webSearchTool],
 			tool_choice: 'required',
 			max_tool_calls: 1,
 			parallel_tool_calls: false,
@@ -322,6 +334,8 @@ export class OpenAiBankTransactionCategorizationProvider implements BankTransact
 		transaction: BankTransactionCategorizationWebSearchInput,
 		correlationId: string,
 	): BankTransactionCategorizationWebSearchInput {
+		const approximateLocation = normalizeBankTransactionLocation(transaction.approximateLocation);
+
 		return {
 			correlationId,
 			amount: transaction.amount,
@@ -330,6 +344,7 @@ export class OpenAiBankTransactionCategorizationProvider implements BankTransact
 			transactionType: transaction.transactionType,
 			merchantName: transaction.merchantName,
 			merchantLocation: transaction.merchantLocation,
+			...(approximateLocation ? {approximateLocation} : {}),
 			searchQuery: transaction.searchQuery,
 			merchantCategoryCode: normalizeMerchantCategoryCode(transaction.merchantCategoryCode),
 		};
@@ -400,6 +415,8 @@ export class OpenAiBankTransactionCategorizationProvider implements BankTransact
 	}
 
 	private toSafeInput(transaction: BankTransactionCategorizationInput): BankTransactionCategorizationInput {
+		const merchantLocation = normalizeBankTransactionLocation(transaction.merchantLocation);
+
 		return {
 			correlationId: transaction.correlationId,
 			transactionDate: transaction.transactionDate,
@@ -417,6 +434,7 @@ export class OpenAiBankTransactionCategorizationProvider implements BankTransact
 			bankTransactionDescription: transaction.bankTransactionDescription,
 			merchantCategoryCode: transaction.merchantCategoryCode,
 			remittanceInformation: transaction.remittanceInformation,
+			...(merchantLocation ? {merchantLocation} : {}),
 		};
 	}
 

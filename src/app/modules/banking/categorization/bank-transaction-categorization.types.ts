@@ -1,4 +1,5 @@
 import type {BankTransactionDirection} from '../bank-transaction-direction';
+import type {BankTransactionLocation} from '../bank-transaction-location';
 import type {BankTransactionCategory} from './bank-transaction-category';
 
 export const BANK_TRANSACTION_CATEGORIZATION_STATUSES = ['PENDING', 'PROCESSING', 'COMPLETED', 'FAILED'] as const;
@@ -21,6 +22,7 @@ export type BankTransactionCategorizationInput = {
 	bankTransactionSubCode: string | null;
 	description: string | null;
 	counterpartyName: string | null;
+	merchantLocation?: BankTransactionLocation | null;
 	bankTransactionDescription: string | null;
 	merchantCategoryCode: string | null;
 	remittanceInformation: string | null;
@@ -32,6 +34,7 @@ export type BankTransactionCategorizationWebSearchInput = Pick<
 > & {
 	merchantName: string;
 	merchantLocation: string | null;
+	approximateLocation?: BankTransactionLocation;
 	searchQuery: string;
 };
 

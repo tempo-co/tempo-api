@@ -414,7 +414,17 @@ describe('EnableBankingClient', () => {
 								status: 'BOOK',
 								transaction_date: '2026-08-24',
 								booking_date: '2026-08-26',
-								creditor: {name: 'Shop'},
+								creditor: {
+									name: 'Shop',
+									postal_address: {
+										town_name: 'Exampletown',
+										country_sub_division: 'Example Region',
+										country: 'NL',
+										street_name: 'Private Street',
+										building_number: '99',
+										post_code: '9999 ZZ',
+									},
+								},
 								bank_transaction_code: {
 									code: 'PMNT',
 									sub_code: 'CARD',
@@ -447,7 +457,16 @@ describe('EnableBankingClient', () => {
 								credit_debit_indicator: 'CRDT',
 								status: 'BOOK',
 								value_date: '2026-08-25',
-								debtor: {name: 'Employer'},
+								debtor: {
+									name: 'Employer',
+									postal_address: {
+										town_name: 'Creditortown',
+										country_sub_division: 'Credit Region',
+										country: 'BE',
+										street_name: 'Another Private Street',
+										post_code: '1111 AA',
+									},
+								},
 							},
 						],
 					}),
@@ -463,6 +482,11 @@ describe('EnableBankingClient', () => {
 				entryReference: 'entry-1',
 				currency: 'EUR',
 				counterpartyName: 'Shop',
+				counterpartyLocation: {
+					city: 'Exampletown',
+					region: 'Example Region',
+					country: 'NL',
+				},
 				remittanceInformation: 'Groceries',
 				transactionDate: '2026-08-24',
 				bankTransactionCode: 'PMNT',
@@ -482,8 +506,17 @@ describe('EnableBankingClient', () => {
 				providerTransactionId: 'transaction-2',
 				currency: 'EUR',
 				counterpartyName: 'Employer',
+				counterpartyLocation: {
+					city: 'Creditortown',
+					region: 'Credit Region',
+					country: 'BE',
+				},
 			}),
 		]);
+		expect(JSON.stringify(transactions)).not.toContain('Private Street');
+		expect(JSON.stringify(transactions)).not.toContain('9999 ZZ');
+		expect(JSON.stringify(transactions)).not.toContain('Another Private Street');
+		expect(JSON.stringify(transactions)).not.toContain('1111 AA');
 		expect(fetchMock).toHaveBeenCalledTimes(2);
 
 		const firstUrl = new URL(String(fetchMock.mock.calls[0][0]));
