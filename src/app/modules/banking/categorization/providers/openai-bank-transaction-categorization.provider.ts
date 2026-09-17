@@ -110,7 +110,7 @@ const CATEGORIZATION_INSTRUCTIONS = [
 	'Classify the actual transaction and likely purchased product or service, not incidental activities a merchant may perform.',
 	SPECIALIZED_MERCHANT_INSTRUCTION,
 	'Use OTHER whenever the merchant identity or purchase category is not established by structured transaction fields.',
-	'For a card payment with no merchantCategoryCode and no counterpartyName, do not guess a specific category from a noisy description; return OTHER.',
+	'Do not treat missing merchantCategoryCode or counterpartyName as evidence for OTHER; use clear merchant text as evidence when available.',
 	ONE_CLASSIFICATION_INSTRUCTION,
 	'Use OTHER when the available evidence does not support a more specific category.',
 ].join(' ');
