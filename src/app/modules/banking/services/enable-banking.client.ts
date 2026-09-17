@@ -372,11 +372,7 @@ export class EnableBankingClient {
 		const creditorName = this.asString(creditor?.name);
 		const debtorName = this.asString(debtor?.name);
 		const counterparty =
-			creditDebitIndicator === 'DBIT'
-				? (creditor ?? debtor)
-				: creditDebitIndicator === 'CRDT'
-					? (debtor ?? creditor)
-					: (creditor ?? debtor);
+			creditDebitIndicator === 'DBIT' ? creditor : creditDebitIndicator === 'CRDT' ? debtor : undefined;
 		const counterpartyName =
 			creditDebitIndicator === 'DBIT'
 				? (creditorName ?? debtorName)

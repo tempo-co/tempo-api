@@ -223,7 +223,7 @@ describe('OpenAiBankTransactionCategorizationProvider', () => {
 				region: 'Example Region',
 				country: 'NL',
 			},
-		} as unknown as BankTransactionCategorizationWebSearchInput;
+		} satisfies BankTransactionCategorizationWebSearchInput;
 
 		await provider.categorizeWithWebSearch([transaction], BANK_TRANSACTION_CATEGORY_DEFINITIONS);
 
@@ -241,6 +241,8 @@ describe('OpenAiBankTransactionCategorizationProvider', () => {
 				},
 			},
 		]);
+		const sentInput = JSON.parse(request.input);
+		expect(sentInput.transactions[0]).not.toHaveProperty('approximateLocation');
 		expect(JSON.stringify(request)).not.toContain('Private Street');
 		expect(JSON.stringify(request)).not.toContain('9999 ZZ');
 	});

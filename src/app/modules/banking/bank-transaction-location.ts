@@ -1,3 +1,5 @@
+import {truncate} from './banking.utils';
+
 export type BankTransactionLocation = {
 	city: string | null;
 	region: string | null;
@@ -18,11 +20,10 @@ export function normalizeBankTransactionLocation(value: unknown): BankTransactio
 	return {city, region, country};
 }
 
-export function formatBankTransactionLocation(value: unknown): string | null {
-	const location = normalizeBankTransactionLocation(value);
-	if (!location) return null;
+export function formatBankTransactionLocation(value: BankTransactionLocation | null | undefined): string | null {
+	if (!value) return null;
 
-	const parts = [location.city, location.region, location.country].filter((part): part is string => part !== null);
+	const parts = [value.city, value.region, value.country].filter((part): part is string => part !== null);
 	return parts.length > 0 ? parts.join(' ') : null;
 }
 
@@ -32,7 +33,7 @@ function normalizeLocationPart(value: unknown): string | null {
 	const normalized = value.replace(CONTROL_CHARACTER_PATTERN, ' ').replace(/\s+/g, ' ').trim();
 	if (!normalized) return null;
 
-	return normalized.slice(0, MAX_LOCATION_PART_LENGTH).trim() || null;
+	return truncate(normalized, MAX_LOCATION_PART_LENGTH)?.trim() || null;
 }
 
 function normalizeCountry(value: unknown): string | null {

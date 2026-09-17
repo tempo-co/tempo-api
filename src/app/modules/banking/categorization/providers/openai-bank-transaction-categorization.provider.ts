@@ -5,6 +5,7 @@ import {z} from 'zod';
 import {ConfigurationService} from '@core/config/config.service';
 
 import {normalizeBankTransactionLocation} from '../../bank-transaction-location';
+import type {BankTransactionLocation} from '../../bank-transaction-location';
 import {normalizeMerchantCategoryCode} from '../bank-transaction-categorization-input';
 import {
 	BANK_TRANSACTION_CATEGORIZATION_MAX_SEARCH_TRACE_ITEMS,
@@ -135,6 +136,8 @@ type OpenAiResponseRequest = Parameters<OpenAiResponsesClient['responses']['crea
 	/** Supported by the Responses API; absent from the pinned SDK request type. */
 	max_tool_calls?: number | null;
 };
+type OpenAiResponseTool = NonNullable<OpenAiResponseRequest['tools']>[number];
+type OpenAiWebSearchRequestTransaction = Omit<BankTransactionCategorizationWebSearchInput, 'approximateLocation'>;
 type CategorizationClassification = z.infer<typeof categorizationClassificationSchema>;
 type WebSearchCategorizationClassification = z.infer<typeof webSearchCategorizationClassificationSchema>;
 type CategorizationResponse<T extends CategorizationClassification> = {classifications: T[]};
@@ -202,9 +205,15 @@ export class OpenAiBankTransactionCategorizationProvider implements BankTransact
 		const results: BankTransactionCategorizationResult[] = [];
 
 		for (const transaction of transactions) {
+			const approximateLocation = normalizeBankTransactionLocation(transaction.approximateLocation);
 			const requestTransaction = this.toWebSearchRequestTransaction(transaction, '0');
 			const candidateResults = await this.requestStructuredCategorization(
-				this.createWebSearchRequest(WEB_SEARCH_CATEGORIZATION_INSTRUCTIONS, categories, [requestTransaction]),
+				this.createWebSearchRequest(
+					WEB_SEARCH_CATEGORIZATION_INSTRUCTIONS,
+					categories,
+					[requestTransaction],
+					approximateLocation,
+				),
 				webSearchCategorizationResponseSchema,
 				[requestTransaction],
 				[transaction],
@@ -289,24 +298,24 @@ export class OpenAiBankTransactionCategorizationProvider implements BankTransact
 	private createWebSearchRequest(
 		instructions: string,
 		categories: readonly BankTransactionCategoryDefinition[],
-		transactions: readonly BankTransactionCategorizationWebSearchInput[],
+		transactions: readonly OpenAiWebSearchRequestTransaction[],
+		approximateLocation: BankTransactionLocation | null,
 	): OpenAiResponseRequest {
-		const approximateLocation = normalizeBankTransactionLocation(transactions[0]?.approximateLocation);
 		const webSearchTool = {
-			type: 'web_search' as const,
-			external_web_access: true as const,
-			search_context_size: 'medium' as const,
+			type: 'web_search',
+			external_web_access: true,
+			search_context_size: 'medium',
 			...(approximateLocation
 				? {
 						user_location: {
-							type: 'approximate' as const,
+							type: 'approximate',
 							...(approximateLocation.city ? {city: approximateLocation.city} : {}),
 							...(approximateLocation.region ? {region: approximateLocation.region} : {}),
 							...(approximateLocation.country ? {country: approximateLocation.country} : {}),
 						},
 					}
 				: {}),
-		};
+		} satisfies OpenAiResponseTool;
 
 		return {
 			model: this.model,
@@ -333,9 +342,7 @@ export class OpenAiBankTransactionCategorizationProvider implements BankTransact
 	private toWebSearchRequestTransaction(
 		transaction: BankTransactionCategorizationWebSearchInput,
 		correlationId: string,
-	): BankTransactionCategorizationWebSearchInput {
-		const approximateLocation = normalizeBankTransactionLocation(transaction.approximateLocation);
-
+	): OpenAiWebSearchRequestTransaction {
 		return {
 			correlationId,
 			amount: transaction.amount,
@@ -344,7 +351,6 @@ export class OpenAiBankTransactionCategorizationProvider implements BankTransact
 			transactionType: transaction.transactionType,
 			merchantName: transaction.merchantName,
 			merchantLocation: transaction.merchantLocation,
-			...(approximateLocation ? {approximateLocation} : {}),
 			searchQuery: transaction.searchQuery,
 			merchantCategoryCode: normalizeMerchantCategoryCode(transaction.merchantCategoryCode),
 		};

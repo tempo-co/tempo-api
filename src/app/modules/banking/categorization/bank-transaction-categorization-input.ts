@@ -141,6 +141,7 @@ export function createBankTransactionCategorizationInputHash(
 				...value,
 				aspspName: value.bankAccount?.bankConnection?.aspspName,
 			});
+	const merchantLocation = normalizeBankTransactionLocation(input.merchantLocation);
 	const hashInput: CategorizationHashInput = {
 		transactionDate: input.transactionDate,
 		bookingDate: input.bookingDate,
@@ -157,9 +158,7 @@ export function createBankTransactionCategorizationInputHash(
 		bankTransactionDescription: input.bankTransactionDescription,
 		merchantCategoryCode: input.merchantCategoryCode,
 		remittanceInformation: input.remittanceInformation,
-		...(normalizeBankTransactionLocation(input.merchantLocation)
-			? {merchantLocation: normalizeBankTransactionLocation(input.merchantLocation)}
-			: {}),
+		...(merchantLocation ? {merchantLocation} : {}),
 	};
 
 	return createHash('sha256').update(JSON.stringify(hashInput)).digest('hex');

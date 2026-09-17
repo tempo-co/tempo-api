@@ -425,6 +425,13 @@ describe('EnableBankingClient', () => {
 										post_code: '9999 ZZ',
 									},
 								},
+								debtor: {
+									postal_address: {
+										town_name: 'Account Holder Town',
+										country_sub_division: 'Account Holder Region',
+										country: 'BE',
+									},
+								},
 								bank_transaction_code: {
 									code: 'PMNT',
 									sub_code: 'CARD',
@@ -457,6 +464,13 @@ describe('EnableBankingClient', () => {
 								credit_debit_indicator: 'CRDT',
 								status: 'BOOK',
 								value_date: '2026-08-25',
+								creditor: {
+									postal_address: {
+										town_name: 'Creditor Town',
+										country_sub_division: 'Creditor Region',
+										country: 'DE',
+									},
+								},
 								debtor: {
 									name: 'Employer',
 									postal_address: {
@@ -526,6 +540,58 @@ describe('EnableBankingClient', () => {
 
 		const secondUrl = new URL(String(fetchMock.mock.calls[1][0]));
 		expect(secondUrl.searchParams.get('continuation_key')).toBe('next-page');
+	});
+
+	it('omits location when the direction-selected counterparty is missing', async () => {
+		fetchMock.mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({
+					transactions: [
+						{
+							transaction_id: 'debit-missing-creditor',
+							transaction_amount: {currency: 'EUR', amount: '1.00'},
+							credit_debit_indicator: 'DBIT',
+							debtor: {
+								postal_address: {
+									town_name: 'Account Holder Town',
+									country_sub_division: 'Account Holder Region',
+									country: 'BE',
+								},
+							},
+						},
+						{
+							transaction_id: 'credit-missing-debtor',
+							transaction_amount: {currency: 'EUR', amount: '2.00'},
+							credit_debit_indicator: 'CRDT',
+							creditor: {
+								postal_address: {
+									town_name: 'Creditor Town',
+									country_sub_division: 'Creditor Region',
+									country: 'DE',
+								},
+							},
+						},
+						{
+							transaction_id: 'unknown-direction',
+							transaction_amount: {currency: 'EUR', amount: '3.00'},
+							credit_debit_indicator: 'UNKNOWN',
+							creditor: {
+								postal_address: {town_name: 'Creditor Town', country: 'DE'},
+							},
+							debtor: {
+								postal_address: {town_name: 'Account Holder Town', country: 'BE'},
+							},
+						},
+					],
+				}),
+				{status: 200, headers: {'content-type': 'application/json'}},
+			),
+		);
+
+		const transactions = await client.getAccountTransactions('account-id', {strategy: 'default'});
+
+		expect(transactions).toHaveLength(3);
+		for (const transaction of transactions) expect(transaction).not.toHaveProperty('counterpartyLocation');
 	});
 
 	it('propagates a supplied cancellation signal to transaction requests', async () => {
