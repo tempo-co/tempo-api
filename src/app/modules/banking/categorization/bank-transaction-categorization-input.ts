@@ -2,6 +2,7 @@ import {createHash} from 'node:crypto';
 
 import {toBankTransactionDirection} from '../bank-transaction-direction';
 import {getBankTransactionDisplayDescription} from '../bank-transaction-display';
+import {formatBankTransactionLocation, normalizeBankTransactionLocation} from '../bank-transaction-location';
 import {normalizeBankTransactionType} from '../bank-transaction-type';
 import {BankTransaction} from '../bank-transaction.entity';
 import {truncate} from '../banking.utils';
@@ -45,6 +46,7 @@ type BankTransactionCategorizationTransaction = Pick<
 	| 'remittanceInformation'
 > & {
 	aspspName?: string | null;
+	merchantLocation?: BankTransaction['merchantLocation'];
 };
 
 export function toBankTransactionCategorizationInput(
@@ -59,6 +61,7 @@ export function toBankTransactionCategorizationInput(
 		subCode: bankTransactionSubCode ?? undefined,
 		aspspName: transaction.aspspName,
 	});
+	const merchantLocation = normalizeBankTransactionLocation(transaction.merchantLocation);
 
 	return {
 		correlationId: transaction.id,
@@ -77,6 +80,7 @@ export function toBankTransactionCategorizationInput(
 		bankTransactionDescription,
 		merchantCategoryCode: normalizeMerchantCategoryCode(transaction.merchantCategoryCode),
 		remittanceInformation: sanitizeRemittanceInformation(transaction.remittanceInformation),
+		...(merchantLocation ? {merchantLocation} : {}),
 	};
 }
 
@@ -102,6 +106,7 @@ export function toBankTransactionCategorizationWebSearchInput(
 		transactionType: input.transactionType,
 		merchantName,
 		merchantLocation,
+		...(merchantDetails.approximateLocation ? {approximateLocation: merchantDetails.approximateLocation} : {}),
 		searchQuery,
 		merchantCategoryCode: input.merchantCategoryCode,
 	};
@@ -110,16 +115,21 @@ export function toBankTransactionCategorizationWebSearchInput(
 function getWebSearchMerchantDetails(input: BankTransactionCategorizationInput): {
 	merchantName: string | null;
 	merchantLocation: string | null;
+	approximateLocation: BankTransactionCategorizationInput['merchantLocation'];
 } {
 	const counterpartyName = normalizeNullableText(input.counterpartyName);
 	const description = normalizeNullableText(input.description);
+	const approximateLocation = normalizeBankTransactionLocation(input.merchantLocation);
 	const merchantName =
 		counterpartyName ??
 		(description ? getBankTransactionDisplayDescription({description, counterpartyName: null}) : null) ??
 		normalizeNullableText(input.bankTransactionDescription);
-	const merchantLocation = description?.match(CARD_LOCATION_PATTERN)?.[1]?.trim() ?? null;
+	const merchantLocation =
+		formatBankTransactionLocation(approximateLocation) ??
+		description?.match(CARD_LOCATION_PATTERN)?.[1]?.trim() ??
+		null;
 
-	return {merchantName, merchantLocation};
+	return {merchantName, merchantLocation, approximateLocation};
 }
 
 export function createBankTransactionCategorizationInputHash(
@@ -131,6 +141,7 @@ export function createBankTransactionCategorizationInputHash(
 				...value,
 				aspspName: value.bankAccount?.bankConnection?.aspspName,
 			});
+	const merchantLocation = normalizeBankTransactionLocation(input.merchantLocation);
 	const hashInput: CategorizationHashInput = {
 		transactionDate: input.transactionDate,
 		bookingDate: input.bookingDate,
@@ -147,6 +158,7 @@ export function createBankTransactionCategorizationInputHash(
 		bankTransactionDescription: input.bankTransactionDescription,
 		merchantCategoryCode: input.merchantCategoryCode,
 		remittanceInformation: input.remittanceInformation,
+		...(merchantLocation ? {merchantLocation} : {}),
 	};
 
 	return createHash('sha256').update(JSON.stringify(hashInput)).digest('hex');

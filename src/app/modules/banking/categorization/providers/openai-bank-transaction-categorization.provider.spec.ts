@@ -211,6 +211,42 @@ describe('OpenAiBankTransactionCategorizationProvider', () => {
 		expect(request.input).not.toContain('remittance');
 	});
 
+	it('passes a known approximate location to web search without increasing context size', async () => {
+		const {provider, responsesCreate} = createProvider();
+		responsesCreate.mockResolvedValue({
+			output_text: webOutput([{correlationId: '0', category: 'OTHER', confidence: 0.3}]),
+		});
+		const transaction = {
+			...createWebSearchInput('opaque-transaction-id'),
+			approximateLocation: {
+				city: 'Exampletown',
+				region: 'Example Region',
+				country: 'NL',
+			},
+		} satisfies BankTransactionCategorizationWebSearchInput;
+
+		await provider.categorizeWithWebSearch([transaction], BANK_TRANSACTION_CATEGORY_DEFINITIONS);
+
+		const request = responsesCreate.mock.calls[0][0];
+		expect(request.tools).toEqual([
+			{
+				type: 'web_search',
+				external_web_access: true,
+				search_context_size: 'medium',
+				user_location: {
+					type: 'approximate',
+					city: 'Exampletown',
+					region: 'Example Region',
+					country: 'NL',
+				},
+			},
+		]);
+		const sentInput = JSON.parse(request.input);
+		expect(sentInput.transactions[0]).not.toHaveProperty('approximateLocation');
+		expect(JSON.stringify(request)).not.toContain('Private Street');
+		expect(JSON.stringify(request)).not.toContain('9999 ZZ');
+	});
+
 	it('stores only the supplied search query and source hostnames in the search trace', async () => {
 		const {provider, responsesCreate} = createProvider();
 		responsesCreate.mockResolvedValue({
