@@ -247,6 +247,8 @@ describe('BankTransactionCategorizationService worker', () => {
 				direction: 'EXPENSE',
 				transactionType: 'CARD_PAYMENT',
 				merchantName: 'Ambiguous Cafe',
+				merchantLocation: null,
+				searchQuery: 'Ambiguous Cafe',
 				merchantCategoryCode: null,
 			}),
 		]);
@@ -270,6 +272,97 @@ describe('BankTransactionCategorizationService worker', () => {
 		expect(provider.categorizeWithWebSearch).toHaveBeenCalledTimes(1);
 		expect(transaction.category).toBe('SHOPPING');
 		expect(transaction.categoryPromptVersion).toBe(BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_PROMPT_VERSION);
+	});
+
+	it('retries an unsupported transportation guess when card merchant evidence is weak', async () => {
+		const transaction = createTransaction({
+			id: 'vending-transaction',
+			counterpartyName: null,
+			merchantCategoryCode: 'not-an-mcc',
+			description: 'BEA, Google Pay Example Vending Cafe,PAS999 NR:TEST12345, 04.09.26/19:00 TESTVILLE',
+		});
+		const {service, provider} = createService({
+			rows: [transaction],
+			webSearchEnabled: true,
+			providerResult: [{correlationId: transaction.id, category: 'TRANSPORTATION', confidence: 0.86}],
+			webSearchResult: [
+				{
+					correlationId: transaction.id,
+					category: 'FOOD_AND_DRINK',
+					confidence: 0.94,
+					searchTrace: {
+						queries: ['Example Vending Cafe TESTVILLE'],
+						sourceDomains: ['example.test'],
+						evidenceType: 'PURCHASE_CONTEXT',
+					},
+				},
+			],
+		});
+
+		await service.processTransactionJob([transaction.id]);
+
+		expect(provider.categorizeWithWebSearch).toHaveBeenCalledTimes(1);
+		expect(provider.categorizeWithWebSearch.mock.calls[0][0]).toEqual([
+			expect.objectContaining({
+				merchantName: 'Example Vending Cafe',
+				merchantLocation: 'TESTVILLE',
+				searchQuery: 'Example Vending Cafe TESTVILLE',
+			}),
+		]);
+		expect(transaction.category).toBe('FOOD_AND_DRINK');
+		expect(transaction.categorySearchTrace).toEqual({
+			queries: ['Example Vending Cafe TESTVILLE'],
+			sourceDomains: ['example.test'],
+			evidenceType: 'PURCHASE_CONTEXT',
+		});
+	});
+
+	it('downgrades a weak transportation guess to OTHER when web search is disabled', async () => {
+		const transaction = createTransaction({
+			id: 'weak-transportation-transaction',
+			counterpartyName: null,
+			merchantCategoryCode: null,
+			transactionType: 'CARD_PAYMENT',
+		});
+		const {service, provider} = createService({
+			rows: [transaction],
+			providerResult: [{correlationId: transaction.id, category: 'TRANSPORTATION', confidence: 0.86}],
+		});
+
+		await service.processTransactionJob([transaction.id]);
+
+		expect(provider.categorizeWithWebSearch).not.toHaveBeenCalled();
+		expect(transaction.category).toBe('OTHER');
+		expect(transaction.categoryConfidence).toBe('0');
+		expect(transaction.categoryPromptVersion).toBe(BANK_TRANSACTION_CATEGORIZATION_PROMPT_VERSION);
+	});
+
+	it('downgrades web Transportation without purchase evidence to OTHER', async () => {
+		const transaction = createTransaction({id: 'web-transportation-transaction'});
+		const searchTrace = {
+			queries: ['Opaque merchant'],
+			sourceDomains: ['example.com'],
+			evidenceType: 'MERCHANT_IDENTITY_ONLY' as const,
+		};
+		const {service} = createService({
+			rows: [transaction],
+			webSearchEnabled: true,
+			providerResult: [{correlationId: transaction.id, category: 'OTHER', confidence: 0.5}],
+			webSearchResult: [
+				{
+					correlationId: transaction.id,
+					category: 'TRANSPORTATION',
+					confidence: 0.91,
+					searchTrace,
+				},
+			],
+		});
+
+		await service.processTransactionJob([transaction.id]);
+
+		expect(transaction.category).toBe('OTHER');
+		expect(transaction.categoryConfidence).toBe('0');
+		expect(transaction.categorySearchTrace).toEqual(searchTrace);
 	});
 
 	it('does not call web search when the fallback is disabled', async () => {
@@ -385,7 +478,11 @@ describe('BankTransactionCategorizationService worker', () => {
 	});
 
 	it('keeps the normal result when web-search fallback fails', async () => {
-		const transaction = createTransaction({id: 'web-failure-transaction'});
+		const transaction = createTransaction({
+			id: 'web-failure-transaction',
+			counterpartyName: null,
+			merchantCategoryCode: null,
+		});
 		const failure = new BankTransactionCategorizationProviderError(
 			'OpenAI categorization request failed (503).',
 			true,
@@ -394,6 +491,7 @@ describe('BankTransactionCategorizationService worker', () => {
 			rows: [transaction],
 			webSearchEnabled: true,
 			webSearchError: failure,
+			providerResult: [{correlationId: transaction.id, category: 'TRANSPORTATION', confidence: 0.86}],
 		});
 		const logger = (service as unknown as {logger: {warn(message: string): void}}).logger;
 		const warn = jest.spyOn(logger, 'warn').mockImplementation();

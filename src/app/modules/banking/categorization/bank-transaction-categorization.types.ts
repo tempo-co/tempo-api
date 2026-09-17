@@ -31,12 +31,31 @@ export type BankTransactionCategorizationWebSearchInput = Pick<
 	'correlationId' | 'amount' | 'currency' | 'direction' | 'transactionType' | 'merchantCategoryCode'
 > & {
 	merchantName: string;
+	merchantLocation: string | null;
+	searchQuery: string;
+};
+
+export const BANK_TRANSACTION_CATEGORIZATION_SEARCH_EVIDENCE_TYPES = [
+	'PURCHASE_CONTEXT',
+	'MERCHANT_IDENTITY_ONLY',
+	'MCC',
+	'INSUFFICIENT',
+	'CONFLICTING',
+] as const;
+export type BankTransactionCategorizationSearchEvidenceType =
+	(typeof BANK_TRANSACTION_CATEGORIZATION_SEARCH_EVIDENCE_TYPES)[number];
+
+export type BankTransactionCategorizationSearchTrace = {
+	queries: string[];
+	sourceDomains: string[];
+	evidenceType: BankTransactionCategorizationSearchEvidenceType;
 };
 
 export type BankTransactionCategorizationResult = {
 	correlationId: string;
 	category: BankTransactionCategory;
 	confidence: number;
+	searchTrace?: BankTransactionCategorizationSearchTrace;
 };
 
 export type BankTransactionCategoryDefinition = {

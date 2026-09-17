@@ -185,6 +185,8 @@ describe('Bank transaction categorization integration', () => {
 				direction: 'EXPENSE',
 				transactionType: 'OTHER',
 				merchantName: 'Synthetic ambiguous merchant',
+				merchantLocation: null,
+				searchQuery: 'Synthetic ambiguous merchant',
 				merchantCategoryCode: null,
 			},
 		]);

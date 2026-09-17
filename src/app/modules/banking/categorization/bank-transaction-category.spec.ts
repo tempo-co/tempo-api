@@ -45,4 +45,10 @@ describe('bank transaction categorization contract', () => {
 		expect(BANK_TRANSACTION_CATEGORIZATION_STATUSES).toEqual(['PENDING', 'PROCESSING', 'COMPLETED', 'FAILED']);
 		expect(BANK_TRANSACTION_CATEGORIZATION_SOURCES).toEqual(['AI', 'MANUAL']);
 	});
+
+	it('makes grocery and convenience purchases explicit in Food and drink guidance', () => {
+		const foodAndDrink = BANK_TRANSACTION_CATEGORY_DEFINITIONS.find(({value}) => value === 'FOOD_AND_DRINK');
+
+		expect(foodAndDrink?.description).toContain('typical convenience-store purchases');
+	});
 });
