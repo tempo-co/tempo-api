@@ -70,6 +70,32 @@ describe('bank transaction categorization input', () => {
 		expect(JSON.stringify(input)).not.toContain('account-id');
 	});
 
+	it('normalizes a numeric card code when the provider omits its subcode', () => {
+		const input = toBankTransactionCategorizationInput({
+			...createTransaction({
+				transactionType: 'OTHER',
+				bankTransactionCode: '426',
+				bankTransactionSubCode: null,
+			}),
+			aspspName: 'ABN AMRO',
+		});
+
+		expect(input.transactionType).toBe('CARD_PAYMENT');
+	});
+
+	it('does not apply a provider-specific numeric code to another ASPSP', () => {
+		const input = toBankTransactionCategorizationInput({
+			...createTransaction({
+				transactionType: 'OTHER',
+				bankTransactionCode: '426',
+				bankTransactionSubCode: null,
+			}),
+			aspspName: 'Synthetic Bank',
+		});
+
+		expect(input.transactionType).toBe('OTHER');
+	});
+
 	it('re-derives the transaction type when the stored value is stale', () => {
 		const input = toBankTransactionCategorizationInput(
 			createTransaction({

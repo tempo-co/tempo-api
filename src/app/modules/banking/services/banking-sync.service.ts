@@ -378,6 +378,7 @@ export class BankingSyncService {
 						bankTransactionRepository,
 						accountResult.bankAccount,
 						accountResult.transactions,
+						connection.aspspName,
 					);
 					transactionsAdded += transactionPersistence.transactionsAdded;
 					persistedTransactionIds.push(...transactionPersistence.persistedTransactionIds);
@@ -435,9 +436,10 @@ export class BankingSyncService {
 		repository: Repository<BankTransaction>,
 		bankAccount: BankAccount,
 		transactions: EnableBankingTransaction[],
+		aspspName: string,
 	): Promise<PersistSyncResult> {
 		const transactionValues = transactions.map((transaction) =>
-			this.toBankTransactionValues(bankAccount, transaction),
+			this.toBankTransactionValues(bankAccount, transaction, aspspName),
 		);
 		const dedupeKeys = transactionValues.map(({dedupeKey}) => dedupeKey);
 		const existingTransactions = await repository.find({
@@ -530,7 +532,11 @@ export class BankingSyncService {
 		};
 	}
 
-	private toBankTransactionValues(bankAccount: BankAccount, transaction: EnableBankingTransaction) {
+	private toBankTransactionValues(
+		bankAccount: BankAccount,
+		transaction: EnableBankingTransaction,
+		aspspName: string,
+	) {
 		const amount = this.toSignedAmount(transaction.amount, transaction.creditDebitIndicator);
 		const currency = transaction.currency.toUpperCase();
 		const description = truncate(transaction.description, 500);
@@ -549,6 +555,7 @@ export class BankingSyncService {
 		const transactionType = normalizeBankTransactionType({
 			code: bankTransactionCode ?? undefined,
 			subCode: bankTransactionSubCode ?? undefined,
+			aspspName,
 		});
 		const merchantCategoryCode = truncate(transaction.merchantCategoryCode, 16);
 		const dedupeKey = this.createDedupeKey({
@@ -574,6 +581,7 @@ export class BankingSyncService {
 				creditDebitIndicator,
 				bankTransactionCode,
 				bankTransactionSubCode,
+				aspspName,
 				description,
 				counterpartyName,
 				bankTransactionDescription,
