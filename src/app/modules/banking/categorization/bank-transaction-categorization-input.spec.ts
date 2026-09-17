@@ -26,6 +26,7 @@ function createTransaction(overrides: Partial<BankTransaction> = {}): BankTransa
 		description: ' Coffee shop ',
 		displayDescription: 'Coffee shop',
 		counterpartyName: ' Cafe ',
+		merchantLocation: null,
 		merchantCategoryCode: '5814',
 		remittanceInformation: ' Morning coffee ',
 		balanceAfterAmount: '100.00',
@@ -150,6 +151,7 @@ describe('bank transaction categorization input', () => {
 		['bank transaction description', {bankTransactionDescription: 'Different bank description'}],
 		['merchant category code', {merchantCategoryCode: '5999'}],
 		['remittance information', {remittanceInformation: 'Different remittance'}],
+		['merchant location', {merchantLocation: {city: 'Differenttown', region: 'Different Region', country: 'BE'}}],
 	])('changes the hash when %s changes', (_field, override) => {
 		expect(createBankTransactionCategorizationInputHash(createTransaction())).not.toBe(
 			createBankTransactionCategorizationInputHash(createTransaction(override as Partial<BankTransaction>)),
@@ -232,6 +234,35 @@ describe('bank transaction categorization input', () => {
 		expect(serialized).not.toContain('provider-id');
 		expect(serialized).not.toContain('account-id');
 		expect(serialized).not.toContain('Order 123456789');
+	});
+
+	it('preserves only a safe upstream merchant location for web search', () => {
+		const input = toBankTransactionCategorizationInput(
+			Object.assign(createTransaction({counterpartyName: 'Example Merchant', description: null}), {
+				merchantLocation: {
+					city: ' Exampletown ',
+					region: ' Example Region ',
+					country: 'nl',
+					streetName: 'Private Street',
+					postCode: '9999 ZZ',
+				},
+			}),
+		);
+
+		expect(input.merchantLocation).toEqual({city: 'Exampletown', region: 'Example Region', country: 'NL'});
+
+		expect(toBankTransactionCategorizationWebSearchInput(input)).toEqual({
+			correlationId: 'transaction-id',
+			amount: '-12.50',
+			currency: 'EUR',
+			direction: 'EXPENSE',
+			transactionType: 'CARD_PAYMENT',
+			merchantName: 'Example Merchant',
+			merchantLocation: 'Exampletown Example Region NL',
+			approximateLocation: {city: 'Exampletown', region: 'Example Region', country: 'NL'},
+			searchQuery: 'Example Merchant Exampletown Example Region NL',
+			merchantCategoryCode: '5814',
+		});
 	});
 
 	it('canonicalizes Google Pay card descriptions before web search', () => {

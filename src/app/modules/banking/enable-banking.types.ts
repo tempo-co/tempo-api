@@ -1,3 +1,5 @@
+import type {BankTransactionLocation} from './bank-transaction-location';
+
 export type EnableBankingAspsp = {
 	name: string;
 	country: string;
@@ -69,6 +71,7 @@ export type EnableBankingTransaction = {
 	valueDate?: string;
 	description?: string;
 	counterpartyName?: string;
+	counterpartyLocation?: BankTransactionLocation;
 	remittanceInformation?: string;
 	bankTransactionCode?: string;
 	bankTransactionSubCode?: string;

@@ -310,7 +310,17 @@ describe('BankingSyncService synchronization lock', () => {
 
 	it('reports only transactions that were added during synchronization', async () => {
 		const transactions = [
-			{providerTransactionId: 'existing-transaction', amount: '10.00', currency: 'EUR'},
+			{
+				providerTransactionId: 'existing-transaction',
+				amount: '10.00',
+				currency: 'EUR',
+				counterpartyLocation: {
+					city: 'Exampletown',
+					region: 'Example Region',
+					country: 'NL',
+					streetName: 'Private Street',
+				},
+			},
 			{providerTransactionId: 'new-transaction', amount: '20.00', currency: 'EUR'},
 		];
 		const insertQueryBuilder = {
@@ -343,6 +353,13 @@ describe('BankingSyncService synchronization lock', () => {
 		});
 		expect(insertQueryBuilder.orIgnore).toHaveBeenCalledTimes(1);
 		expect(insertQueryBuilder.returning).toHaveBeenCalledWith('id');
+		expect(insertQueryBuilder.values).toHaveBeenCalledWith(
+			expect.arrayContaining([
+				expect.objectContaining({
+					merchantLocation: {city: 'Exampletown', region: 'Example Region', country: 'NL'},
+				}),
+			]),
+		);
 	});
 
 	afterEach(() => {

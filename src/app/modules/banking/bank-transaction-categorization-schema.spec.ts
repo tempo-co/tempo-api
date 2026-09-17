@@ -24,5 +24,6 @@ describe('BankTransaction categorization schema', () => {
 		expect(byName.get('categoryUpdatedAt')).toMatchObject({type: 'timestamptz', nullable: true});
 		expect(byName.get('categoryLastError')).toMatchObject({type: 'text', nullable: true});
 		expect(byName.get('categorySearchTrace')).toMatchObject({type: 'jsonb', nullable: true});
+		expect(byName.get('merchantLocation')).toMatchObject({type: 'jsonb', nullable: true});
 	});
 });

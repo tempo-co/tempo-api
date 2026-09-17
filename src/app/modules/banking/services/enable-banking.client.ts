@@ -4,6 +4,7 @@ import {readFileSync} from 'node:fs';
 
 import {ConfigurationService} from '@core/config/config.service';
 
+import {normalizeBankTransactionLocation} from '../bank-transaction-location';
 import {
 	EnableBankingAccount,
 	EnableBankingAspsp,
@@ -366,14 +367,19 @@ export class EnableBankingClient {
 		if (!amount || !currency || currency.length !== 3) return [];
 
 		const creditDebitIndicator = this.asOptionalString(record?.credit_debit_indicator)?.toUpperCase();
-		const creditorName = this.asString(this.asRecord(record?.creditor)?.name);
-		const debtorName = this.asString(this.asRecord(record?.debtor)?.name);
+		const creditor = this.asRecord(record?.creditor);
+		const debtor = this.asRecord(record?.debtor);
+		const creditorName = this.asString(creditor?.name);
+		const debtorName = this.asString(debtor?.name);
+		const counterparty =
+			creditDebitIndicator === 'DBIT' ? creditor : creditDebitIndicator === 'CRDT' ? debtor : undefined;
 		const counterpartyName =
 			creditDebitIndicator === 'DBIT'
 				? (creditorName ?? debtorName)
 				: creditDebitIndicator === 'CRDT'
 					? (debtorName ?? creditorName)
 					: (creditorName ?? debtorName);
+		const counterpartyLocation = this.parseCounterpartyLocation(counterparty);
 		const remittanceInformation = this.parseRemittanceInformation(record?.remittance_information);
 		const bankTransactionCode = this.asRecord(record?.bank_transaction_code);
 		const balanceAfter = this.parseAmountAndCurrency(record?.balance_after_transaction);
@@ -400,6 +406,7 @@ export class EnableBankingClient {
 				valueDate: this.asOptionalString(record?.value_date) ?? this.asOptionalString(record?.transaction_date),
 				description,
 				counterpartyName,
+				...(counterpartyLocation ? {counterpartyLocation} : {}),
 				remittanceInformation,
 				bankTransactionCode: this.asOptionalString(bankTransactionCode?.code),
 				bankTransactionSubCode: this.asOptionalString(bankTransactionCode?.sub_code),
@@ -415,6 +422,15 @@ export class EnableBankingClient {
 				referenceNumberScheme: this.asOptionalString(record?.reference_number_schema),
 			},
 		];
+	}
+
+	private parseCounterpartyLocation(counterparty: Record<string, unknown> | undefined) {
+		const postalAddress = this.asRecord(counterparty?.postal_address);
+		return normalizeBankTransactionLocation({
+			city: postalAddress?.town_name,
+			region: postalAddress?.country_sub_division,
+			country: postalAddress?.country,
+		});
 	}
 
 	private parseRemittanceInformation(value: unknown): string | undefined {

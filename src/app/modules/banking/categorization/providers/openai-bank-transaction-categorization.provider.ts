@@ -4,6 +4,8 @@ import {z} from 'zod';
 
 import {ConfigurationService} from '@core/config/config.service';
 
+import {normalizeBankTransactionLocation} from '../../bank-transaction-location';
+import type {BankTransactionLocation} from '../../bank-transaction-location';
 import {normalizeMerchantCategoryCode} from '../bank-transaction-categorization-input';
 import {
 	BANK_TRANSACTION_CATEGORIZATION_MAX_SEARCH_TRACE_ITEMS,
@@ -134,6 +136,8 @@ type OpenAiResponseRequest = Parameters<OpenAiResponsesClient['responses']['crea
 	/** Supported by the Responses API; absent from the pinned SDK request type. */
 	max_tool_calls?: number | null;
 };
+type OpenAiResponseTool = NonNullable<OpenAiResponseRequest['tools']>[number];
+type OpenAiWebSearchRequestTransaction = Omit<BankTransactionCategorizationWebSearchInput, 'approximateLocation'>;
 type CategorizationClassification = z.infer<typeof categorizationClassificationSchema>;
 type WebSearchCategorizationClassification = z.infer<typeof webSearchCategorizationClassificationSchema>;
 type CategorizationResponse<T extends CategorizationClassification> = {classifications: T[]};
@@ -201,9 +205,15 @@ export class OpenAiBankTransactionCategorizationProvider implements BankTransact
 		const results: BankTransactionCategorizationResult[] = [];
 
 		for (const transaction of transactions) {
+			const approximateLocation = normalizeBankTransactionLocation(transaction.approximateLocation);
 			const requestTransaction = this.toWebSearchRequestTransaction(transaction, '0');
 			const candidateResults = await this.requestStructuredCategorization(
-				this.createWebSearchRequest(WEB_SEARCH_CATEGORIZATION_INSTRUCTIONS, categories, [requestTransaction]),
+				this.createWebSearchRequest(
+					WEB_SEARCH_CATEGORIZATION_INSTRUCTIONS,
+					categories,
+					[requestTransaction],
+					approximateLocation,
+				),
 				webSearchCategorizationResponseSchema,
 				[requestTransaction],
 				[transaction],
@@ -288,21 +298,32 @@ export class OpenAiBankTransactionCategorizationProvider implements BankTransact
 	private createWebSearchRequest(
 		instructions: string,
 		categories: readonly BankTransactionCategoryDefinition[],
-		transactions: readonly BankTransactionCategorizationWebSearchInput[],
+		transactions: readonly OpenAiWebSearchRequestTransaction[],
+		approximateLocation: BankTransactionLocation | null,
 	): OpenAiResponseRequest {
+		const webSearchTool = {
+			type: 'web_search',
+			external_web_access: true,
+			search_context_size: 'medium',
+			...(approximateLocation
+				? {
+						user_location: {
+							type: 'approximate',
+							...(approximateLocation.city ? {city: approximateLocation.city} : {}),
+							...(approximateLocation.region ? {region: approximateLocation.region} : {}),
+							...(approximateLocation.country ? {country: approximateLocation.country} : {}),
+						},
+					}
+				: {}),
+		} satisfies OpenAiResponseTool;
+
 		return {
 			model: this.model,
 			instructions,
 			input: this.createInput(categories, transactions),
 			reasoning: {effort: 'medium'},
 			include: ['web_search_call.action.sources'],
-			tools: [
-				{
-					type: 'web_search',
-					external_web_access: true,
-					search_context_size: 'medium',
-				},
-			],
+			tools: [webSearchTool],
 			tool_choice: 'required',
 			max_tool_calls: 1,
 			parallel_tool_calls: false,
@@ -321,7 +342,7 @@ export class OpenAiBankTransactionCategorizationProvider implements BankTransact
 	private toWebSearchRequestTransaction(
 		transaction: BankTransactionCategorizationWebSearchInput,
 		correlationId: string,
-	): BankTransactionCategorizationWebSearchInput {
+	): OpenAiWebSearchRequestTransaction {
 		return {
 			correlationId,
 			amount: transaction.amount,
@@ -400,6 +421,8 @@ export class OpenAiBankTransactionCategorizationProvider implements BankTransact
 	}
 
 	private toSafeInput(transaction: BankTransactionCategorizationInput): BankTransactionCategorizationInput {
+		const merchantLocation = normalizeBankTransactionLocation(transaction.merchantLocation);
+
 		return {
 			correlationId: transaction.correlationId,
 			transactionDate: transaction.transactionDate,
@@ -417,6 +440,7 @@ export class OpenAiBankTransactionCategorizationProvider implements BankTransact
 			bankTransactionDescription: transaction.bankTransactionDescription,
 			merchantCategoryCode: transaction.merchantCategoryCode,
 			remittanceInformation: transaction.remittanceInformation,
+			...(merchantLocation ? {merchantLocation} : {}),
 		};
 	}
 

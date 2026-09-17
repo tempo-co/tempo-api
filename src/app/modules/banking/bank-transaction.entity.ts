@@ -10,6 +10,7 @@ import {
 } from 'typeorm';
 
 import {BankAccount} from './bank-account.entity';
+import type {BankTransactionLocation} from './bank-transaction-location';
 import {BankTransactionType} from './bank-transaction-type';
 import type {BankTransactionCategorizationSearchTrace} from './categorization/bank-transaction-categorization.types';
 
@@ -77,6 +78,9 @@ export class BankTransaction {
 
 	@Column({type: 'varchar', length: 255, nullable: true})
 	counterpartyName: string | null;
+
+	@Column({type: 'jsonb', nullable: true})
+	merchantLocation: BankTransactionLocation | null;
 
 	@Column({type: 'varchar', length: 16, nullable: true})
 	merchantCategoryCode: string | null;
