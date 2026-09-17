@@ -15,11 +15,15 @@ import {
 import {BankTransaction} from '../bank-transaction.entity';
 import {
 	createBankTransactionCategorizationInputHash,
+	normalizeMerchantCategoryCode,
 	toBankTransactionCategorizationInput,
 	toBankTransactionCategorizationWebSearchInput,
 } from './bank-transaction-categorization-input';
 import {
+	BANK_TRANSACTION_CATEGORIZATION_MAX_SEARCH_TRACE_ITEMS,
+	BANK_TRANSACTION_CATEGORIZATION_MAX_WEB_SEARCH_QUERY_LENGTH,
 	BANK_TRANSACTION_CATEGORIZATION_PROMPT_VERSION,
+	BANK_TRANSACTION_CATEGORIZATION_RESET_VALUES,
 	BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_FAILED_PROMPT_VERSION,
 	BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_PROMPT_VERSION,
 	BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_SKIPPED_PROMPT_VERSION,
@@ -30,8 +34,10 @@ import {
 	BankTransactionCategorizationProviderError,
 } from './bank-transaction-categorization.provider';
 import {
+	BANK_TRANSACTION_CATEGORIZATION_SEARCH_EVIDENCE_TYPES,
 	BankTransactionCategorizationInput,
 	BankTransactionCategorizationResult,
+	BankTransactionCategorizationSearchTrace,
 } from './bank-transaction-categorization.types';
 import {BANK_TRANSACTION_CATEGORIES, BANK_TRANSACTION_CATEGORY_DEFINITIONS} from './bank-transaction-category';
 
@@ -54,6 +60,7 @@ type CategorizationUpdate = {
 	categoryProvider?: string | null;
 	categoryModel?: string | null;
 	categoryPromptVersion?: string | null;
+	categorySearchTrace?: BankTransactionCategorizationSearchTrace | null;
 	categoryUpdatedAt?: Date;
 	categoryLastError?: string | null;
 };
@@ -61,16 +68,6 @@ type CategorizationUpdate = {
 const STALE_PROCESSING_AFTER_MS = 15 * 60 * 1000;
 const MAX_ERROR_LENGTH = 500;
 const CLAIMABLE_STATUSES = ['PENDING', 'FAILED'] as const;
-const CATEGORIZATION_RESET_VALUES = {
-	category: null,
-	categorySource: null,
-	categoryConfidence: null,
-	categoryAppliedInputHash: null,
-	categoryProvider: null,
-	categoryModel: null,
-	categoryPromptVersion: null,
-	categoryLastError: null,
-} as const;
 
 @Injectable()
 export class BankTransactionCategorizationService {
@@ -213,22 +210,27 @@ export class BankTransactionCategorizationService {
 			return;
 		}
 
-		const standardResultById = new Map(standardResults.map((result) => [result.correlationId, result]));
+		const inputById = new Map(inputs.map((input) => [input.correlationId, input]));
+		const standardResultById = new Map(
+			standardResults.map((result) => {
+				const normalized = this.normalizeStandardResult(inputById.get(result.correlationId), result);
+				return [normalized.correlationId, normalized] as const;
+			}),
+		);
 		const webSearchEnabled = this.isWebSearchEnabled();
-		const webSearchCanRun = webSearchEnabled;
 		const skippedWebSearchIds = new Set<string>();
 		const webCandidates = inputs
-			.filter((input) => standardResultById.get(input.correlationId)?.category === 'OTHER')
+			.filter((input) => webSearchEnabled && standardResultById.get(input.correlationId)?.category === 'OTHER')
 			.map((input) => {
 				const webSearchInput = toBankTransactionCategorizationWebSearchInput(input);
-				if (webSearchCanRun && webSearchInput === null) skippedWebSearchIds.add(input.correlationId);
+				if (webSearchEnabled && webSearchInput === null) skippedWebSearchIds.add(input.correlationId);
 				return webSearchInput;
 			})
 			.filter((input): input is NonNullable<typeof input> => input !== null);
 
 		const webResults: BankTransactionCategorizationResult[] = [];
 		const failedWebSearchIds = new Set<string>();
-		if (webSearchCanRun) {
+		if (webSearchEnabled) {
 			for (const webSearchInput of webCandidates) {
 				try {
 					const candidateResults = await this.provider.categorizeWithWebSearch(
@@ -236,7 +238,7 @@ export class BankTransactionCategorizationService {
 						BANK_TRANSACTION_CATEGORY_DEFINITIONS,
 					);
 					this.assertCompleteResults([webSearchInput], candidateResults);
-					webResults.push(...candidateResults);
+					webResults.push(...candidateResults.map((result) => this.normalizeWebSearchResult(result)));
 				} catch (error) {
 					this.logger.warn(`Transaction web-search fallback failed: ${this.safeErrorName(error)}`);
 					failedWebSearchIds.add(webSearchInput.correlationId);
@@ -244,11 +246,10 @@ export class BankTransactionCategorizationService {
 			}
 		}
 
-		const resultById = new Map(standardResults.map((result) => [result.correlationId, result]));
-		for (const result of webResults) resultById.set(result.correlationId, result);
+		for (const result of webResults) standardResultById.set(result.correlationId, result);
 		const webResultIds = new Set(webResults.map(({correlationId}) => correlationId));
 		for (const claimed of batch) {
-			const result = resultById.get(claimed.input.correlationId);
+			const result = standardResultById.get(claimed.input.correlationId);
 			if (!result) continue;
 			const promptVersion = webResultIds.has(claimed.input.correlationId)
 				? BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_PROMPT_VERSION
@@ -257,35 +258,28 @@ export class BankTransactionCategorizationService {
 					: failedWebSearchIds.has(claimed.input.correlationId)
 						? BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_FAILED_PROMPT_VERSION
 						: BANK_TRANSACTION_CATEGORIZATION_PROMPT_VERSION;
+			const completionValues = {
+				category: result.category,
+				categoryStatus: 'COMPLETED',
+				categorySource: 'AI',
+				categoryConfidence: String(result.confidence),
+				categoryAppliedInputHash: claimed.inputHash,
+				categoryProvider: this.configurationService.get('AI_CATEGORIZATION_PROVIDER'),
+				categoryModel: this.configurationService.get('AI_CATEGORIZATION_MODEL'),
+				categoryPromptVersion: promptVersion,
+				categorySearchTrace: result.searchTrace ?? null,
+				categoryLastError: null,
+			};
 			const applied = await this.updateCategorizationWithGuard(
 				claimed.transaction.id,
 				claimed.inputHash,
 				{
-					category: result.category,
-					categoryStatus: 'COMPLETED',
-					categorySource: 'AI',
-					categoryConfidence: String(result.confidence),
-					categoryAppliedInputHash: claimed.inputHash,
-					categoryProvider: this.configurationService.get('AI_CATEGORIZATION_PROVIDER'),
-					categoryModel: this.configurationService.get('AI_CATEGORIZATION_MODEL'),
-					categoryPromptVersion: promptVersion,
+					...completionValues,
 					categoryUpdatedAt: new Date(),
-					categoryLastError: null,
 				},
 				'PROCESSING',
 			);
-			if (applied)
-				this.applyLocalUpdate(claimed.transaction, {
-					category: result.category,
-					categoryStatus: 'COMPLETED',
-					categorySource: 'AI',
-					categoryConfidence: String(result.confidence),
-					categoryAppliedInputHash: claimed.inputHash,
-					categoryProvider: this.configurationService.get('AI_CATEGORIZATION_PROVIDER'),
-					categoryModel: this.configurationService.get('AI_CATEGORIZATION_MODEL'),
-					categoryPromptVersion: promptVersion,
-					categoryLastError: null,
-				});
+			if (applied) this.applyLocalUpdate(claimed.transaction, completionValues);
 		}
 	}
 
@@ -317,13 +311,13 @@ export class BankTransactionCategorizationService {
 		if (!appliedHashIsStale && !completedByNonAiSource && !(hashChanged && completedHashIsStale)) return true;
 
 		const reset = await this.updateCategorizationWithGuard(transaction.id, inputHash, {
-			...CATEGORIZATION_RESET_VALUES,
+			...BANK_TRANSACTION_CATEGORIZATION_RESET_VALUES,
 			categoryStatus: 'PENDING',
 			categoryUpdatedAt: new Date(),
 		});
 		if (reset)
 			this.applyLocalUpdate(transaction, {
-				...CATEGORIZATION_RESET_VALUES,
+				...BANK_TRANSACTION_CATEGORIZATION_RESET_VALUES,
 				categoryStatus: 'PENDING',
 			});
 		return true;
@@ -382,7 +376,7 @@ export class BankTransactionCategorizationService {
 					transaction.id,
 					inputHash,
 					{
-						...CATEGORIZATION_RESET_VALUES,
+						...BANK_TRANSACTION_CATEGORIZATION_RESET_VALUES,
 						categoryStatus: 'FAILED',
 						categoryUpdatedAt: new Date(),
 						categoryLastError: safeMessage,
@@ -391,7 +385,7 @@ export class BankTransactionCategorizationService {
 				);
 				if (failed)
 					this.applyLocalUpdate(transaction, {
-						...CATEGORIZATION_RESET_VALUES,
+						...BANK_TRANSACTION_CATEGORIZATION_RESET_VALUES,
 						categoryStatus: 'FAILED',
 						categoryLastError: safeMessage,
 					});
@@ -415,11 +409,62 @@ export class BankTransactionCategorizationService {
 					!(BANK_TRANSACTION_CATEGORIES as readonly string[]).includes(result.category) ||
 					!Number.isFinite(result.confidence) ||
 					result.confidence < 0 ||
-					result.confidence > 1,
+					result.confidence > 1 ||
+					!this.isValidSearchTrace(result.searchTrace),
 			)
 		) {
 			throw new BankTransactionCategorizationProviderError('Invalid categorization provider result.', false);
 		}
+	}
+
+	private normalizeStandardResult(
+		input: BankTransactionCategorizationInput | undefined,
+		result: BankTransactionCategorizationResult,
+	): BankTransactionCategorizationResult {
+		if (
+			input &&
+			result.category === 'TRANSPORTATION' &&
+			input.transactionType === 'CARD_PAYMENT' &&
+			!normalizeMerchantCategoryCode(input.merchantCategoryCode) &&
+			input.counterpartyName === null
+		) {
+			return {...result, category: 'OTHER', confidence: 0};
+		}
+		return result;
+	}
+
+	private normalizeWebSearchResult(result: BankTransactionCategorizationResult): BankTransactionCategorizationResult {
+		const evidenceType = result.searchTrace?.evidenceType;
+		if (result.category === 'TRANSPORTATION' && evidenceType !== 'PURCHASE_CONTEXT' && evidenceType !== 'MCC') {
+			return {...result, category: 'OTHER', confidence: 0};
+		}
+		return result;
+	}
+
+	private isValidSearchTrace(trace: BankTransactionCategorizationSearchTrace | undefined): boolean {
+		if (trace === undefined) return true;
+		return (
+			Array.isArray(trace.queries) &&
+			trace.queries.length <= 1 &&
+			trace.queries.every(
+				(query) =>
+					typeof query === 'string' &&
+					query.length > 0 &&
+					query.length <= BANK_TRANSACTION_CATEGORIZATION_MAX_WEB_SEARCH_QUERY_LENGTH &&
+					!/[\u0000-\u001f\u007f]/.test(query),
+			) &&
+			Array.isArray(trace.sourceDomains) &&
+			trace.sourceDomains.length <= BANK_TRANSACTION_CATEGORIZATION_MAX_SEARCH_TRACE_ITEMS &&
+			trace.sourceDomains.every((domain) => this.isValidSearchTraceDomain(domain)) &&
+			BANK_TRANSACTION_CATEGORIZATION_SEARCH_EVIDENCE_TYPES.includes(trace.evidenceType)
+		);
+	}
+
+	private isValidSearchTraceDomain(domain: unknown): boolean {
+		return (
+			typeof domain === 'string' &&
+			/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i.test(domain)
+		);
 	}
 
 	private isClaimable(transaction: BankTransaction): boolean {

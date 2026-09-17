@@ -35,96 +35,114 @@ export const BANK_TRANSACTION_CATEGORY_DEFINITIONS: readonly BankTransactionCate
 	{
 		value: 'HOUSING_AND_UTILITIES',
 		label: 'Housing and utilities',
-		description: 'Rent, mortgage, electricity, gas, water, internet, and mobile phone costs.',
+		description:
+			'Household rent, mortgage, energy, water, internet, and phone bills, including recurring bills; repairs, furnishings, and one-off household purchases belong elsewhere.',
 	},
 	{
 		value: 'FOOD_AND_DRINK',
 		label: 'Food and drink',
-		description: 'Groceries, restaurants, cafes, takeaways, and other food or drink purchases.',
+		description:
+			'Food and beverages for consumption, including groceries, typical convenience-store purchases, restaurants, cafes, takeaways, workplace coffee and tea, drinks, snacks, and vending purchases; equipment, installation, servicing, fuel, and other non-food purchases are excluded.',
 	},
 	{
 		value: 'TRANSPORTATION',
 		label: 'Transportation',
-		description: 'Fuel, public transport, parking, taxis, cycling, and vehicle costs.',
+		description:
+			'Require evidence of an actual transportation purchase, such as fuel, public transport, parking, taxis, cycling, or a vehicle purchase; incidental logistics, delivery, servicing, or transport activities of a merchant do not qualify.',
 	},
 	{
 		value: 'SHOPPING',
 		label: 'Shopping',
-		description: 'General retail purchases, clothing, household goods, and other shopping.',
+		description:
+			'Goods bought from general retailers, including clothing, electronics, household items, and online orders; food, bills, and clearly specialized services belong elsewhere.',
 	},
 	{
 		value: 'SUBSCRIPTIONS',
 		label: 'Subscriptions',
-		description: 'Recurring digital, software, membership, media, and service charges.',
+		description:
+			'Recurring access to software, media, memberships, or other services; ordinary household bills and one-off purchases belong elsewhere.',
 	},
 	{
 		value: 'HEALTH',
 		label: 'Health',
-		description: 'Doctors, dentists, pharmacies, therapy, medical treatment, and healthcare.',
+		description:
+			'Medical, dental, vision, pharmacy, therapy, and other healthcare services or treatment; classify ordinary personal care and general retail purchases elsewhere.',
 	},
 	{
 		value: 'TRAVEL',
 		label: 'Travel',
-		description: 'Flights, hotels, accommodation, travel agencies, and holiday expenses.',
+		description:
+			'Flights, accommodation, travel agencies, and holiday or trip expenses; everyday local transport belongs in Transportation.',
 	},
 	{
 		value: 'ENTERTAINMENT',
 		label: 'Entertainment',
-		description: 'Cinema, concerts, games, hobbies, books, and recreational activities.',
+		description:
+			'Leisure and recreation such as cinema, concerts, games, hobbies, books, and sporting events; courses and essential services are not entertainment.',
 	},
 	{
 		value: 'PERSONAL_CARE',
 		label: 'Personal care',
-		description: 'Hairdressers, beauty services, cosmetics, and personal care products.',
+		description:
+			'Hair, beauty, grooming, cosmetics, and similar personal-care services or products; medical treatment belongs in Health.',
 	},
 	{
 		value: 'EDUCATION',
 		label: 'Education',
-		description: 'Schools, courses, tuition, training, educational materials, and childcare education.',
+		description:
+			'Schools, tuition, courses, training, and educational materials; general books, childcare, and recreational activities need evidence of an educational purpose.',
 	},
 	{
 		value: 'INSURANCE',
 		label: 'Insurance',
-		description: 'Insurance premiums and insurance-related payments.',
+		description:
+			'Premiums or payments for an insurance policy; a claim payout, repair, or ordinary service charge is not insurance.',
 	},
 	{
 		value: 'TAXES',
 		label: 'Taxes',
-		description: 'Income tax, property tax, municipal tax, and other government taxes.',
+		description:
+			'Payments to tax authorities or public bodies for taxes; fines, fees, licenses, and ordinary government services require different evidence.',
 	},
 	{
 		value: 'FEES',
 		label: 'Fees',
-		description: 'Bank fees, service charges, commissions, and other transaction fees.',
+		description:
+			'Charges for banking, payments, commissions, account services, or late and transaction fees; the underlying purchase belongs to its own category.',
 	},
 	{
 		value: 'CASH_WITHDRAWAL',
 		label: 'Cash withdrawal',
-		description: 'Cash withdrawn from an ATM, bank counter, or other cash service.',
+		description:
+			'Money taken as cash from an ATM, bank counter, or cash service; a card purchase at a cash-related merchant is not enough.',
 	},
 	{
 		value: 'INCOME',
 		label: 'Income',
-		description: 'Salary, wages, interest, benefits, and other earned or recurring income.',
+		description:
+			'Money received as salary, wages, interest, benefits, or other earned income; refunds, reimbursements, and transfers have separate categories.',
 	},
 	{
 		value: 'REFUND',
 		label: 'Refund',
-		description: 'Money returned for a purchase, reimbursement, reversal, or credit note.',
+		description:
+			'Money returned for an earlier purchase or expense, including reversals and reimbursements; ordinary income and transfers do not qualify.',
 	},
 	{
 		value: 'TRANSFER_IN',
 		label: 'Transfer in',
-		description: 'A transfer received from another account or person, excluding ordinary income.',
+		description:
+			'Money moved into an account from another account or person without being payment for goods, services, or earned income.',
 	},
 	{
 		value: 'TRANSFER_OUT',
 		label: 'Transfer out',
-		description: 'A transfer sent to another account or person, excluding ordinary spending.',
+		description: 'Money moved out to another account or person without being payment for goods, services, or fees.',
 	},
 	{
 		value: 'OTHER',
 		label: 'Other',
-		description: 'Use when the available transaction fields do not support a more specific category.',
+		description:
+			'Use when the available transaction and merchant evidence cannot support a more specific category; prefer it over guessing.',
 	},
 ];
