@@ -171,18 +171,12 @@ export class BankTransactionCategorizationService {
 				.andWhere(
 					`(
 						transaction."categoryStatus" IN (:...claimableStatuses)
-						OR transaction."categoryInputHash" IS NULL
-						OR transaction."categoryAppliedInputHash" IS DISTINCT FROM transaction."categoryInputHash"
 						OR (
 							transaction."categoryStatus" = :processingStatus
 							AND (
 								transaction."categoryUpdatedAt" IS NULL
 								OR transaction."categoryUpdatedAt" < :staleBefore
 							)
-						)
-						OR (
-							transaction."categoryStatus" = 'COMPLETED'
-							AND transaction."categorySource" IS DISTINCT FROM 'AI'
 						)
 					)`,
 					{
@@ -228,7 +222,7 @@ export class BankTransactionCategorizationService {
 		const webCandidates = inputs
 			.filter((input) => {
 				const category = standardResultById.get(input.correlationId)?.category;
-				return webSearchEnabled && (category === 'OTHER' || category === null);
+				return webSearchEnabled && (category === 'OTHER' || category === 'NEEDS_REVIEW');
 			})
 			.map((input) => {
 				const webSearchInput = toBankTransactionCategorizationWebSearchInput(input);
@@ -269,9 +263,9 @@ export class BankTransactionCategorizationService {
 						: BANK_TRANSACTION_CATEGORIZATION_PROMPT_VERSION;
 			const completionValues = {
 				category: result.category,
-				categoryStatus: result.category === null ? 'NEEDS_REVIEW' : 'COMPLETED',
+				categoryStatus: 'COMPLETED',
 				categorySource: 'AI',
-				categoryConfidence: result.category === null ? null : String(result.confidence),
+				categoryConfidence: String(result.confidence),
 				categoryAppliedInputHash: claimed.inputHash,
 				categoryProvider: this.configurationService.get('AI_CATEGORIZATION_PROVIDER'),
 				categoryModel: this.configurationService.get('AI_CATEGORIZATION_MODEL'),
@@ -311,13 +305,10 @@ export class BankTransactionCategorizationService {
 		}
 
 		if (transaction.categorySource === 'MANUAL') return true;
+		if (transaction.categoryStatus === 'COMPLETED') return true;
 		const appliedHashIsStale =
 			transaction.categoryAppliedInputHash !== null && transaction.categoryAppliedInputHash !== inputHash;
-		const completedHashIsStale =
-			transaction.categoryStatus === 'COMPLETED' && transaction.categoryAppliedInputHash !== inputHash;
-		const completedByNonAiSource =
-			transaction.categoryStatus === 'COMPLETED' && transaction.categorySource !== 'AI';
-		if (!appliedHashIsStale && !completedByNonAiSource && !(hashChanged && completedHashIsStale)) return true;
+		if (!appliedHashIsStale) return true;
 
 		const reset = await this.updateCategorizationWithGuard(transaction.id, inputHash, {
 			...BANK_TRANSACTION_CATEGORIZATION_RESET_VALUES,
@@ -415,8 +406,7 @@ export class BankTransactionCategorizationService {
 			inputIds.some((id) => !resultIdSet.has(id)) ||
 			results.some(
 				(result) =>
-					(result.category !== null &&
-						!(BANK_TRANSACTION_CATEGORIES as readonly string[]).includes(result.category)) ||
+					!(BANK_TRANSACTION_CATEGORIES as readonly string[]).includes(result.category) ||
 					!Number.isFinite(result.confidence) ||
 					result.confidence < 0 ||
 					result.confidence > 1 ||
@@ -438,7 +428,7 @@ export class BankTransactionCategorizationService {
 			!normalizeMerchantCategoryCode(input.merchantCategoryCode) &&
 			input.counterpartyName === null
 		) {
-			return {...result, category: null, confidence: 0};
+			return {...result, category: 'NEEDS_REVIEW', confidence: 0};
 		}
 		return result;
 	}
@@ -450,7 +440,7 @@ export class BankTransactionCategorizationService {
 			evidenceType === 'CONFLICTING' ||
 			(result.category === 'TRANSPORTATION' && evidenceType !== 'PURCHASE_CONTEXT' && evidenceType !== 'MCC')
 		) {
-			return {...result, category: null, confidence: 0};
+			return {...result, category: 'NEEDS_REVIEW', confidence: 0};
 		}
 		return result;
 	}

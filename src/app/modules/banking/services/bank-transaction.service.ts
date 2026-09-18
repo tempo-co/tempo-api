@@ -19,25 +19,11 @@ import {toBankTransactionDirection} from '../bank-transaction-direction';
 import {BANK_TRANSACTION_TYPES} from '../bank-transaction-type';
 import {BankTransaction} from '../bank-transaction.entity';
 import {createBankTransactionCategorizationInputHash} from '../categorization/bank-transaction-categorization-input';
+import {BANK_TRANSACTION_CATEGORIZATION_RESET_VALUES} from '../categorization/bank-transaction-categorization.constants';
 import {
-	BANK_TRANSACTION_CATEGORIZATION_RESET_VALUES,
-	BANK_TRANSACTION_LEGACY_OTHER_PROMPT_VERSIONS,
-	isLegacyAmbiguousAiOther,
-} from '../categorization/bank-transaction-categorization.constants';
-import {
-	BANK_TRANSACTION_NEEDS_REVIEW,
 	BANK_TRANSACTION_UNCATEGORIZED,
 	type BankTransactionCategory,
 } from '../categorization/bank-transaction-category';
-
-const LEGACY_OTHER_REVIEW_CONDITION = [
-	'transaction.category = :legacyOtherCategory',
-	`transaction.categoryStatus = 'COMPLETED'`,
-	`transaction.categorySource = 'AI'`,
-	'transaction.merchantCategoryCode IS NULL',
-	'transaction.counterpartyName IS NULL',
-	'transaction.categoryPromptVersion IN (:...legacyOtherPromptVersions)',
-].join(' AND ');
 
 @Injectable()
 export class BankTransactionService {
@@ -72,19 +58,9 @@ export class BankTransactionService {
 		const categoryFilters = filter?.categories;
 		if (categoryFilters && categoryFilters.length > 0) {
 			const explicitCategories = categoryFilters.filter(
-				(category) =>
-					category !== BANK_TRANSACTION_UNCATEGORIZED &&
-					category !== BANK_TRANSACTION_NEEDS_REVIEW &&
-					category !== 'OTHER',
+				(category) => category !== BANK_TRANSACTION_UNCATEGORIZED,
 			);
-			const includesOther = categoryFilters.includes('OTHER');
 			const includesUncategorized = categoryFilters.includes(BANK_TRANSACTION_UNCATEGORIZED);
-			const includesNeedsReview = categoryFilters.includes(BANK_TRANSACTION_NEEDS_REVIEW);
-			const categoryQueryParams = {
-				legacyOtherCategory: 'OTHER',
-				legacyOtherPromptVersions: BANK_TRANSACTION_LEGACY_OTHER_PROMPT_VERSIONS,
-				needsReviewStatus: BANK_TRANSACTION_NEEDS_REVIEW,
-			};
 
 			query.andWhere(
 				new Brackets((categoryQuery) => {
@@ -95,23 +71,10 @@ export class BankTransactionService {
 						});
 						hasCondition = true;
 					}
-					if (includesOther) {
-						const otherCondition = `transaction.category = :legacyOtherCategory AND NOT (${LEGACY_OTHER_REVIEW_CONDITION})`;
-						if (hasCondition) categoryQuery.orWhere(otherCondition, categoryQueryParams);
-						else categoryQuery.where(otherCondition, categoryQueryParams);
-						hasCondition = true;
-					}
 					if (includesUncategorized) {
-						const uncategorizedCondition =
-							'transaction.category IS NULL AND transaction.categoryStatus IS DISTINCT FROM :needsReviewStatus';
-						if (hasCondition) categoryQuery.orWhere(uncategorizedCondition, categoryQueryParams);
-						else categoryQuery.where(uncategorizedCondition, categoryQueryParams);
+						if (hasCondition) categoryQuery.orWhere('transaction.category IS NULL');
+						else categoryQuery.where('transaction.category IS NULL');
 						hasCondition = true;
-					}
-					if (includesNeedsReview) {
-						const needsReviewCondition = `transaction.categoryStatus = :needsReviewStatus OR (${LEGACY_OTHER_REVIEW_CONDITION})`;
-						if (hasCondition) categoryQuery.orWhere(needsReviewCondition, categoryQueryParams);
-						else categoryQuery.where(needsReviewCondition, categoryQueryParams);
 					}
 				}),
 			);
@@ -270,7 +233,6 @@ export class BankTransactionService {
 	}
 
 	private toSharedResponseFields(transaction: BankTransaction) {
-		const legacyAmbiguousOther = isLegacyAmbiguousAiOther(transaction);
 		return {
 			id: transaction.id,
 			bookingDate: transaction.bookingDate,
@@ -282,14 +244,10 @@ export class BankTransactionService {
 			description: transaction.description,
 			displayDescription: transaction.displayDescription,
 			counterpartyName: transaction.counterpartyName,
-			category: legacyAmbiguousOther
-				? null
-				: ((transaction.category as BankTransactionResponseDto['category']) ?? null),
-			categoryStatus: legacyAmbiguousOther
-				? 'NEEDS_REVIEW'
-				: ((transaction.categoryStatus ?? 'PENDING') as BankTransactionResponseDto['categoryStatus']),
+			category: (transaction.category as BankTransactionResponseDto['category']) ?? null,
+			categoryStatus: (transaction.categoryStatus ?? 'PENDING') as BankTransactionResponseDto['categoryStatus'],
 			categorySource: (transaction.categorySource as BankTransactionResponseDto['categorySource']) ?? null,
-			categoryConfidence: legacyAmbiguousOther ? null : transaction.categoryConfidence,
+			categoryConfidence: transaction.categoryConfidence,
 			merchantCategoryCode: transaction.merchantCategoryCode,
 			remittanceInformation: transaction.remittanceInformation,
 		};

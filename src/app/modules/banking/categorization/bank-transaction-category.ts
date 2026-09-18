@@ -19,17 +19,16 @@ export const BANK_TRANSACTION_CATEGORIES = [
 	'REFUND',
 	'TRANSFER_IN',
 	'TRANSFER_OUT',
+	'NEEDS_REVIEW',
 	'OTHER',
 ] as const;
 
 export type BankTransactionCategory = (typeof BANK_TRANSACTION_CATEGORIES)[number];
 
 export const BANK_TRANSACTION_UNCATEGORIZED = 'UNCATEGORIZED' as const;
-export const BANK_TRANSACTION_NEEDS_REVIEW = 'NEEDS_REVIEW' as const;
 export const BANK_TRANSACTION_CATEGORY_FILTER_VALUES = [
 	...BANK_TRANSACTION_CATEGORIES,
 	BANK_TRANSACTION_UNCATEGORIZED,
-	BANK_TRANSACTION_NEEDS_REVIEW,
 ] as const;
 export type BankTransactionCategoryFilterValue = (typeof BANK_TRANSACTION_CATEGORY_FILTER_VALUES)[number];
 
@@ -142,9 +141,14 @@ export const BANK_TRANSACTION_CATEGORY_DEFINITIONS: readonly BankTransactionCate
 		description: 'Money moved out to another account or person without being payment for goods, services, or fees.',
 	},
 	{
+		value: 'NEEDS_REVIEW',
+		label: 'Needs review',
+		description:
+			'Use when the transaction is real but the available evidence is insufficient or conflicting and its purpose cannot be determined reliably.',
+	},
+	{
 		value: 'OTHER',
 		label: 'Other',
-		description:
-			'Use when evidence supports that the transaction falls outside the other categories; use Needs review when the merchant or purchase remains ambiguous.',
+		description: 'Use when evidence supports that the transaction falls outside the other categories.',
 	},
 ];

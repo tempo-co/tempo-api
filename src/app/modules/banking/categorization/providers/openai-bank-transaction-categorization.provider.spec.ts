@@ -89,10 +89,10 @@ describe('OpenAiBankTransactionCategorizationProvider', () => {
 			type: 'json_schema',
 			strict: true,
 		});
-		expect(request.text.format.schema.properties.classifications.items.properties.category.anyOf).toEqual([
-			{type: 'string', enum: BANK_TRANSACTION_CATEGORIES},
-			{type: 'null'},
-		]);
+		expect(request.text.format.schema.properties.classifications.items.properties.category).toEqual({
+			type: 'string',
+			enum: BANK_TRANSACTION_CATEGORIES,
+		});
 		expect(request.text.format.schema.additionalProperties).toBe(false);
 		expect(request.text.format.schema.properties.classifications.items.additionalProperties).toBe(false);
 		const sentInput = JSON.parse(request.input);
@@ -129,15 +129,15 @@ describe('OpenAiBankTransactionCategorizationProvider', () => {
 		]);
 	});
 
-	it('returns no category when the available evidence is insufficient', async () => {
+	it('returns NEEDS_REVIEW when the available evidence is insufficient', async () => {
 		const {provider, responsesCreate} = createProvider();
 		responsesCreate.mockResolvedValue({
-			output_text: output([{correlationId: '0', category: null, confidence: 0}]),
+			output_text: output([{correlationId: '0', category: 'NEEDS_REVIEW', confidence: 0}]),
 		});
 
 		await expect(
 			provider.categorize([createInput('transaction-1')], BANK_TRANSACTION_CATEGORY_DEFINITIONS),
-		).resolves.toEqual([{correlationId: 'transaction-1', category: null, confidence: 0}]);
+		).resolves.toEqual([{correlationId: 'transaction-1', category: 'NEEDS_REVIEW', confidence: 0}]);
 	});
 
 	it('uses the hosted web-search tool for a sanitized fallback request', async () => {

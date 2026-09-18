@@ -466,11 +466,10 @@ describe('BankTransactionController', () => {
 		await bankTransactionRepository.update(
 			{id: fixtureReviewTransaction.id},
 			{
-				category: 'OTHER',
+				category: 'NEEDS_REVIEW',
 				categoryStatus: 'COMPLETED',
 				categorySource: 'AI',
 				categoryConfidence: '0.980',
-				categoryPromptVersion: 'bank-transaction-categorization-web-search-v2',
 				counterpartyName: null,
 				merchantCategoryCode: null,
 			},
@@ -497,10 +496,10 @@ describe('BankTransactionController', () => {
 			expect(needsReviewResponse.body.total).toBe(1);
 			expect(needsReviewResponse.body.transactions[0]).toMatchObject({
 				description: 'Salary',
-				category: null,
-				categoryStatus: 'NEEDS_REVIEW',
+				category: 'NEEDS_REVIEW',
+				categoryStatus: 'COMPLETED',
 				categorySource: 'AI',
-				categoryConfidence: null,
+				categoryConfidence: '0.980',
 			});
 
 			const mixedCategoryResponse = await verifiedAgent

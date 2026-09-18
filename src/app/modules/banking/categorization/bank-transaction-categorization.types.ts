@@ -2,13 +2,7 @@ import type {BankTransactionDirection} from '../bank-transaction-direction';
 import type {BankTransactionLocation} from '../bank-transaction-location';
 import type {BankTransactionCategory} from './bank-transaction-category';
 
-export const BANK_TRANSACTION_CATEGORIZATION_STATUSES = [
-	'PENDING',
-	'PROCESSING',
-	'COMPLETED',
-	'FAILED',
-	'NEEDS_REVIEW',
-] as const;
+export const BANK_TRANSACTION_CATEGORIZATION_STATUSES = ['PENDING', 'PROCESSING', 'COMPLETED', 'FAILED'] as const;
 export type BankTransactionCategorizationStatus = (typeof BANK_TRANSACTION_CATEGORIZATION_STATUSES)[number];
 
 export const BANK_TRANSACTION_CATEGORIZATION_SOURCES = ['AI', 'MANUAL'] as const;
@@ -62,7 +56,7 @@ export type BankTransactionCategorizationSearchTrace = {
 
 export type BankTransactionCategorizationResult = {
 	correlationId: string;
-	category: BankTransactionCategory | null;
+	category: BankTransactionCategory;
 	confidence: number;
 	searchTrace?: BankTransactionCategorizationSearchTrace;
 };
