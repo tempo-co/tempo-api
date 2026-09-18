@@ -2,7 +2,13 @@ import type {BankTransactionDirection} from '../bank-transaction-direction';
 import type {BankTransactionLocation} from '../bank-transaction-location';
 import type {BankTransactionCategory} from './bank-transaction-category';
 
-export const BANK_TRANSACTION_CATEGORIZATION_STATUSES = ['PENDING', 'PROCESSING', 'COMPLETED', 'FAILED'] as const;
+export const BANK_TRANSACTION_CATEGORIZATION_STATUSES = [
+	'PENDING',
+	'PROCESSING',
+	'COMPLETED',
+	'FAILED',
+	'NOT_APPLICABLE',
+] as const;
 export type BankTransactionCategorizationStatus = (typeof BANK_TRANSACTION_CATEGORIZATION_STATUSES)[number];
 
 export const BANK_TRANSACTION_CATEGORIZATION_SOURCES = ['AI', 'MANUAL'] as const;
