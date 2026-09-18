@@ -1,6 +1,8 @@
 import Redis from 'ioredis';
 import {DataSource, Repository} from 'typeorm';
 
+import {ConfigurationService} from '@core/config/config.service';
+
 import {BANKING_SERVICE_UNAVAILABLE} from '../api/constants/banking-messages.constants';
 import {BankAccountBalance} from '../bank-account-balance.entity';
 import {BankAccount} from '../bank-account.entity';
@@ -11,7 +13,7 @@ import {BankTransactionCategorizationService} from '../categorization/bank-trans
 import {BankingConnectionLockService} from './banking-connection-lock.service';
 import {BankingEncryptionService} from './banking-encryption.service';
 import {BankingSyncService} from './banking-sync.service';
-import {EnableBankingClient} from './enable-banking.client';
+import {EnableBankingClient, EnableBankingClientError} from './enable-banking.client';
 
 type Deferred<T> = {
 	promise: Promise<T>;
@@ -62,7 +64,7 @@ describe('BankingSyncService', () => {
 		};
 		const bankConnectionRepositoryMock = {
 			findOne: jest.fn(),
-			update: jest.fn().mockResolvedValue(undefined),
+			update: jest.fn().mockResolvedValue({affected: 1}),
 		};
 		const bankAccountRepositoryMock = {
 			find: jest.fn().mockResolvedValue([]),
@@ -72,10 +74,13 @@ describe('BankingSyncService', () => {
 			create: jest.fn().mockReturnValue(run),
 			save: jest.fn().mockResolvedValue(run),
 			findOneBy: jest.fn().mockResolvedValue(completedRun),
-			update: jest.fn().mockResolvedValue(undefined),
+			update: jest.fn().mockResolvedValue({affected: 1}),
 		};
 		const persistenceRepositories = {
-			bankConnection: {update: jest.fn().mockResolvedValue(undefined)},
+			bankConnection: {
+				findOne: jest.fn().mockResolvedValue(connection),
+				update: jest.fn().mockResolvedValue({affected: 1}),
+			},
 			bankSyncRun: {update: jest.fn().mockResolvedValue(undefined)},
 			balance: {insert: jest.fn().mockResolvedValue(undefined)},
 			bankTransaction: {
@@ -117,6 +122,7 @@ describe('BankingSyncService', () => {
 			encryptionServiceMock as unknown as BankingEncryptionService,
 			new BankingConnectionLockService(redisMock as unknown as Redis),
 			categorizationServiceMock as unknown as BankTransactionCategorizationService,
+			{get: jest.fn().mockReturnValue('6h')} as unknown as ConfigurationService,
 		);
 
 		bankConnectionRepositoryMock.findOne.mockImplementation(async (options: {where: {account: {id: string}}}) => {
@@ -182,7 +188,9 @@ describe('BankingSyncService synchronization lock', () => {
 		update: jest.Mock;
 		createQueryBuilder: jest.Mock;
 	};
-	let transactionRepository: TransactionRepository;
+	let transactionRepository: TransactionRepository & {findOne: jest.Mock};
+	let bankAccountRepository: {find: jest.Mock; update: jest.Mock};
+	let configurationService: {get: jest.Mock};
 
 	beforeEach(() => {
 		jest.useFakeTimers();
@@ -241,24 +249,25 @@ describe('BankingSyncService synchronization lock', () => {
 
 		bankConnectionRepository = {
 			findOne: jest.fn().mockResolvedValue(connection),
-			update: jest.fn().mockResolvedValue(undefined),
+			update: jest.fn().mockResolvedValue({affected: 1}),
 		};
-		const bankAccountRepository = {
+		bankAccountRepository = {
 			find: jest.fn().mockResolvedValue([bankAccount]),
-			update: jest.fn().mockResolvedValue(undefined),
+			update: jest.fn().mockResolvedValue({affected: 1}),
 		};
 		bankSyncRunRepository = {
 			create: jest.fn().mockReturnValue(run),
 			save: jest.fn().mockResolvedValue(run),
 			findOne: jest.fn().mockResolvedValue(null),
 			findOneBy: jest.fn().mockResolvedValue(completedRun),
-			update: jest.fn().mockResolvedValue(undefined),
+			update: jest.fn().mockResolvedValue({affected: 1}),
 		};
 		transactionRepository = {
 			find: jest.fn().mockResolvedValue([]),
+			findOne: jest.fn().mockResolvedValue(connection),
 			insert: jest.fn().mockResolvedValue(undefined),
 			upsert: jest.fn().mockResolvedValue(undefined),
-			update: jest.fn().mockResolvedValue(undefined),
+			update: jest.fn().mockResolvedValue({affected: 1}),
 			createQueryBuilder: jest.fn(),
 		};
 		const dataSource = {
@@ -280,6 +289,7 @@ describe('BankingSyncService synchronization lock', () => {
 			enqueueForTransactions: jest.fn().mockResolvedValue(undefined),
 		};
 
+		configurationService = {get: jest.fn().mockReturnValue('6h')};
 		service = new BankingSyncService(
 			bankConnectionRepository as unknown as Repository<BankConnection>,
 			bankAccountRepository as unknown as Repository<BankAccount>,
@@ -289,6 +299,7 @@ describe('BankingSyncService synchronization lock', () => {
 			encryptionService as unknown as BankingEncryptionService,
 			new BankingConnectionLockService(redis as unknown as Redis),
 			categorizationService as unknown as BankTransactionCategorizationService,
+			configurationService as unknown as ConfigurationService,
 		);
 	});
 
@@ -360,6 +371,144 @@ describe('BankingSyncService synchronization lock', () => {
 				}),
 			]),
 		);
+		expect(transactionRepository.update).toHaveBeenCalledWith(
+			expect.objectContaining({
+				id: 'connection-id',
+				syncStatus: 'RUNNING',
+				syncStartedAt: expect.any(Date),
+			}),
+			expect.objectContaining({
+				syncStatus: 'SUCCEEDED',
+				syncFailureCount: 0,
+				nextSyncAt: expect.any(Date),
+			}),
+		);
+	});
+
+	it('persists the provider Retry-After as the next automatic synchronization gate', async () => {
+		transactionGate.resolve([]);
+		enableBankingClient.getAccountBalances.mockRejectedValueOnce(
+			new EnableBankingClientError('ASPSP_RATE_LIMIT_EXCEEDED', 429, 120),
+		);
+		enableBankingClient.getAccountTransactions.mockResolvedValueOnce([]);
+
+		await expect(service.synchronize('account-id', 'connection-id')).resolves.toMatchObject({
+			status: 'SUCCEEDED',
+		});
+
+		const connectionUpdate = transactionRepository.update.mock.calls
+			.map(([, values]) => values)
+			.find((values) => values?.syncStatus === 'RATE_LIMITED');
+		expect(connectionUpdate).toEqual(
+			expect.objectContaining({
+				syncStatus: 'RATE_LIMITED',
+				nextSyncAt: expect.any(Date),
+			}),
+		);
+		expect(connectionUpdate.nextSyncAt.getTime() - Date.now()).toBeGreaterThanOrEqual(119_000);
+	});
+
+	it('uses the six-hour fallback even when the ordinary background interval is shorter', async () => {
+		configurationService.get.mockReturnValue('1h');
+		transactionGate.resolve([]);
+		enableBankingClient.getAccountBalances.mockRejectedValueOnce(
+			new EnableBankingClientError('ASPSP_RATE_LIMIT_EXCEEDED', 400),
+		);
+		enableBankingClient.getAccountTransactions.mockResolvedValueOnce([]);
+
+		await service.synchronize('account-id', 'connection-id');
+
+		const connectionUpdate = transactionRepository.update.mock.calls
+			.map(([, values]) => values)
+			.find((values) => values?.syncStatus === 'RATE_LIMITED');
+		expect(connectionUpdate.nextSyncAt.getTime() - Date.now()).toBeGreaterThanOrEqual(21_599_000);
+	});
+
+	it('honors an explicit zero-second provider retry delay', async () => {
+		transactionGate.resolve([]);
+		enableBankingClient.getAccountBalances.mockRejectedValueOnce(
+			new EnableBankingClientError('ASPSP_RATE_LIMIT_EXCEEDED', 400, 0),
+		);
+		enableBankingClient.getAccountTransactions.mockResolvedValueOnce([]);
+
+		await service.synchronize('account-id', 'connection-id');
+
+		const connectionUpdate = transactionRepository.update.mock.calls
+			.map(([, values]) => values)
+			.find((values) => values?.syncStatus === 'RATE_LIMITED');
+		expect(connectionUpdate.nextSyncAt.getTime() - Date.now()).toBeLessThan(1_000);
+	});
+	it('does not classify an unrelated HTTP 429 as an ASPSP rate limit', async () => {
+		transactionGate.resolve([]);
+		enableBankingClient.getAccountBalances.mockRejectedValueOnce(
+			new EnableBankingClientError('provider_temporarily_unavailable', 429, 120),
+		);
+		enableBankingClient.getAccountTransactions.mockResolvedValueOnce([]);
+
+		await service.synchronize('account-id', 'connection-id');
+
+		const connectionUpdate = transactionRepository.update.mock.calls
+			.map(([, values]) => values)
+			.find((values) => values?.syncStatus);
+		expect(connectionUpdate.syncStatus).not.toBe('RATE_LIMITED');
+	});
+
+	it('keeps a very large usable Retry-After inside the JavaScript Date range', async () => {
+		transactionGate.resolve([]);
+		enableBankingClient.getAccountBalances.mockRejectedValueOnce(
+			new EnableBankingClientError('ASPSP_RATE_LIMIT_EXCEEDED', 429, 8_000_000_000_000),
+		);
+		enableBankingClient.getAccountTransactions.mockResolvedValueOnce([]);
+
+		await service.synchronize('account-id', 'connection-id');
+
+		const connectionUpdate = transactionRepository.update.mock.calls
+			.map(([, values]) => values)
+			.find((values) => values?.syncStatus === 'RATE_LIMITED');
+		expect(Number.isNaN(connectionUpdate.nextSyncAt.getTime())).toBe(false);
+	});
+
+	it('backs off when session validation is rate-limited', async () => {
+		enableBankingClient.getSessionAccounts.mockRejectedValueOnce(
+			new EnableBankingClientError('ASPSP_RATE_LIMIT_EXCEEDED', 400, 23),
+		);
+
+		await expect(service.synchronize('account-id', 'connection-id')).resolves.toMatchObject({
+			status: 'SUCCEEDED',
+			retryAfterSeconds: 23,
+		});
+
+		const connectionUpdate = transactionRepository.update.mock.calls
+			.map(([, values]) => values)
+			.find((values) => values?.syncStatus === 'RATE_LIMITED');
+		expect(connectionUpdate).toEqual(
+			expect.objectContaining({
+				syncStatus: 'RATE_LIMITED',
+				nextSyncAt: expect.any(Date),
+			}),
+		);
+		expect(connectionUpdate.nextSyncAt.getTime() - Date.now()).toBeGreaterThanOrEqual(22_000);
+	});
+
+	it('records a retryable failure when loading accounts throws after RUNNING is persisted', async () => {
+		bankAccountRepository.find.mockRejectedValueOnce(new Error('database read failed'));
+
+		await expect(service.synchronize('account-id', 'connection-id')).rejects.toThrow(
+			'Bank synchronization could not be saved.',
+		);
+
+		expect(bankConnectionRepository.update).toHaveBeenCalledWith(
+			expect.objectContaining({
+				id: 'connection-id',
+				syncStatus: 'RUNNING',
+				syncStartedAt: expect.any(Date),
+			}),
+			expect.objectContaining({
+				lastSyncError: 'Bank synchronization could not be saved.',
+				syncStatus: 'FAILED',
+				nextSyncAt: expect.any(Date),
+			}),
+		);
 	});
 
 	afterEach(() => {
@@ -403,5 +552,11 @@ describe('BankingSyncService synchronization lock', () => {
 
 		await firstSyncResult;
 		expect(lockOwner.token).toBe('new-owner');
+		const failureUpdate = bankConnectionRepository.update.mock.calls.find(
+			([, values]) => values?.syncStatus === 'FAILED',
+		);
+		expect(failureUpdate?.[0]).toEqual(
+			expect.objectContaining({syncStatus: 'RUNNING', syncStartedAt: expect.any(Date)}),
+		);
 	});
 });

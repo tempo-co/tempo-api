@@ -12,6 +12,7 @@ import {
 const LOCK_TTL_SECONDS = 15 * 60;
 const LOCK_RENEWAL_INTERVAL_MS = (LOCK_TTL_SECONDS * 1000) / 3;
 const LOCK_RENEWAL_TIMEOUT_MS = 15_000;
+const LOCK_WAIT_INTERVAL_MS = 50;
 const LOCK_PREFIX = 'banking:sync:';
 const LOCK_RENEW_SCRIPT =
 	"if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('expire', KEYS[1], ARGV[2]) else return 0 end";
@@ -25,15 +26,30 @@ export type BankingConnectionLock = {
 	release: () => Promise<void>;
 };
 
+export type BankingConnectionLockOptions = {
+	waitForMs?: number;
+};
+
 @Injectable()
 export class BankingConnectionLockService {
 	private readonly logger = new Logger(BankingConnectionLockService.name);
 
 	constructor(@Inject(REDIS) private readonly redis: Redis) {}
 
-	async acquire(connectionId: string): Promise<BankingConnectionLock> {
+	async isHeld(connectionId: string): Promise<boolean> {
+		return (await this.redis.exists(`${LOCK_PREFIX}${connectionId}`)) === 1;
+	}
+
+	async acquire(connectionId: string, options: BankingConnectionLockOptions = {}): Promise<BankingConnectionLock> {
 		const lockToken = randomUUID();
-		await this.acquireLock(connectionId, lockToken);
+		const waitForMs = Math.max(0, options.waitForMs ?? 0);
+		const deadline = Date.now() + waitForMs;
+
+		while (!(await this.tryAcquireLock(connectionId, lockToken))) {
+			if (Date.now() >= deadline) throw new ConflictException(BANKING_SYNC_ALREADY_IN_PROGRESS);
+			await new Promise((resolve) => setTimeout(resolve, Math.min(LOCK_WAIT_INTERVAL_MS, deadline - Date.now())));
+		}
+
 		const lockLease = this.startLockRenewal(connectionId, lockToken);
 
 		return {
@@ -42,7 +58,7 @@ export class BankingConnectionLockService {
 		};
 	}
 
-	private async acquireLock(connectionId: string, token: string): Promise<void> {
+	private async tryAcquireLock(connectionId: string, token: string): Promise<boolean> {
 		let result: string | null;
 		try {
 			result = await this.redis.set(`${LOCK_PREFIX}${connectionId}`, token, 'EX', LOCK_TTL_SECONDS, 'NX');
@@ -50,7 +66,7 @@ export class BankingConnectionLockService {
 			throw new ServiceUnavailableException(BANKING_SERVICE_UNAVAILABLE);
 		}
 
-		if (result !== 'OK') throw new ConflictException(BANKING_SYNC_ALREADY_IN_PROGRESS);
+		return result === 'OK';
 	}
 
 	private startLockRenewal(connectionId: string, token: string): Omit<BankingConnectionLock, 'release'> {

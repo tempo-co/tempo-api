@@ -45,6 +45,9 @@ export class BankConnectionResponseDto {
 	status: string;
 	consentValidUntil: Date | null;
 	lastSyncedAt: Date | null;
+	lastSyncError: string | null;
+	nextSyncAt: Date | null;
+	syncStatus: string;
 	bankAccounts: BankAccountResponseDto[];
 }
 
