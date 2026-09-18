@@ -2,6 +2,12 @@ import {ObjectLiteral, Repository, SelectQueryBuilder} from 'typeorm';
 
 import {BankTransactionResponseDto} from '../api/dtos/bank-transaction-response.dto';
 import {BankConnection} from '../bank-connection.entity';
+import {
+	BANK_TRANSACTION_CASH_FLOW_TREATMENTS,
+	BANK_TRANSACTION_FINANCIAL_EVENT_RULE_VERSION,
+	BANK_TRANSACTION_FINANCIAL_EVENT_SOURCES,
+	BANK_TRANSACTION_FINANCIAL_EVENT_TYPES,
+} from '../bank-transaction-financial-event';
 import {BankTransaction} from '../bank-transaction.entity';
 import {BankTransactionService} from './bank-transaction.service';
 
@@ -11,6 +17,9 @@ function createTransaction(): BankTransaction {
 		description: 'SEPA Overboeking IBAN: GB00TEST BIC: TESTGB21 Naam: Example Payee Kenmerk: NOTPROVIDED',
 		displayDescription: 'Example Payee',
 		counterpartyName: null,
+		financialEventType: null,
+		financialEventSource: null,
+		financialEventRuleVersion: null,
 		bankAccount: {
 			name: 'Example account',
 			alias: null,
@@ -79,5 +88,82 @@ describe('BankTransactionService display descriptions', () => {
 			description: transaction.description,
 			displayDescription: 'Example Payee',
 		});
+	});
+
+	it('exposes currency exchange metadata and internal treatment in detailed responses', async () => {
+		const transaction = {
+			...createTransaction(),
+			creditDebitIndicator: 'DBIT',
+			category: 'SHOPPING',
+			categoryStatus: 'COMPLETED',
+			categorySource: 'MANUAL',
+			financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
+			financialEventSource: BANK_TRANSACTION_FINANCIAL_EVENT_SOURCES.RULE,
+			financialEventRuleVersion: BANK_TRANSACTION_FINANCIAL_EVENT_RULE_VERSION,
+		};
+		const queryBuilder = createQueryBuilder<BankTransaction>();
+		queryBuilder.getOne.mockResolvedValue(transaction);
+		const repository = {createQueryBuilder: jest.fn().mockReturnValue(queryBuilder)};
+		const service = new BankTransactionService(
+			{} as Repository<BankConnection>,
+			repository as unknown as Repository<BankTransaction>,
+		);
+
+		const response = await service.findById('account-id', transaction.id);
+
+		expect(response).toMatchObject({
+			financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
+			financialEventSource: BANK_TRANSACTION_FINANCIAL_EVENT_SOURCES.RULE,
+			financialEventRuleVersion: BANK_TRANSACTION_FINANCIAL_EVENT_RULE_VERSION,
+			cashFlowTreatment: BANK_TRANSACTION_CASH_FLOW_TREATMENTS.INTERNAL,
+			category: 'SHOPPING',
+			categorySource: 'MANUAL',
+		});
+	});
+
+	it('exposes currency exchange metadata and internal treatment in connection summaries', async () => {
+		const transaction = {
+			...createTransaction(),
+			creditDebitIndicator: 'CRDT',
+			financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
+			financialEventSource: BANK_TRANSACTION_FINANCIAL_EVENT_SOURCES.RULE,
+			financialEventRuleVersion: BANK_TRANSACTION_FINANCIAL_EVENT_RULE_VERSION,
+		};
+		const queryBuilder = createQueryBuilder<BankTransaction>();
+		queryBuilder.getManyAndCount.mockResolvedValue([[transaction], 1]);
+		const repository = {createQueryBuilder: jest.fn().mockReturnValue(queryBuilder)};
+		const service = new BankTransactionService(
+			{findOne: jest.fn().mockResolvedValue({id: 'connection-id'})} as unknown as Repository<BankConnection>,
+			repository as unknown as Repository<BankTransaction>,
+		);
+
+		const response = await service.findAllByConnectionId('account-id', 'connection-id', 10);
+
+		expect(response.transactions[0]).toMatchObject({
+			financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
+			financialEventSource: BANK_TRANSACTION_FINANCIAL_EVENT_SOURCES.RULE,
+			financialEventRuleVersion: BANK_TRANSACTION_FINANCIAL_EVENT_RULE_VERSION,
+			cashFlowTreatment: BANK_TRANSACTION_CASH_FLOW_TREATMENTS.INTERNAL,
+		});
+	});
+
+	it('applies an owner-scoped financial-event filter', async () => {
+		const transaction = createTransaction();
+		const queryBuilder = createQueryBuilder<BankTransaction>();
+		queryBuilder.getManyAndCount.mockResolvedValue([[transaction], 1]);
+		const repository = {createQueryBuilder: jest.fn().mockReturnValue(queryBuilder)};
+		const service = new BankTransactionService(
+			{} as Repository<BankConnection>,
+			repository as unknown as Repository<BankTransaction>,
+		);
+
+		await service.findAll('account-id', {
+			filter: {financialEventTypes: [BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE]},
+		} as never);
+
+		expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+			'transaction.financialEventType IN (:...financialEventTypes)',
+			{financialEventTypes: [BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE]},
+		);
 	});
 });

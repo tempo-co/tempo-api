@@ -25,5 +25,12 @@ describe('BankTransaction categorization schema', () => {
 		expect(byName.get('categoryLastError')).toMatchObject({type: 'text', nullable: true});
 		expect(byName.get('categorySearchTrace')).toMatchObject({type: 'jsonb', nullable: true});
 		expect(byName.get('merchantLocation')).toMatchObject({type: 'jsonb', nullable: true});
+		expect(byName.get('financialEventType')).toMatchObject({type: 'varchar', length: 32, nullable: true});
+		expect(byName.get('financialEventSource')).toMatchObject({type: 'varchar', length: 16, nullable: true});
+		expect(byName.get('financialEventRuleVersion')).toMatchObject({
+			type: 'varchar',
+			length: 64,
+			nullable: true,
+		});
 	});
 });

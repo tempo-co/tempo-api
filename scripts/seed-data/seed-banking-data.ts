@@ -148,6 +148,9 @@ function createSeedTransactions(bankAccount: BankAccount) {
 		categoryPromptVersion: null,
 		categoryUpdatedAt: null,
 		categoryLastError: null,
+		financialEventType: null,
+		financialEventSource: null,
+		financialEventRuleVersion: null,
 	};
 
 	const transactions = [
