@@ -19,6 +19,7 @@ export const BANK_TRANSACTION_CATEGORIES = [
 	'REFUND',
 	'TRANSFER_IN',
 	'TRANSFER_OUT',
+	'NEEDS_REVIEW',
 	'OTHER',
 ] as const;
 
@@ -140,9 +141,14 @@ export const BANK_TRANSACTION_CATEGORY_DEFINITIONS: readonly BankTransactionCate
 		description: 'Money moved out to another account or person without being payment for goods, services, or fees.',
 	},
 	{
+		value: 'NEEDS_REVIEW',
+		label: 'Needs review',
+		description:
+			'Use when the transaction is real but the available evidence is insufficient or conflicting and its purpose cannot be determined reliably.',
+	},
+	{
 		value: 'OTHER',
 		label: 'Other',
-		description:
-			'Use when the available transaction and merchant evidence cannot support a more specific category; prefer it over guessing.',
+		description: 'Use when evidence supports that the transaction falls outside the other categories.',
 	},
 ];
