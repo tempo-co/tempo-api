@@ -16,6 +16,7 @@ import {
 import {BankTransactionResponseDto, BankTransactionsResponseDto} from '../api/dtos/bank-transaction-response.dto';
 import {BankConnection} from '../bank-connection.entity';
 import {toBankTransactionDirection} from '../bank-transaction-direction';
+import {getBankTransactionCashFlowTreatment} from '../bank-transaction-financial-event';
 import {BANK_TRANSACTION_TYPES} from '../bank-transaction-type';
 import {BankTransaction} from '../bank-transaction.entity';
 import {createBankTransactionCategorizationInputHash} from '../categorization/bank-transaction-categorization-input';
@@ -57,24 +58,23 @@ export class BankTransactionService {
 		}
 		const categoryFilters = filter?.categories;
 		if (categoryFilters && categoryFilters.length > 0) {
-			const explicitCategories = categoryFilters.filter(
+			const categorizedCategories = categoryFilters.filter(
 				(category) => category !== BANK_TRANSACTION_UNCATEGORIZED,
 			);
 			const includesUncategorized = categoryFilters.includes(BANK_TRANSACTION_UNCATEGORIZED);
 
 			query.andWhere(
 				new Brackets((categoryQuery) => {
-					let hasCondition = false;
-					if (explicitCategories.length > 0) {
+					if (categorizedCategories.length > 0) {
 						categoryQuery.where('transaction.category IN (:...categories)', {
-							categories: explicitCategories,
+							categories: categorizedCategories,
 						});
-						hasCondition = true;
 					}
 					if (includesUncategorized) {
-						if (hasCondition) categoryQuery.orWhere('transaction.category IS NULL');
-						else categoryQuery.where('transaction.category IS NULL');
-						hasCondition = true;
+						const uncategorizedCondition =
+							'transaction.category IS NULL AND transaction.financialEventType IS NULL';
+						if (categorizedCategories.length > 0) categoryQuery.orWhere(uncategorizedCondition);
+						else categoryQuery.where(uncategorizedCondition);
 					}
 				}),
 			);
@@ -82,6 +82,12 @@ export class BankTransactionService {
 		if (filter?.categorySources && filter.categorySources.length > 0) {
 			query.andWhere('transaction.categorySource IN (:...categorySources)', {
 				categorySources: filter.categorySources,
+			});
+		}
+
+		if (filter?.financialEventTypes && filter.financialEventTypes.length > 0) {
+			query.andWhere('transaction.financialEventType IN (:...financialEventTypes)', {
+				financialEventTypes: filter.financialEventTypes,
 			});
 		}
 
@@ -233,6 +239,7 @@ export class BankTransactionService {
 	}
 
 	private toSharedResponseFields(transaction: BankTransaction) {
+		const direction = toBankTransactionDirection(transaction.creditDebitIndicator);
 		return {
 			id: transaction.id,
 			bookingDate: transaction.bookingDate,
@@ -247,6 +254,10 @@ export class BankTransactionService {
 			category: (transaction.category as BankTransactionResponseDto['category']) ?? null,
 			categoryStatus: (transaction.categoryStatus ?? 'PENDING') as BankTransactionResponseDto['categoryStatus'],
 			categorySource: (transaction.categorySource as BankTransactionResponseDto['categorySource']) ?? null,
+			financialEventType: transaction.financialEventType,
+			financialEventSource: transaction.financialEventSource,
+			financialEventRuleVersion: transaction.financialEventRuleVersion,
+			cashFlowTreatment: getBankTransactionCashFlowTreatment(transaction.financialEventType, direction),
 			categoryConfidence: transaction.categoryConfidence,
 			merchantCategoryCode: transaction.merchantCategoryCode,
 			remittanceInformation: transaction.remittanceInformation,

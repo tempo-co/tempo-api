@@ -1,4 +1,9 @@
 import type {
+	BankTransactionCashFlowTreatment,
+	BankTransactionFinancialEventSource,
+	BankTransactionFinancialEventType,
+} from '../../bank-transaction-financial-event';
+import type {
 	BankTransactionCategorizationSource,
 	BankTransactionCategorizationStatus,
 } from '../../categorization/bank-transaction-categorization.types';
@@ -62,6 +67,10 @@ export class BankConnectionTransactionResponseDto {
 	category: BankTransactionCategory | null;
 	categoryStatus: BankTransactionCategorizationStatus;
 	categorySource: BankTransactionCategorizationSource | null;
+	financialEventType: BankTransactionFinancialEventType | null;
+	financialEventSource: BankTransactionFinancialEventSource | null;
+	financialEventRuleVersion: string | null;
+	cashFlowTreatment: BankTransactionCashFlowTreatment;
 	categoryConfidence: string | null;
 	merchantCategoryCode: string | null;
 	remittanceInformation: string | null;

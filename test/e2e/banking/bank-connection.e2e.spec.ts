@@ -3,11 +3,13 @@ import {jest} from '@jest/globals';
 import {INestApplication} from '@nestjs/common';
 import {getRepositoryToken} from '@nestjs/typeorm';
 import Redis from 'ioredis';
+import {randomUUID} from 'node:crypto';
 import {Server} from 'node:net';
 import request from 'supertest';
 import TestAgent from 'supertest/lib/agent';
-import {Repository} from 'typeorm';
+import {DataSource, Repository} from 'typeorm';
 
+import {AddBankTransactionFinancialEvent20260917200000} from '@core/database/migrations/20260917200000-add-bank-transaction-financial-event';
 import {REDIS} from '@core/redis/redis.constants';
 import {Account} from '@modules/account/account.entity';
 import {AccountService} from '@modules/account/account.service';
@@ -15,6 +17,11 @@ import {BankAccountBalance} from '@modules/banking/bank-account-balance.entity';
 import {BankAccount} from '@modules/banking/bank-account.entity';
 import {BankConnection} from '@modules/banking/bank-connection.entity';
 import {BankSyncRun} from '@modules/banking/bank-sync-run.entity';
+import {
+	BANK_TRANSACTION_FINANCIAL_EVENT_RULE_VERSION,
+	BANK_TRANSACTION_FINANCIAL_EVENT_SOURCES,
+	BANK_TRANSACTION_FINANCIAL_EVENT_TYPES,
+} from '@modules/banking/bank-transaction-financial-event';
 import {BankTransaction} from '@modules/banking/bank-transaction.entity';
 import {EnableBankingBalance, EnableBankingTransaction} from '@modules/banking/enable-banking.types';
 import {BankingEncryptionService} from '@modules/banking/services/banking-encryption.service';
@@ -882,6 +889,254 @@ describe('BankConnectionController', () => {
 		});
 	});
 
+	it('classifies Revolut currency exchange legs as internal non-category events and remains idempotent', async () => {
+		const {connection} = await createAuthorizedConnectionFixture(
+			'currency-exchange-session',
+			[
+				{
+					providerAccountId: 'currency-exchange-eur-account',
+					identificationHash: 'hash-currency-exchange-eur',
+					currency: 'EUR',
+				},
+				{
+					providerAccountId: 'currency-exchange-gbp-account',
+					identificationHash: 'hash-currency-exchange-gbp',
+					currency: 'GBP',
+				},
+			],
+			'Revolut',
+		);
+		const sourceLeg: EnableBankingTransaction = {
+			providerTransactionId: 'provider-currency-exchange-source',
+			entryReference: 'entry-currency-exchange-source',
+			amount: '10.00',
+			currency: 'EUR',
+			creditDebitIndicator: 'DBIT',
+			status: 'BOOK',
+			bookingDate: '2026-08-20',
+			valueDate: '2026-08-20',
+			description: 'Exchanged to GBP',
+			counterpartyName: undefined,
+			remittanceInformation: undefined,
+		};
+		const targetLeg: EnableBankingTransaction = {
+			providerTransactionId: 'provider-currency-exchange-target',
+			entryReference: 'entry-currency-exchange-target',
+			amount: '8.50',
+			currency: 'GBP',
+			creditDebitIndicator: 'CRDT',
+			status: 'BOOK',
+			bookingDate: '2026-08-20',
+			valueDate: '2026-08-20',
+			description: 'Exchanged to GBP',
+			counterpartyName: undefined,
+			remittanceInformation: undefined,
+		};
+		const ordinaryPayment: EnableBankingTransaction = {
+			providerTransactionId: 'provider-currency-exchange-card-payment',
+			entryReference: 'entry-currency-exchange-card-payment',
+			amount: '3.00',
+			currency: 'EUR',
+			creditDebitIndicator: 'DBIT',
+			status: 'BOOK',
+			bookingDate: '2026-08-19',
+			valueDate: '2026-08-19',
+			description: 'Card payment',
+			bankTransactionCode: 'PMNT',
+			bankTransactionSubCode: 'CARD',
+			exchangeRate: '1.12',
+			exchangeRateUnitCurrency: 'USD',
+		};
+
+		try {
+			getAccountBalances.mockResolvedValue([]);
+			getAccountTransactions
+				.mockResolvedValueOnce([sourceLeg, ordinaryPayment])
+				.mockResolvedValueOnce([targetLeg]);
+
+			const firstResponse = await verifiedAgent.post(`/bank-connections/${connection.id}/sync`).expect(200);
+			expect(firstResponse.body).toEqual(
+				expect.objectContaining({
+					status: 'SUCCEEDED',
+					transactionsFetched: 3,
+					transactionsAdded: 3,
+				}),
+			);
+
+			const persisted = await bankTransactionRepository.find({
+				where: [
+					{providerTransactionId: sourceLeg.providerTransactionId},
+					{providerTransactionId: targetLeg.providerTransactionId},
+					{providerTransactionId: ordinaryPayment.providerTransactionId},
+				],
+			});
+			const exchangeRows = persisted.filter(
+				({providerTransactionId}) =>
+					providerTransactionId === sourceLeg.providerTransactionId ||
+					providerTransactionId === targetLeg.providerTransactionId,
+			);
+			expect(exchangeRows).toHaveLength(2);
+			expect(exchangeRows).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({
+						providerTransactionId: sourceLeg.providerTransactionId,
+						amount: '-10.00000000',
+						currency: 'EUR',
+						creditDebitIndicator: 'DBIT',
+						financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
+						financialEventSource: BANK_TRANSACTION_FINANCIAL_EVENT_SOURCES.RULE,
+						financialEventRuleVersion: BANK_TRANSACTION_FINANCIAL_EVENT_RULE_VERSION,
+						category: null,
+						categoryStatus: 'NOT_APPLICABLE',
+						categoryInputHash: null,
+					}),
+					expect.objectContaining({
+						providerTransactionId: targetLeg.providerTransactionId,
+						amount: '8.50000000',
+						currency: 'GBP',
+						creditDebitIndicator: 'CRDT',
+						financialEventType: 'CURRENCY_EXCHANGE',
+						categoryStatus: 'NOT_APPLICABLE',
+					}),
+				]),
+			);
+			expect(
+				persisted.find(
+					({providerTransactionId}) => providerTransactionId === ordinaryPayment.providerTransactionId,
+				),
+			).toMatchObject({
+				financialEventType: null,
+				financialEventSource: null,
+				categoryStatus: 'PENDING',
+				categoryInputHash: expect.any(String),
+			});
+
+			getAccountBalances.mockResolvedValue([]);
+			getAccountTransactions
+				.mockResolvedValueOnce([sourceLeg, ordinaryPayment])
+				.mockResolvedValueOnce([targetLeg]);
+			const secondResponse = await verifiedAgent.post(`/bank-connections/${connection.id}/sync`).expect(200);
+			expect(secondResponse.body).toEqual(
+				expect.objectContaining({
+					status: 'SUCCEEDED',
+					transactionsFetched: 3,
+					transactionsAdded: 0,
+				}),
+			);
+			expect(
+				await bankTransactionRepository.count({
+					where: [
+						{providerTransactionId: sourceLeg.providerTransactionId},
+						{providerTransactionId: targetLeg.providerTransactionId},
+					],
+				}),
+			).toBe(2);
+		} finally {
+			await bankConnectionRepository.delete(connection.id);
+		}
+	});
+
+	it('backfills known exchange rows while preserving manual category fields', async () => {
+		const {connection, bankAccounts} = await createAuthorizedConnectionFixture(
+			'currency-exchange-backfill-session',
+			[
+				{
+					providerAccountId: 'provider-account-currency-exchange-backfill',
+					identificationHash: 'hash-currency-exchange-backfill',
+					currency: 'EUR',
+				},
+			],
+			'Revolut',
+		);
+		const bankAccount = bankAccounts[0];
+		const legacyDefaults = {
+			bankAccountId: bankAccount.id,
+			providerTransactionId: 'provider-currency-exchange-backfill',
+			entryReference: 'entry-currency-exchange-backfill',
+			dedupeKey: randomUUID(),
+			bookingDate: '2026-08-15',
+			valueDate: '2026-08-15',
+			amount: '-10.00',
+			currency: 'EUR',
+			creditDebitIndicator: 'DBIT',
+			transactionStatus: 'BOOK',
+			description: 'Exchanged to GBP',
+			displayDescription: 'Exchanged to GBP',
+			counterpartyName: null,
+			financialEventType: null,
+			financialEventSource: null,
+			financialEventRuleVersion: null,
+		};
+		const legacyAiExchange = await bankTransactionRepository.save(
+			bankTransactionRepository.create({
+				...legacyDefaults,
+				providerTransactionId: 'provider-currency-exchange-backfill-ai',
+				entryReference: 'entry-currency-exchange-backfill-ai',
+				category: 'OTHER',
+				categoryStatus: 'COMPLETED',
+				categorySource: 'AI',
+				categoryConfidence: '0.5',
+				categoryInputHash: 'legacy-input-hash',
+				categoryAppliedInputHash: 'legacy-applied-hash',
+				categoryProvider: 'openai',
+				categoryModel: 'legacy-model',
+				categoryPromptVersion: 'legacy-prompt',
+				categoryLastError: 'legacy-error',
+			}),
+		);
+		const legacyManualExchange = await bankTransactionRepository.save(
+			bankTransactionRepository.create({
+				...legacyDefaults,
+				providerTransactionId: 'provider-currency-exchange-backfill-manual',
+				entryReference: 'entry-currency-exchange-backfill-manual',
+				dedupeKey: randomUUID(),
+				category: 'SHOPPING',
+				categoryStatus: 'COMPLETED',
+				categorySource: 'MANUAL',
+				categoryConfidence: null,
+				categoryInputHash: 'manual-input-hash',
+				categoryAppliedInputHash: 'manual-applied-hash',
+			}),
+		);
+		const dataSource = app.get(DataSource);
+		const queryRunner = dataSource.createQueryRunner();
+
+		try {
+			await queryRunner.connect();
+			await new AddBankTransactionFinancialEvent20260917200000().up(queryRunner);
+
+			const rows = await bankTransactionRepository.findByIds([legacyAiExchange.id, legacyManualExchange.id]);
+			const aiRow = rows.find(({id}) => id === legacyAiExchange.id);
+			const manualRow = rows.find(({id}) => id === legacyManualExchange.id);
+			expect(aiRow).toMatchObject({
+				financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
+				financialEventSource: BANK_TRANSACTION_FINANCIAL_EVENT_SOURCES.RULE,
+				financialEventRuleVersion: BANK_TRANSACTION_FINANCIAL_EVENT_RULE_VERSION,
+				category: null,
+				categoryStatus: 'NOT_APPLICABLE',
+				categorySource: null,
+				categoryConfidence: null,
+				categoryInputHash: null,
+				categoryAppliedInputHash: null,
+				categoryProvider: null,
+				categoryModel: null,
+				categoryPromptVersion: null,
+				categoryLastError: null,
+			});
+			expect(manualRow).toMatchObject({
+				financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
+				category: 'SHOPPING',
+				categoryStatus: 'COMPLETED',
+				categorySource: 'MANUAL',
+				categoryInputHash: null,
+				categoryAppliedInputHash: 'manual-applied-hash',
+			});
+		} finally {
+			await queryRunner.release();
+			await bankConnectionRepository.delete(connection.id);
+		}
+	});
+
 	it('validates representative transaction limits', async () => {
 		const {connection} = await createAuthorizedConnection('limit-validation');
 
@@ -1122,6 +1377,7 @@ describe('BankConnectionController', () => {
 		providerAccountId: string;
 		identificationHash: string;
 		details?: string;
+		currency?: string;
 	};
 
 	async function createAuthorizedConnection(providerSessionId: string) {
@@ -1149,12 +1405,13 @@ describe('BankConnectionController', () => {
 	async function createAuthorizedConnectionFixture(
 		providerSessionId: string,
 		bankAccountFixtures: BankAccountFixture[],
+		aspspName = 'ABN AMRO',
 	) {
 		const connection = await bankConnectionRepository.save(
 			bankConnectionRepository.create({
 				account,
 				provider: 'enable-banking',
-				aspspName: 'ABN AMRO',
+				aspspName,
 				aspspCountry: 'NL',
 				status: 'AUTHORIZED',
 				providerSessionId: app.get(BankingEncryptionService).encrypt(providerSessionId),
@@ -1162,14 +1419,14 @@ describe('BankConnectionController', () => {
 			}),
 		);
 		const bankAccounts = await bankAccountRepository.save(
-			bankAccountFixtures.map(({providerAccountId, identificationHash, details}) =>
+			bankAccountFixtures.map(({providerAccountId, identificationHash, details, currency}) =>
 				bankAccountRepository.create({
 					bankConnection: connection,
 					providerAccountId,
 					identificationHash,
 					name: 'Sync account',
 					details,
-					currency: 'EUR',
+					currency: currency ?? 'EUR',
 					isActive: true,
 				}),
 			),

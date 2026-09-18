@@ -1,5 +1,10 @@
 import {BANK_TRANSACTION_DIRECTIONS} from '../../bank-transaction-direction';
 import type {BankTransactionDirection as BankTransactionDirectionType} from '../../bank-transaction-direction';
+import type {
+	BankTransactionCashFlowTreatment,
+	BankTransactionFinancialEventSource,
+	BankTransactionFinancialEventType,
+} from '../../bank-transaction-financial-event';
 import type {BankTransactionType} from '../../bank-transaction-type';
 import type {
 	BankTransactionCategorizationSource,
@@ -27,6 +32,10 @@ export class BankTransactionResponseDto {
 	category: BankTransactionCategory | null;
 	categoryStatus: BankTransactionCategorizationStatus;
 	categorySource: BankTransactionCategorizationSource | null;
+	financialEventType: BankTransactionFinancialEventType | null;
+	financialEventSource: BankTransactionFinancialEventSource | null;
+	financialEventRuleVersion: string | null;
+	cashFlowTreatment: BankTransactionCashFlowTreatment;
 	categoryConfidence: string | null;
 	providerTransactionDescription: string | null;
 	merchantCategoryCode: string | null;

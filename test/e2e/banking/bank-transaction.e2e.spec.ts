@@ -11,6 +11,12 @@ import {Account} from '@modules/account/account.entity';
 import {AccountService} from '@modules/account/account.service';
 import {BankAccount} from '@modules/banking/bank-account.entity';
 import {BankConnection} from '@modules/banking/bank-connection.entity';
+import {
+	BANK_TRANSACTION_CASH_FLOW_TREATMENTS,
+	BANK_TRANSACTION_FINANCIAL_EVENT_RULE_VERSION,
+	BANK_TRANSACTION_FINANCIAL_EVENT_SOURCES,
+	BANK_TRANSACTION_FINANCIAL_EVENT_TYPES,
+} from '@modules/banking/bank-transaction-financial-event';
 import {BankTransaction} from '@modules/banking/bank-transaction.entity';
 import {OpenAiBankTransactionCategorizationProvider} from '@modules/banking/categorization/providers/openai-bank-transaction-categorization.provider';
 
@@ -554,6 +560,102 @@ describe('BankTransactionController', () => {
 		}
 	});
 
+	it('exposes and filters currency exchange events without treating them as uncategorized', async () => {
+		const ruleExchange = await bankTransactionRepository.save(
+			bankTransactionRepository.create({
+				bankAccountId: fixtureBankAccount.id,
+				providerTransactionId: 'provider-currency-exchange-rule',
+				entryReference: 'entry-currency-exchange-rule',
+				dedupeKey: randomUUID(),
+				bookingDate: '2026-08-15',
+				valueDate: '2026-08-15',
+				amount: '-10.00',
+				currency: 'EUR',
+				creditDebitIndicator: 'DBIT',
+				transactionStatus: 'BOOK',
+				description: 'Exchanged to GBP',
+				displayDescription: 'Exchanged to GBP',
+				counterpartyName: null,
+				category: null,
+				categoryStatus: 'NOT_APPLICABLE',
+				categorySource: null,
+				financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
+				financialEventSource: BANK_TRANSACTION_FINANCIAL_EVENT_SOURCES.RULE,
+				financialEventRuleVersion: BANK_TRANSACTION_FINANCIAL_EVENT_RULE_VERSION,
+			}),
+		);
+		const manualExchange = await bankTransactionRepository.save(
+			bankTransactionRepository.create({
+				bankAccountId: fixtureBankAccount.id,
+				providerTransactionId: 'provider-currency-exchange-manual',
+				entryReference: 'entry-currency-exchange-manual',
+				dedupeKey: randomUUID(),
+				bookingDate: '2026-08-14',
+				valueDate: '2026-08-14',
+				amount: '11.00',
+				currency: 'EUR',
+				creditDebitIndicator: 'CRDT',
+				transactionStatus: 'BOOK',
+				description: 'Exchanged to EUR',
+				displayDescription: 'Exchanged to EUR',
+				counterpartyName: null,
+				category: 'SHOPPING',
+				categoryStatus: 'COMPLETED',
+				categorySource: 'MANUAL',
+				financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
+				financialEventSource: BANK_TRANSACTION_FINANCIAL_EVENT_SOURCES.RULE,
+				financialEventRuleVersion: BANK_TRANSACTION_FINANCIAL_EVENT_RULE_VERSION,
+			}),
+		);
+
+		try {
+			const filteredResponse = await verifiedAgent
+				.get('/bank-transactions')
+				.query({'filter[financialEventTypes][]': 'CURRENCY_EXCHANGE'})
+				.expect(200);
+
+			expect(filteredResponse.body.total).toBe(2);
+			expect(filteredResponse.body.transactions).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({
+						id: ruleExchange.id,
+						financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
+						financialEventSource: BANK_TRANSACTION_FINANCIAL_EVENT_SOURCES.RULE,
+						financialEventRuleVersion: BANK_TRANSACTION_FINANCIAL_EVENT_RULE_VERSION,
+						cashFlowTreatment: BANK_TRANSACTION_CASH_FLOW_TREATMENTS.INTERNAL,
+						category: null,
+						categoryStatus: 'NOT_APPLICABLE',
+					}),
+					expect.objectContaining({
+						id: manualExchange.id,
+						category: 'SHOPPING',
+						categorySource: 'MANUAL',
+						cashFlowTreatment: BANK_TRANSACTION_CASH_FLOW_TREATMENTS.INTERNAL,
+					}),
+				]),
+			);
+
+			const uncategorizedResponse = await verifiedAgent
+				.get('/bank-transactions')
+				.query({'filter[categories][]': 'UNCATEGORIZED'})
+				.expect(200);
+			expect(uncategorizedResponse.body.transactions.map(({id}: {id: string}) => id)).not.toContain(
+				ruleExchange.id,
+			);
+
+			const connectionResponse = await verifiedAgent
+				.get(`/bank-connections/${fixtureConnection.id}/transactions?limit=100`)
+				.expect(200);
+			expect(connectionResponse.body.transactions).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({id: ruleExchange.id, cashFlowTreatment: 'INTERNAL'}),
+					expect.objectContaining({id: manualExchange.id, financialEventType: 'CURRENCY_EXCHANGE'}),
+				]),
+			);
+		} finally {
+			await bankTransactionRepository.delete([ruleExchange.id, manualExchange.id]);
+		}
+	});
 	it.each([
 		['a positive page index', 'pagination[pageIndex]', '1', 200],
 		['the maximum page size', 'pagination[pageSize]', '50', 200],
@@ -575,6 +677,7 @@ describe('BankTransactionController', () => {
 		['a malformed bank account ID', {'filter[bankAccountIds][]': 'not-a-uuid'}],
 		['an unsupported category', {'filter[categories][]': 'NOT_A_CATEGORY'}],
 		['an unsupported categorization source', {'filter[categorySources][]': 'RULE'}],
+		['an unsupported financial event', {'filter[financialEventTypes][]': 'TRANSFER'}],
 	])('rejects %s', async (_case, query) => {
 		await verifiedAgent.get('/bank-transactions').query(query).expect(400);
 	});

@@ -6,6 +6,11 @@ import {BankAccountBalance} from '../bank-account-balance.entity';
 import {BankAccount} from '../bank-account.entity';
 import {BankConnection} from '../bank-connection.entity';
 import {BankSyncRun} from '../bank-sync-run.entity';
+import {
+	BANK_TRANSACTION_FINANCIAL_EVENT_RULE_VERSION,
+	BANK_TRANSACTION_FINANCIAL_EVENT_SOURCES,
+	BANK_TRANSACTION_FINANCIAL_EVENT_TYPES,
+} from '../bank-transaction-financial-event';
 import {BankTransaction} from '../bank-transaction.entity';
 import {BankTransactionCategorizationService} from '../categorization/bank-transaction-categorization.service';
 import {BankingConnectionLockService} from './banking-connection-lock.service';
@@ -328,6 +333,7 @@ describe('BankingSyncService synchronization lock', () => {
 			into: jest.fn().mockReturnThis(),
 			values: jest.fn().mockReturnThis(),
 			orIgnore: jest.fn().mockReturnThis(),
+			orUpdate: jest.fn().mockReturnThis(),
 			returning: jest.fn().mockReturnThis(),
 			execute: jest.fn().mockResolvedValue({raw: [{id: 'new-transaction-id'}]}),
 		};
@@ -403,5 +409,156 @@ describe('BankingSyncService synchronization lock', () => {
 
 		await firstSyncResult;
 		expect(lockOwner.token).toBe('new-owner');
+	});
+});
+
+describe('BankingSyncService transaction event persistence', () => {
+	function createServiceForTransactionValues(): BankingSyncService {
+		return new BankingSyncService(
+			{} as never,
+			{} as never,
+			{} as never,
+			{} as never,
+			{} as never,
+			{} as never,
+			{} as never,
+			{} as never,
+		);
+	}
+
+	function toBankTransactionValues(
+		service: BankingSyncService,
+		transaction: Record<string, unknown>,
+		bankAccount: Record<string, unknown>,
+		provider = 'enable-banking',
+		aspspName = 'Revolut',
+	): Record<string, unknown> {
+		return (
+			service as unknown as {
+				toBankTransactionValues: (...args: unknown[]) => Record<string, unknown>;
+			}
+		).toBankTransactionValues(bankAccount, transaction, aspspName, provider);
+	}
+
+	it('stores currency exchange metadata and skips the categorization input hash', () => {
+		const service = createServiceForTransactionValues();
+		const values = toBankTransactionValues(
+			service,
+			{
+				id: 'provider-transaction-id',
+				amount: '10.00',
+				currency: 'EUR',
+				creditDebitIndicator: 'DBIT',
+				description: ' Exchanged   to GBP ',
+			},
+			{id: 'bank-account-id', currency: 'EUR'},
+		);
+
+		expect(values).toMatchObject({
+			financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
+			financialEventSource: BANK_TRANSACTION_FINANCIAL_EVENT_SOURCES.RULE,
+			financialEventRuleVersion: BANK_TRANSACTION_FINANCIAL_EVENT_RULE_VERSION,
+			categoryInputHash: null,
+		});
+	});
+
+	it('keeps an existing non-manual exchange row out of categorization after reclassification', async () => {
+		const service = createServiceForTransactionValues();
+		const insertQueryBuilder = {
+			insert: jest.fn().mockReturnThis(),
+			into: jest.fn().mockReturnThis(),
+			values: jest.fn().mockReturnThis(),
+			orIgnore: jest.fn().mockReturnThis(),
+			orUpdate: jest.fn().mockReturnThis(),
+			returning: jest.fn().mockReturnThis(),
+			execute: jest.fn().mockResolvedValue({raw: []}),
+		};
+		const eventUpdateQueryBuilder = {
+			update: jest.fn().mockReturnThis(),
+			set: jest.fn().mockReturnThis(),
+			where: jest.fn().mockReturnThis(),
+			andWhere: jest.fn().mockReturnThis(),
+			execute: jest.fn().mockResolvedValue({affected: 1}),
+		};
+		const repositoryFind = jest.fn();
+		const repository = {
+			find: repositoryFind,
+			createQueryBuilder: jest
+				.fn()
+				.mockReturnValueOnce(insertQueryBuilder)
+				.mockReturnValueOnce(insertQueryBuilder)
+				.mockReturnValueOnce(eventUpdateQueryBuilder),
+			upsert: jest.fn().mockResolvedValue(undefined),
+		} as unknown as Repository<BankTransaction>;
+		const bankAccount = {id: 'bank-account-id', currency: 'EUR'} as BankAccount;
+		const transaction = {
+			id: 'provider-transaction-id',
+			providerTransactionId: 'provider-transaction-id',
+			amount: '10.00',
+			currency: 'EUR',
+			creditDebitIndicator: 'DBIT',
+			description: 'Exchanged to GBP',
+		};
+		const mappedValue = toBankTransactionValues(
+			service,
+			transaction,
+			bankAccount as unknown as Record<string, unknown>,
+		);
+		repositoryFind
+			.mockResolvedValueOnce([
+				{
+					id: 'existing-transaction-id',
+					dedupeKey: mappedValue.dedupeKey,
+					categoryInputHash: 'legacy-input-hash',
+					categorySource: null,
+				},
+			])
+			.mockResolvedValueOnce([{id: 'existing-transaction-id'}]);
+
+		await (
+			service as unknown as {
+				persistTransactions: (...args: unknown[]) => Promise<unknown>;
+			}
+		).persistTransactions(repository, bankAccount, [transaction], 'Revolut', 'enable-banking');
+
+		expect(insertQueryBuilder.orUpdate).toHaveBeenCalledWith(
+			expect.any(Array),
+			['bankAccountId', 'dedupeKey'],
+			expect.objectContaining({
+				overwriteCondition: expect.objectContaining({
+					where: '"bank_transactions"."categoryStatus" IS DISTINCT FROM :processingStatus',
+				}),
+			}),
+		);
+		expect(repository.upsert).toHaveBeenCalledWith(
+			expect.arrayContaining([
+				expect.objectContaining({financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE}),
+			]),
+			['bankAccountId', 'dedupeKey'],
+		);
+		expect(eventUpdateQueryBuilder.set).toHaveBeenCalledWith(
+			expect.objectContaining({categoryStatus: 'NOT_APPLICABLE', categoryInputHash: null}),
+		);
+		expect(repository.createQueryBuilder).toHaveBeenCalledTimes(3);
+	});
+
+	it('does not classify an ordinary card payment that contains exchange metadata', () => {
+		const service = createServiceForTransactionValues();
+		const values = toBankTransactionValues(
+			service,
+			{
+				id: 'provider-card-payment-id',
+				amount: '10.00',
+				currency: 'EUR',
+				creditDebitIndicator: 'DBIT',
+				description: 'Card payment',
+				exchangeRate: '1.12',
+				exchangeRateUnitCurrency: 'USD',
+			},
+			{id: 'bank-account-id', currency: 'EUR'},
+		);
+
+		expect(values.financialEventType).toBeNull();
+		expect(values.categoryInputHash).toEqual(expect.any(String));
 	});
 });

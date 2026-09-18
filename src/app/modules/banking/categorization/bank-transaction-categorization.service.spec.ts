@@ -5,6 +5,7 @@ import {
 	CATEGORIZE_BANK_TRANSACTIONS_JOB,
 } from '@core/queue/queue.constants';
 
+import {BANK_TRANSACTION_FINANCIAL_EVENT_TYPES} from '../bank-transaction-financial-event';
 import {BankTransaction} from '../bank-transaction.entity';
 import {
 	BANK_TRANSACTION_CATEGORIZATION_PROMPT_VERSION,
@@ -63,6 +64,10 @@ function createTransaction(overrides: Partial<BankTransaction> = {}): BankTransa
 		categoryPromptVersion: null,
 		categoryUpdatedAt: null,
 		categoryLastError: null,
+		categorySearchTrace: null,
+		financialEventType: null,
+		financialEventSource: null,
+		financialEventRuleVersion: null,
 		createdAt: new Date('2026-09-01T00:00:00.000Z'),
 		updatedAt: new Date('2026-09-01T00:00:00.000Z'),
 		...overrides,
@@ -206,6 +211,21 @@ describe('BankTransactionCategorizationService queue scheduling', () => {
 		expect(disabled.queue.addBulk).not.toHaveBeenCalled();
 		expect(BANK_TRANSACTION_CATEGORIZATION_QUEUE).toBe('bank-transaction-categorization');
 	});
+
+	it('does not enqueue financial-event rows for AI categorization', async () => {
+		const exchange = createTransaction({
+			id: 'exchange-transaction',
+			financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
+		});
+		const ordinary = createTransaction({id: 'ordinary-transaction'});
+		const {service, queue} = createService({rows: [exchange, ordinary]});
+
+		await service.enqueueForTransactions([exchange.id, ordinary.id]);
+
+		expect(queue.addBulk).toHaveBeenCalledTimes(1);
+		expect(queue.addBulk.mock.calls[0][0]).toHaveLength(1);
+		expect(queue.addBulk.mock.calls[0][0][0].data).toEqual({transactionIds: [ordinary.id]});
+	});
 });
 
 describe('BankTransactionCategorizationService web-search reconciliation', () => {
@@ -219,8 +239,85 @@ describe('BankTransactionCategorizationService web-search reconciliation', () =>
 		expect(queryBuilder.getRawMany).toHaveBeenCalledTimes(1);
 		expect(queue.addBulk).not.toHaveBeenCalled();
 	});
+
+	it('does not enqueue financial-event rows found by reconciliation', async () => {
+		const exchange = createTransaction({
+			id: 'reconciled-exchange-transaction',
+			financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
+		});
+		const queryBuilder = createUpdateQueryBuilder();
+		queryBuilder.getRawMany.mockResolvedValueOnce([{id: exchange.id}]);
+		const {service, queue} = createService({rows: [exchange], webSearchEnabled: true, queryBuilder});
+
+		await service.onApplicationBootstrap();
+
+		expect(queryBuilder.getRawMany).toHaveBeenCalledTimes(1);
+		expect(queue.addBulk).not.toHaveBeenCalled();
+	});
 });
 describe('BankTransactionCategorizationService worker', () => {
+	it('does not send a stale financial-event job to the provider', async () => {
+		const transaction = createTransaction({
+			id: 'stale-exchange-transaction',
+			categoryStatus: 'PENDING',
+			financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
+		});
+		const {service, provider} = createService({rows: [transaction]});
+
+		await service.processTransactionJob([transaction.id]);
+
+		expect(provider.categorize).not.toHaveBeenCalled();
+		expect(provider.categorizeWithWebSearch).not.toHaveBeenCalled();
+	});
+
+	it('does not send a queued row after it becomes a financial event before provider invocation', async () => {
+		const transaction = createTransaction({id: 'reclassified-exchange-transaction'});
+		const reclassifiedTransaction = createTransaction({
+			id: transaction.id,
+			financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
+		});
+		const {service, provider, repository} = createService({rows: [transaction]});
+		repository.find.mockResolvedValueOnce([transaction]).mockResolvedValueOnce([reclassifiedTransaction]);
+
+		await service.processTransactionJob([transaction.id]);
+
+		expect(provider.categorize).not.toHaveBeenCalled();
+		expect(provider.categorizeWithWebSearch).not.toHaveBeenCalled();
+	});
+
+	it('does not send a queued row that was deleted before provider invocation', async () => {
+		const transaction = createTransaction({id: 'deleted-transaction'});
+		const {service, provider, repository} = createService({rows: [transaction]});
+		repository.find.mockResolvedValueOnce([transaction]).mockResolvedValueOnce([]);
+
+		await service.processTransactionJob([transaction.id]);
+
+		expect(provider.categorize).not.toHaveBeenCalled();
+		expect(provider.categorizeWithWebSearch).not.toHaveBeenCalled();
+	});
+
+	it('does not send a reclassified row to web fallback after standard categorization', async () => {
+		const transaction = createTransaction({id: 'web-reclassified-transaction'});
+		const reclassifiedTransaction = createTransaction({
+			id: transaction.id,
+			financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
+		});
+		const {service, provider, repository} = createService({
+			rows: [transaction],
+			webSearchEnabled: true,
+			providerResult: [{correlationId: transaction.id, category: 'OTHER', confidence: 0.5}],
+		});
+		repository.find
+			.mockResolvedValueOnce([transaction])
+			.mockResolvedValueOnce([transaction])
+			.mockResolvedValueOnce([reclassifiedTransaction]);
+
+		await service.processTransactionJob([transaction.id]);
+
+		expect(provider.categorize).toHaveBeenCalledTimes(1);
+		expect(provider.categorizeWithWebSearch).not.toHaveBeenCalled();
+	});
+
 	it('sends only normal OTHER results to the web fallback and applies the web result', async () => {
 		const specific = createTransaction({id: 'specific-transaction', counterpartyName: 'Cafe'});
 		const other = createTransaction({id: 'other-transaction', counterpartyName: 'Ambiguous Cafe'});
@@ -674,6 +771,37 @@ describe('BankTransactionCategorizationService worker', () => {
 		await service.processTransactionJob([transaction.id]);
 
 		expect(provider.categorize).not.toHaveBeenCalled();
+	});
+
+	it('does not refresh the hash when a concurrent event reclassification wins the race', async () => {
+		const transaction = createTransaction();
+		const {service, provider, repository} = createService({rows: [transaction]});
+		repository.update.mockImplementationOnce(async (criteria) => {
+			expect(criteria).toEqual(expect.objectContaining({financialEventType: expect.anything()}));
+			return {affected: 0};
+		});
+
+		await service.processTransactionJob([transaction.id]);
+
+		expect(provider.categorize).not.toHaveBeenCalled();
+	});
+
+	it('does not reset a row after another worker claims it', async () => {
+		const transaction = createTransaction({
+			categoryStatus: 'PENDING',
+			categorySource: 'LEGACY',
+			categoryInputHash: 'old-input-hash',
+			categoryAppliedInputHash: 'old-input-hash',
+		});
+		const queryBuilder = createUpdateQueryBuilder([{affected: 0}, {affected: 0}]);
+		const {service, provider} = createService({rows: [transaction], queryBuilder});
+
+		await service.processTransactionJob([transaction.id]);
+
+		expect(provider.categorize).not.toHaveBeenCalled();
+		expect(queryBuilder.andWhere).toHaveBeenCalledWith('"categoryStatus" = :expectedStatus', {
+			expectedStatus: 'PENDING',
+		});
 	});
 
 	it('does not apply a provider result after the claimed input hash changes', async () => {

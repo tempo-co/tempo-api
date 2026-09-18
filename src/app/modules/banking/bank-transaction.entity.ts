@@ -10,6 +10,10 @@ import {
 } from 'typeorm';
 
 import {BankAccount} from './bank-account.entity';
+import type {
+	BankTransactionFinancialEventSource,
+	BankTransactionFinancialEventType,
+} from './bank-transaction-financial-event';
 import type {BankTransactionLocation} from './bank-transaction-location';
 import {BankTransactionType} from './bank-transaction-type';
 import type {BankTransactionCategorizationSearchTrace} from './categorization/bank-transaction-categorization.types';
@@ -123,6 +127,15 @@ export class BankTransaction {
 
 	@Column({type: 'jsonb', nullable: true})
 	categorySearchTrace: BankTransactionCategorizationSearchTrace | null;
+
+	@Column({type: 'varchar', length: 32, nullable: true})
+	financialEventType: BankTransactionFinancialEventType | null;
+
+	@Column({type: 'varchar', length: 16, nullable: true})
+	financialEventSource: BankTransactionFinancialEventSource | null;
+
+	@Column({type: 'varchar', length: 64, nullable: true})
+	financialEventRuleVersion: string | null;
 
 	@Column({type: 'numeric', precision: 20, scale: 8, nullable: true})
 	balanceAfterAmount: string | null;

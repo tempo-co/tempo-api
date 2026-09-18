@@ -12,6 +12,7 @@ import {
 	CATEGORIZE_BANK_TRANSACTIONS_JOB,
 } from '@core/queue/queue.constants';
 
+import {BANK_TRANSACTION_FINANCIAL_EVENT_TYPES} from '../bank-transaction-financial-event';
 import {BankTransaction} from '../bank-transaction.entity';
 import {
 	createBankTransactionCategorizationInputHash,
@@ -94,13 +95,23 @@ export class BankTransactionCategorizationService {
 		if (uniqueIds.length === 0) return;
 
 		const transactions = await this.repository.find({
-			select: ['id', 'categoryInputHash'],
+			select: ['id', 'categoryInputHash', 'financialEventType'],
 			where: {id: In(uniqueIds)},
 		});
+		const financialEventIds = new Set(
+			transactions
+				.filter(
+					({financialEventType}) =>
+						financialEventType === BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
+				)
+				.map(({id}) => id),
+		);
+		const categorizationIds = uniqueIds.filter((id) => !financialEventIds.has(id));
+		if (categorizationIds.length === 0) return;
 		const inputHashes = new Map(transactions.map(({id, categoryInputHash}) => [id, categoryInputHash]));
 		const jobs = [];
-		for (let index = 0; index < uniqueIds.length; index += batchSize) {
-			const batch = uniqueIds.slice(index, index + batchSize);
+		for (let index = 0; index < categorizationIds.length; index += batchSize) {
+			const batch = categorizationIds.slice(index, index + batchSize);
 			jobs.push({
 				name: CATEGORIZE_BANK_TRANSACTIONS_JOB,
 				data: {
@@ -137,7 +148,7 @@ export class BankTransactionCategorizationService {
 
 		for (const id of batchIds) {
 			const transaction = transactionsById.get(id);
-			if (!transaction) continue;
+			if (!transaction || this.isFinancialEvent(transaction)) continue;
 
 			const input = toBankTransactionCategorizationInput({
 				...transaction,
@@ -168,6 +179,9 @@ export class BankTransactionCategorizationService {
 				.createQueryBuilder('transaction')
 				.select('transaction.id', 'id')
 				.where(`transaction."categorySource" IS DISTINCT FROM 'MANUAL'`)
+				.andWhere('transaction."financialEventType" IS DISTINCT FROM :financialEventType', {
+					financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
+				})
 				.andWhere(
 					`(
 						transaction."categoryStatus" IN (:...claimableStatuses)
@@ -198,18 +212,26 @@ export class BankTransactionCategorizationService {
 	}
 
 	private async categorizeClaimedBatch(batch: readonly ClaimedTransaction[]): Promise<void> {
-		const inputs = batch.map(({input}) => input);
+		const activeBatch = await this.getActiveClaimedTransactions(batch);
+		if (activeBatch.length === 0) return;
+
+		const inputs = activeBatch.map(({input}) => input);
 		let standardResults: readonly BankTransactionCategorizationResult[];
 
 		try {
 			standardResults = await this.provider.categorize(inputs, BANK_TRANSACTION_CATEGORY_DEFINITIONS);
 			this.assertCompleteResults(inputs, standardResults);
 		} catch (error) {
-			await this.markBatchFailed(batch, error);
+			await this.markBatchFailed(activeBatch, error);
 			if (this.isRetryable(error)) throw error;
 			return;
 		}
 
+		const activeBatchAfterStandardCategorization = await this.getActiveClaimedTransactions(activeBatch);
+		if (activeBatchAfterStandardCategorization.length === 0) return;
+		const activeCorrelationIds = new Set(
+			activeBatchAfterStandardCategorization.map(({input}) => input.correlationId),
+		);
 		const inputById = new Map(inputs.map((input) => [input.correlationId, input]));
 		const standardResultById = new Map(
 			standardResults.map((result) => {
@@ -222,7 +244,11 @@ export class BankTransactionCategorizationService {
 		const webCandidates = inputs
 			.filter((input) => {
 				const category = standardResultById.get(input.correlationId)?.category;
-				return webSearchEnabled && (category === 'OTHER' || category === 'NEEDS_REVIEW');
+				return (
+					activeCorrelationIds.has(input.correlationId) &&
+					webSearchEnabled &&
+					(category === 'OTHER' || category === 'NEEDS_REVIEW')
+				);
 			})
 			.map((input) => {
 				const webSearchInput = toBankTransactionCategorizationWebSearchInput(input);
@@ -233,8 +259,18 @@ export class BankTransactionCategorizationService {
 
 		const webResults: BankTransactionCategorizationResult[] = [];
 		const failedWebSearchIds = new Set<string>();
+		const claimedByCorrelationId = new Map(
+			activeBatchAfterStandardCategorization.map((claimed) => [claimed.input.correlationId, claimed]),
+		);
 		if (webSearchEnabled) {
 			for (const webSearchInput of webCandidates) {
+				const claimed = claimedByCorrelationId.get(webSearchInput.correlationId);
+				if (!claimed) continue;
+				const activeBeforeWebSearch = await this.getActiveClaimedTransactions([claimed]);
+				if (activeBeforeWebSearch.length === 0) {
+					activeCorrelationIds.delete(webSearchInput.correlationId);
+					continue;
+				}
 				try {
 					const candidateResults = await this.provider.categorizeWithWebSearch(
 						[webSearchInput],
@@ -251,7 +287,7 @@ export class BankTransactionCategorizationService {
 
 		for (const result of webResults) standardResultById.set(result.correlationId, result);
 		const webResultIds = new Set(webResults.map(({correlationId}) => correlationId));
-		for (const claimed of batch) {
+		for (const claimed of activeBatchAfterStandardCategorization) {
 			const result = standardResultById.get(claimed.input.correlationId);
 			if (!result) continue;
 			const promptVersion = webResultIds.has(claimed.input.correlationId)
@@ -297,6 +333,8 @@ export class BankTransactionCategorizationService {
 				{
 					id: transaction.id,
 					categoryInputHash: previousHash == null ? IsNull() : previousHash,
+					financialEventType: IsNull(),
+					categoryStatus: transaction.categoryStatus ?? IsNull(),
 				},
 				{categoryInputHash: inputHash},
 			);
@@ -310,17 +348,39 @@ export class BankTransactionCategorizationService {
 			transaction.categoryAppliedInputHash !== null && transaction.categoryAppliedInputHash !== inputHash;
 		if (!appliedHashIsStale) return true;
 
-		const reset = await this.updateCategorizationWithGuard(transaction.id, inputHash, {
-			...BANK_TRANSACTION_CATEGORIZATION_RESET_VALUES,
-			categoryStatus: 'PENDING',
-			categoryUpdatedAt: new Date(),
-		});
+		const reset = await this.updateCategorizationWithGuard(
+			transaction.id,
+			inputHash,
+			{
+				...BANK_TRANSACTION_CATEGORIZATION_RESET_VALUES,
+				categoryStatus: 'PENDING',
+				categoryUpdatedAt: new Date(),
+			},
+			transaction.categoryStatus ?? undefined,
+		);
 		if (reset)
 			this.applyLocalUpdate(transaction, {
 				...BANK_TRANSACTION_CATEGORIZATION_RESET_VALUES,
 				categoryStatus: 'PENDING',
 			});
 		return true;
+	}
+
+	private async getActiveClaimedTransactions(batch: readonly ClaimedTransaction[]): Promise<ClaimedTransaction[]> {
+		const currentTransactions = await this.repository.find({
+			select: ['id', 'financialEventType'],
+			where: {id: In(batch.map(({transaction}) => transaction.id))},
+		});
+		const currentTransactionsById = new Map(
+			currentTransactions.map((transaction) => [transaction.id, transaction]),
+		);
+		return batch.filter(({transaction}) => {
+			const currentTransaction = currentTransactionsById.get(transaction.id);
+			return (
+				currentTransaction !== undefined &&
+				currentTransaction.financialEventType !== BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE
+			);
+		});
 	}
 
 	private async claimTransaction(id: string, inputHash: string): Promise<boolean> {
@@ -331,6 +391,9 @@ export class BankTransactionCategorizationService {
 			.where('id = :id', {id})
 			.andWhere(`"categorySource" IS DISTINCT FROM 'MANUAL'`)
 			.andWhere('"categoryInputHash" = :inputHash', {inputHash})
+			.andWhere('"financialEventType" IS DISTINCT FROM :financialEventType', {
+				financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
+			})
 			.andWhere(
 				`(
 					"categoryStatus" IN (:...claimableStatuses)
@@ -362,7 +425,10 @@ export class BankTransactionCategorizationService {
 			.set(values)
 			.where('id = :id', {id})
 			.andWhere(`"categorySource" IS DISTINCT FROM 'MANUAL'`)
-			.andWhere('"categoryInputHash" = :inputHash', {inputHash});
+			.andWhere('"categoryInputHash" = :inputHash', {inputHash})
+			.andWhere('"financialEventType" IS DISTINCT FROM :financialEventType', {
+				financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
+			});
 		if (status) query.andWhere('"categoryStatus" = :expectedStatus', {expectedStatus: status});
 		const result = await query.execute();
 		return (result.affected ?? 0) > 0;
@@ -469,6 +535,10 @@ export class BankTransactionCategorizationService {
 			typeof domain === 'string' &&
 			/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i.test(domain)
 		);
+	}
+
+	private isFinancialEvent(transaction: BankTransaction): boolean {
+		return transaction.financialEventType === BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE;
 	}
 
 	private isClaimable(transaction: BankTransaction): boolean {

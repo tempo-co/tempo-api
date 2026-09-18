@@ -21,6 +21,10 @@ import {BankAccount} from '../bank-account.entity';
 import {BankConnection} from '../bank-connection.entity';
 import {BankSyncRun} from '../bank-sync-run.entity';
 import {getBankTransactionDisplayDescription} from '../bank-transaction-display';
+import {
+	BANK_TRANSACTION_FINANCIAL_EVENT_TYPES,
+	detectBankTransactionFinancialEvent,
+} from '../bank-transaction-financial-event';
 import {normalizeBankTransactionLocation} from '../bank-transaction-location';
 import {normalizeBankTransactionType} from '../bank-transaction-type';
 import {BankTransaction} from '../bank-transaction.entity';
@@ -380,6 +384,7 @@ export class BankingSyncService {
 						accountResult.bankAccount,
 						accountResult.transactions,
 						connection.aspspName,
+						connection.provider,
 					);
 					transactionsAdded += transactionPersistence.transactionsAdded;
 					persistedTransactionIds.push(...transactionPersistence.persistedTransactionIds);
@@ -438,9 +443,10 @@ export class BankingSyncService {
 		bankAccount: BankAccount,
 		transactions: EnableBankingTransaction[],
 		aspspName: string,
+		provider: string,
 	): Promise<PersistSyncResult> {
 		const transactionValues = transactions.map((transaction) =>
-			this.toBankTransactionValues(bankAccount, transaction, aspspName),
+			this.toBankTransactionValues(bankAccount, transaction, aspspName, provider),
 		);
 		const dedupeKeys = transactionValues.map(({dedupeKey}) => dedupeKey);
 		const existingTransactions = await repository.find({
@@ -458,13 +464,65 @@ export class BankingSyncService {
 			.execute();
 		const transactionsAdded = Array.isArray(insertResult.raw) ? insertResult.raw.length : insertResult.raw ? 1 : 0;
 
-		await repository.upsert(transactionValues, ['bankAccountId', 'dedupeKey']);
+		const conflictColumns = ['bankAccountId', 'dedupeKey'];
+		const overwriteColumns = Object.keys(transactionValues[0]).filter(
+			(column) => !conflictColumns.includes(column),
+		);
+		await repository
+			.createQueryBuilder()
+			.insert()
+			.into(BankTransaction)
+			.values(transactionValues)
+			.orUpdate(overwriteColumns, conflictColumns, {
+				overwriteCondition: {
+					where: '"bank_transactions"."categoryStatus" IS DISTINCT FROM :processingStatus',
+					parameters: {processingStatus: 'PROCESSING'},
+				},
+			})
+			.execute();
+
+		const eventTransactionValues = transactionValues.filter(
+			({financialEventType}) => financialEventType === BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
+		);
+		if (eventTransactionValues.length > 0) {
+			await repository.upsert(eventTransactionValues, conflictColumns);
+		}
+
+		const eventDedupeKeys = [
+			...new Set(
+				transactionValues
+					.filter(
+						({financialEventType}) =>
+							financialEventType === BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
+					)
+					.map(({dedupeKey}) => dedupeKey),
+			),
+		];
+		if (eventDedupeKeys.length > 0) {
+			await repository
+				.createQueryBuilder()
+				.update(BankTransaction)
+				.set({
+					...BANK_TRANSACTION_CATEGORIZATION_RESET_VALUES,
+					categoryInputHash: null,
+					categoryStatus: 'NOT_APPLICABLE',
+					categoryUpdatedAt: null,
+				})
+				.where('"bankAccountId" = :bankAccountId', {bankAccountId: bankAccount.id})
+				.andWhere('"dedupeKey" IN (:...eventDedupeKeys)', {eventDedupeKeys})
+				.andWhere('"financialEventType" = :financialEventType', {
+					financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
+				})
+				.andWhere('"categorySource" IS DISTINCT FROM \'MANUAL\'')
+				.execute();
+		}
 
 		const transactionByDedupeKey = new Map(transactionValues.map((value) => [value.dedupeKey, value]));
 		for (const existingTransaction of existingTransactions) {
 			const currentValue = transactionByDedupeKey.get(existingTransaction.dedupeKey);
 			if (
 				!currentValue ||
+				currentValue.financialEventType === BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE ||
 				existingTransaction.categorySource === 'MANUAL' ||
 				existingTransaction.categoryStatus === 'COMPLETED' ||
 				existingTransaction.categoryInputHash === currentValue.categoryInputHash
@@ -485,6 +543,8 @@ export class BankingSyncService {
 				.andWhere('categoryStatus IS DISTINCT FROM :completedCategoryStatus', {
 					completedCategoryStatus: 'COMPLETED',
 				})
+				.andWhere('"categoryStatus" IS DISTINCT FROM \'PROCESSING\'')
+				.andWhere('"financialEventType" IS NULL')
 				.execute();
 		}
 
@@ -541,6 +601,7 @@ export class BankingSyncService {
 		bankAccount: BankAccount,
 		transaction: EnableBankingTransaction,
 		aspspName: string,
+		provider: string,
 	) {
 		const amount = this.toSignedAmount(transaction.amount, transaction.creditDebitIndicator);
 		const currency = transaction.currency.toUpperCase();
@@ -563,6 +624,14 @@ export class BankingSyncService {
 			subCode: bankTransactionSubCode ?? undefined,
 			aspspName,
 		});
+		const financialEvent = detectBankTransactionFinancialEvent({
+			provider,
+			aspspName,
+			accountCurrency: bankAccount.currency,
+			transactionCurrency: currency,
+			creditDebitIndicator,
+			description,
+		});
 		const merchantCategoryCode = truncate(transaction.merchantCategoryCode, 16);
 		const dedupeKey = this.createDedupeKey({
 			providerTransactionId,
@@ -576,26 +645,28 @@ export class BankingSyncService {
 			counterpartyName,
 			remittanceInformation,
 		});
-		const categoryInputHash = createBankTransactionCategorizationInputHash(
-			toBankTransactionCategorizationInput({
-				id: dedupeKey,
-				transactionDate,
-				bookingDate,
-				valueDate,
-				amount,
-				currency,
-				creditDebitIndicator,
-				bankTransactionCode,
-				bankTransactionSubCode,
-				aspspName,
-				description,
-				counterpartyName,
-				bankTransactionDescription,
-				merchantCategoryCode,
-				remittanceInformation,
-				merchantLocation,
-			}),
-		);
+		const categoryInputHash = financialEvent
+			? null
+			: createBankTransactionCategorizationInputHash(
+					toBankTransactionCategorizationInput({
+						id: dedupeKey,
+						transactionDate,
+						bookingDate,
+						valueDate,
+						amount,
+						currency,
+						creditDebitIndicator,
+						bankTransactionCode,
+						bankTransactionSubCode,
+						aspspName,
+						description,
+						counterpartyName,
+						bankTransactionDescription,
+						merchantCategoryCode,
+						remittanceInformation,
+						merchantLocation,
+					}),
+				);
 		const hasBalanceAfter = Boolean(transaction.balanceAfterAmount && transaction.balanceAfterCurrency);
 		const hasInstructedAmount = Boolean(transaction.instructedAmount && transaction.instructedCurrency);
 		const hasExchangeRate = Boolean(transaction.exchangeRate && transaction.exchangeRateUnitCurrency);
@@ -623,6 +694,9 @@ export class BankingSyncService {
 			remittanceInformation,
 			merchantLocation,
 			categoryInputHash,
+			financialEventType: financialEvent?.type ?? null,
+			financialEventSource: financialEvent?.source ?? null,
+			financialEventRuleVersion: financialEvent?.ruleVersion ?? null,
 			balanceAfterAmount: hasBalanceAfter ? transaction.balanceAfterAmount : null,
 			balanceAfterCurrency: hasBalanceAfter ? transaction.balanceAfterCurrency?.toUpperCase() : null,
 			instructedAmount: hasInstructedAmount ? transaction.instructedAmount : null,
