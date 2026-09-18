@@ -95,11 +95,12 @@ const webSearchCategorizationResponseJsonSchema = createCategorizationResponseJs
 	webSearchCategorizationClassificationJsonSchema,
 );
 
-const CLASSIFY_ONE_CATEGORY_INSTRUCTION = 'Classify each transaction into exactly one supplied category.';
+const CLASSIFY_ONE_CATEGORY_INSTRUCTION =
+	'For each transaction, return exactly one classification: use one supplied category when evidence supports it, or NEEDS_REVIEW when the evidence is insufficient or ambiguous.';
 const CATEGORY_BOUNDARIES_INSTRUCTION =
 	'Treat each category description as scope and boundary guidance, not as a list of keywords.';
 const SPECIALIZED_MERCHANT_INSTRUCTION =
-	'A clearly specialized merchant can support a category from merchant identity alone when its primary business maps directly to that category. For broad or mixed merchants, require evidence of the purchased product or service and use OTHER when the category remains ambiguous.';
+	'A clearly specialized merchant can support a category from merchant identity alone when its primary business maps directly to that category. For broad or mixed merchants, require evidence of the purchased product or service and choose NEEDS_REVIEW when the category remains ambiguous.';
 const ONE_CLASSIFICATION_INSTRUCTION =
 	'Return one classification for every correlationId, with confidence from 0 to 1.';
 
@@ -109,10 +110,10 @@ const CATEGORIZATION_INSTRUCTIONS = [
 	CATEGORY_BOUNDARIES_INSTRUCTION,
 	'Classify the actual transaction and likely purchased product or service, not incidental activities a merchant may perform.',
 	SPECIALIZED_MERCHANT_INSTRUCTION,
-	'Use OTHER whenever the merchant identity or purchase category is not established by structured transaction fields.',
-	'Do not treat missing merchantCategoryCode or counterpartyName as evidence for OTHER; use clear merchant text as evidence when available.',
+	'Choose NEEDS_REVIEW when the merchant or purchase remains ambiguous, or when the available evidence does not establish a specific category.',
+	'Do not treat missing merchantCategoryCode or counterpartyName as evidence for OTHER or any other category; use clear merchant text as evidence when available.',
 	ONE_CLASSIFICATION_INSTRUCTION,
-	'Use OTHER when the available evidence does not support a more specific category.',
+	'Use OTHER only when the available evidence supports that the transaction falls outside the other supplied categories.',
 ].join(' ');
 
 const WEB_SEARCH_CATEGORIZATION_INSTRUCTIONS = [
@@ -127,8 +128,9 @@ const WEB_SEARCH_CATEGORIZATION_INSTRUCTIONS = [
 	SPECIALIZED_MERCHANT_INSTRUCTION,
 	CATEGORY_BOUNDARIES_INSTRUCTION,
 	'Return evidenceType as PURCHASE_CONTEXT when the search identifies the likely purchased product or service, MERCHANT_IDENTITY_ONLY when it identifies only the merchant business, MCC when the merchant category code is decisive, INSUFFICIENT when evidence is missing, or CONFLICTING when sources disagree.',
+	'Choose NEEDS_REVIEW when the search evidence is insufficient or conflicting, including when it identifies only a broad merchant without purchase context.',
 	ONE_CLASSIFICATION_INSTRUCTION,
-	'Use OTHER when the initial web evidence does not support a more specific category.',
+	'Use OTHER only when the search evidence supports that the transaction falls outside the other supplied categories.',
 ].join(' ');
 
 type OpenAiResponsesClient = Pick<OpenAI, 'responses'>;
