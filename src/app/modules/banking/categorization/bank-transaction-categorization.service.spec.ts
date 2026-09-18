@@ -278,6 +278,21 @@ describe('BankTransactionCategorizationService worker', () => {
 		]);
 	});
 
+	it('persists NEEDS_REVIEW as a completed category', async () => {
+		const transaction = createTransaction({id: 'ambiguous-transaction'});
+		const {service} = createService({
+			rows: [transaction],
+			providerResult: [{correlationId: transaction.id, category: 'NEEDS_REVIEW', confidence: 0.1}],
+		});
+
+		await service.processTransactionJob([transaction.id]);
+
+		expect(transaction.category).toBe('NEEDS_REVIEW');
+		expect(transaction.categoryStatus).toBe('COMPLETED');
+		expect(transaction.categorySource).toBe('AI');
+		expect(transaction.categoryConfidence).toBe('0.1');
+	});
+
 	it('uses one web-search fallback for OTHER results in ordinary jobs', async () => {
 		const transaction = createTransaction({id: 'ordinary-other-transaction'});
 		const {service, provider} = createService({
@@ -337,7 +352,7 @@ describe('BankTransactionCategorizationService worker', () => {
 		});
 	});
 
-	it('downgrades a weak transportation guess to OTHER when web search is disabled', async () => {
+	it('normalizes a weak transportation guess to NEEDS_REVIEW when web search is disabled', async () => {
 		const transaction = createTransaction({
 			id: 'weak-transportation-transaction',
 			counterpartyName: null,
@@ -352,12 +367,13 @@ describe('BankTransactionCategorizationService worker', () => {
 		await service.processTransactionJob([transaction.id]);
 
 		expect(provider.categorizeWithWebSearch).not.toHaveBeenCalled();
-		expect(transaction.category).toBe('OTHER');
+		expect(transaction.category).toBe('NEEDS_REVIEW');
+		expect(transaction.categoryStatus).toBe('COMPLETED');
 		expect(transaction.categoryConfidence).toBe('0');
 		expect(transaction.categoryPromptVersion).toBe(BANK_TRANSACTION_CATEGORIZATION_PROMPT_VERSION);
 	});
 
-	it('downgrades web Transportation without purchase evidence to OTHER', async () => {
+	it('marks web Transportation without purchase evidence for review', async () => {
 		const transaction = createTransaction({id: 'web-transportation-transaction'});
 		const searchTrace = {
 			queries: ['Opaque merchant'],
@@ -380,9 +396,37 @@ describe('BankTransactionCategorizationService worker', () => {
 
 		await service.processTransactionJob([transaction.id]);
 
-		expect(transaction.category).toBe('OTHER');
+		expect(transaction.category).toBe('NEEDS_REVIEW');
+		expect(transaction.categoryStatus).toBe('COMPLETED');
 		expect(transaction.categoryConfidence).toBe('0');
 		expect(transaction.categorySearchTrace).toEqual(searchTrace);
+	});
+
+	it('normalizes web results with insufficient or conflicting evidence to NEEDS_REVIEW', async () => {
+		const transaction = createTransaction({id: 'conflicting-web-result-transaction'});
+		const {service} = createService({
+			rows: [transaction],
+			webSearchEnabled: true,
+			providerResult: [{correlationId: transaction.id, category: 'OTHER', confidence: 0.5}],
+			webSearchResult: [
+				{
+					correlationId: transaction.id,
+					category: 'FOOD_AND_DRINK',
+					confidence: 0.91,
+					searchTrace: {
+						queries: ['Conflicting merchant'],
+						sourceDomains: ['example.com'],
+						evidenceType: 'CONFLICTING',
+					},
+				},
+			],
+		});
+
+		await service.processTransactionJob([transaction.id]);
+
+		expect(transaction.category).toBe('NEEDS_REVIEW');
+		expect(transaction.categoryStatus).toBe('COMPLETED');
+		expect(transaction.categoryConfidence).toBe('0');
 	});
 
 	it('does not call web search when the fallback is disabled', async () => {
@@ -519,8 +563,9 @@ describe('BankTransactionCategorizationService worker', () => {
 		try {
 			await expect(service.processTransactionJob([transaction.id])).resolves.toBeUndefined();
 			expect(provider.categorizeWithWebSearch).toHaveBeenCalledTimes(1);
-			expect(transaction.category).toBe('OTHER');
+			expect(transaction.category).toBe('NEEDS_REVIEW');
 			expect(transaction.categoryStatus).toBe('COMPLETED');
+			expect(transaction.categoryConfidence).toBe('0');
 			expect(transaction.categoryPromptVersion).toBe(
 				BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_FAILED_PROMPT_VERSION,
 			);
@@ -532,24 +577,22 @@ describe('BankTransactionCategorizationService worker', () => {
 		}
 	});
 
-	it('sends completed non-AI classifications to the provider', async () => {
+	it('preserves completed categories even when categorization hashes are missing', async () => {
 		const transaction = createTransaction({
-			category: 'INCOME',
+			category: 'OTHER',
 			categoryStatus: 'COMPLETED',
-			categorySource: 'LEGACY',
+			categorySource: 'AI',
 			categoryConfidence: '1.000',
-			categoryInputHash: 'existing-hash',
-			categoryAppliedInputHash: 'existing-hash',
+			categoryInputHash: null,
+			categoryAppliedInputHash: null,
 		});
-		const queryBuilder = createUpdateQueryBuilder();
-		const {service, provider} = createService({rows: [transaction], queryBuilder});
+		const {service, provider} = createService({rows: [transaction]});
 
 		await service.processTransactionJob([transaction.id]);
 
-		expect(provider.categorize).toHaveBeenCalledTimes(1);
-		expect(queryBuilder.set).toHaveBeenCalledWith(
-			expect.objectContaining({categoryStatus: 'COMPLETED', categorySource: 'AI'}),
-		);
+		expect(provider.categorize).not.toHaveBeenCalled();
+		expect(transaction.category).toBe('OTHER');
+		expect(transaction.categoryStatus).toBe('COMPLETED');
 		expect(transaction.categorySource).toBe('AI');
 	});
 

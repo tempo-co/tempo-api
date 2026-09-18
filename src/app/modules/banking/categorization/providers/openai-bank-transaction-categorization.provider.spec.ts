@@ -89,9 +89,10 @@ describe('OpenAiBankTransactionCategorizationProvider', () => {
 			type: 'json_schema',
 			strict: true,
 		});
-		expect(request.text.format.schema.properties.classifications.items.properties.category.enum).toEqual(
-			BANK_TRANSACTION_CATEGORIES,
-		);
+		expect(request.text.format.schema.properties.classifications.items.properties.category).toEqual({
+			type: 'string',
+			enum: BANK_TRANSACTION_CATEGORIES,
+		});
 		expect(request.text.format.schema.additionalProperties).toBe(false);
 		expect(request.text.format.schema.properties.classifications.items.additionalProperties).toBe(false);
 		const sentInput = JSON.parse(request.input);
@@ -126,6 +127,17 @@ describe('OpenAiBankTransactionCategorizationProvider', () => {
 			{correlationId: 'transaction-2', category: 'SHOPPING', confidence: 0.71},
 			{correlationId: 'transaction-1', category: 'FOOD_AND_DRINK', confidence: 0.93},
 		]);
+	});
+
+	it('returns NEEDS_REVIEW when the available evidence is insufficient', async () => {
+		const {provider, responsesCreate} = createProvider();
+		responsesCreate.mockResolvedValue({
+			output_text: output([{correlationId: '0', category: 'NEEDS_REVIEW', confidence: 0}]),
+		});
+
+		await expect(
+			provider.categorize([createInput('transaction-1')], BANK_TRANSACTION_CATEGORY_DEFINITIONS),
+		).resolves.toEqual([{correlationId: 'transaction-1', category: 'NEEDS_REVIEW', confidence: 0}]);
 	});
 
 	it('uses the hosted web-search tool for a sanitized fallback request', async () => {

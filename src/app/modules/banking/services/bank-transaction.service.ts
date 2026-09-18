@@ -57,21 +57,24 @@ export class BankTransactionService {
 		}
 		const categoryFilters = filter?.categories;
 		if (categoryFilters && categoryFilters.length > 0) {
-			const categorizedCategories = categoryFilters.filter(
+			const explicitCategories = categoryFilters.filter(
 				(category) => category !== BANK_TRANSACTION_UNCATEGORIZED,
 			);
 			const includesUncategorized = categoryFilters.includes(BANK_TRANSACTION_UNCATEGORIZED);
 
 			query.andWhere(
 				new Brackets((categoryQuery) => {
-					if (categorizedCategories.length > 0) {
+					let hasCondition = false;
+					if (explicitCategories.length > 0) {
 						categoryQuery.where('transaction.category IN (:...categories)', {
-							categories: categorizedCategories,
+							categories: explicitCategories,
 						});
+						hasCondition = true;
 					}
 					if (includesUncategorized) {
-						if (categorizedCategories.length > 0) categoryQuery.orWhere('transaction.category IS NULL');
+						if (hasCondition) categoryQuery.orWhere('transaction.category IS NULL');
 						else categoryQuery.where('transaction.category IS NULL');
+						hasCondition = true;
 					}
 				}),
 			);

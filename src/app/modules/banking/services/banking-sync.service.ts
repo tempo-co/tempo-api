@@ -444,7 +444,7 @@ export class BankingSyncService {
 		);
 		const dedupeKeys = transactionValues.map(({dedupeKey}) => dedupeKey);
 		const existingTransactions = await repository.find({
-			select: ['id', 'dedupeKey', 'categoryInputHash', 'categorySource'],
+			select: ['id', 'dedupeKey', 'categoryInputHash', 'categorySource', 'categoryStatus'],
 			where: {bankAccountId: bankAccount.id, dedupeKey: In(dedupeKeys)},
 		});
 
@@ -466,6 +466,7 @@ export class BankingSyncService {
 			if (
 				!currentValue ||
 				existingTransaction.categorySource === 'MANUAL' ||
+				existingTransaction.categoryStatus === 'COMPLETED' ||
 				existingTransaction.categoryInputHash === currentValue.categoryInputHash
 			) {
 				continue;
@@ -481,6 +482,9 @@ export class BankingSyncService {
 				})
 				.where('id = :id', {id: existingTransaction.id})
 				.andWhere("categorySource IS DISTINCT FROM 'MANUAL'")
+				.andWhere('categoryStatus IS DISTINCT FROM :completedCategoryStatus', {
+					completedCategoryStatus: 'COMPLETED',
+				})
 				.execute();
 		}
 
