@@ -8,6 +8,7 @@ import {BankAccountBalance} from '../bank-account-balance.entity';
 import {BankAccount} from '../bank-account.entity';
 import {BankConnection} from '../bank-connection.entity';
 import {BankSyncRun} from '../bank-sync-run.entity';
+import {BankTransactionTransferLink} from '../bank-transaction-transfer-link.entity';
 import {
 	BANK_TRANSACTION_FINANCIAL_EVENT_RULE_VERSION,
 	BANK_TRANSACTION_FINANCIAL_EVENT_SOURCES,
@@ -115,6 +116,30 @@ describe('BankingSyncService', () => {
 		const encryptionServiceMock = {
 			decrypt: jest.fn().mockReturnValue('provider-session'),
 		};
+		const transferLinkRepositoryMock = {
+			create: jest.fn((value: unknown) => value),
+			createQueryBuilder: jest.fn().mockReturnValue({
+				insert: jest.fn().mockReturnThis(),
+				into: jest.fn().mockReturnThis(),
+				values: jest.fn().mockReturnThis(),
+				orIgnore: jest.fn().mockReturnThis(),
+				execute: jest.fn().mockResolvedValue({}),
+			}),
+		};
+		const bankTransactionRepositoryMock = {
+			createQueryBuilder: jest.fn().mockReturnValue({
+				update: jest.fn().mockReturnThis(),
+				set: jest.fn().mockReturnThis(),
+				where: jest.fn().mockReturnThis(),
+				andWhere: jest.fn().mockReturnThis(),
+				execute: jest.fn().mockResolvedValue({}),
+				select: jest.fn().mockReturnThis(),
+				innerJoin: jest.fn().mockReturnThis(),
+				orderBy: jest.fn().mockReturnThis(),
+				limit: jest.fn().mockReturnThis(),
+				getMany: jest.fn().mockResolvedValue([]),
+			}),
+		};
 		const categorizationServiceMock = {
 			enqueueForTransactions: jest.fn().mockResolvedValue(undefined),
 		};
@@ -122,6 +147,8 @@ describe('BankingSyncService', () => {
 			bankConnectionRepositoryMock as unknown as Repository<BankConnection>,
 			bankAccountRepositoryMock as unknown as Repository<BankAccount>,
 			bankSyncRunRepositoryMock as unknown as Repository<BankSyncRun>,
+			transferLinkRepositoryMock as unknown as Repository<BankTransactionTransferLink>,
+			bankTransactionRepositoryMock as unknown as Repository<BankTransaction>,
 			dataSourceMock as unknown as DataSource,
 			enableBankingClientMock as unknown as EnableBankingClient,
 			encryptionServiceMock as unknown as BankingEncryptionService,
@@ -299,6 +326,8 @@ describe('BankingSyncService synchronization lock', () => {
 			bankConnectionRepository as unknown as Repository<BankConnection>,
 			bankAccountRepository as unknown as Repository<BankAccount>,
 			bankSyncRunRepository as unknown as Repository<BankSyncRun>,
+			{} as unknown as Repository<BankTransactionTransferLink>,
+			{} as unknown as Repository<BankTransaction>,
 			dataSource as unknown as DataSource,
 			enableBankingClient as unknown as EnableBankingClient,
 			encryptionService as unknown as BankingEncryptionService,

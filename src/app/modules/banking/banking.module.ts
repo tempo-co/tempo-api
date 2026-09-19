@@ -13,6 +13,7 @@ import {BankAccount} from './bank-account.entity';
 import {BankConnection} from './bank-connection.entity';
 import {BankSyncRun} from './bank-sync-run.entity';
 import {BankTransaction} from './bank-transaction.entity';
+import {BankTransactionTransferLink} from './bank-transaction-transfer-link.entity';
 import {BankingService} from './banking.service';
 import {BankTransactionCategorizationModule} from './categorization/bank-transaction-categorization.module';
 import {BankTransactionService} from './services/bank-transaction.service';
@@ -26,7 +27,14 @@ import {EnableBankingClient} from './services/enable-banking.client';
 
 @Module({
 	imports: [
-		TypeOrmModule.forFeature([BankConnection, BankAccount, BankSyncRun, BankAccountBalance, BankTransaction]),
+		TypeOrmModule.forFeature([
+			BankConnection,
+			BankAccount,
+			BankSyncRun,
+			BankAccountBalance,
+			BankTransaction,
+			BankTransactionTransferLink,
+		]),
 		BullModule.registerQueue({name: BANK_CONNECTION_SYNC_QUEUE}),
 		AccountModule,
 		RedisModule,

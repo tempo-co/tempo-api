@@ -29,6 +29,12 @@ import {BankAccountBalance} from '../bank-account-balance.entity';
 import {BankAccount} from '../bank-account.entity';
 import {BankConnection} from '../bank-connection.entity';
 import {BankSyncRun} from '../bank-sync-run.entity';
+import {BankTransactionTransferLink} from '../bank-transaction-transfer-link.entity';
+import {
+	TRANSFER_MATCHER_RULE_VERSION,
+	matchesTransferPairs,
+	type TransferMatcherTransactionInput,
+} from './bank-transaction-transfer-matcher';
 import {getBankTransactionDisplayDescription} from '../bank-transaction-display';
 import {
 	BANK_TRANSACTION_FINANCIAL_EVENT_TYPES,
@@ -94,6 +100,8 @@ type PersistSyncResult = {
 	persistedTransactionIds: string[];
 };
 
+const TRANSFER_LINK_BATCH_LIMIT = 2000;
+
 @Injectable()
 export class BankingSyncService {
 	private readonly logger = new Logger(BankingSyncService.name);
@@ -105,6 +113,10 @@ export class BankingSyncService {
 		private readonly bankAccountRepository: Repository<BankAccount>,
 		@InjectRepository(BankSyncRun)
 		private readonly bankSyncRunRepository: Repository<BankSyncRun>,
+		@InjectRepository(BankTransactionTransferLink)
+		private readonly transferLinkRepository: Repository<BankTransactionTransferLink>,
+	@InjectRepository(BankTransaction)
+		private readonly bankTransactionRepository: Repository<BankTransaction>,
 		private readonly dataSource: DataSource,
 		private readonly enableBankingClient: EnableBankingClient,
 		private readonly encryptionService: BankingEncryptionService,
@@ -217,6 +229,7 @@ export class BankingSyncService {
 					syncStartedAt,
 				);
 				await this.enqueuePersistedTransactions(persistenceResult.persistedTransactionIds);
+				await this.linkOwnerTransfers(connection.accountId);
 				lockLease.assertHealthy();
 
 				const completedRun = await this.bankSyncRunRepository.findOneBy({id: run.id});
@@ -766,6 +779,137 @@ export class BankingSyncService {
 
 	private getRetryDelayMs(syncFailureCount: number): number {
 		return Math.min(this.getBackgroundIntervalMs(), BANKING_TRANSIENT_RETRY_BASE_MS * 2 ** (syncFailureCount - 1));
+
+	/**
+	 * Detects and links internal transfers across all of the owner's bank accounts.
+	 * Runs after every successful (or partial) sync persistence; idempotent thanks to
+	 * the one-to-one uniqueness constraints and the already-persisted pre-check.
+	 */
+	private async linkOwnerTransfers(accountId: Account['id']): Promise<void> {
+		try {
+			const bankAccounts = await this.bankAccountRepository.find({
+				select: ['id', 'providerAccountId'],
+				where: {bankConnection: {account: {id: accountId}}},
+				relations: {bankConnection: true},
+			});
+			if (bankAccounts.length < 2) return;
+
+			const accountById = new Map(
+				bankAccounts.map((account) => [account.id, account as BankAccount & {bankConnection?: {id: string} | null}]),
+			);
+
+			const rows = await this.bankTransactionRepository
+				.createQueryBuilder('transaction')
+				.select([
+					'transaction.id',
+					'bankAccount.id',
+					'transaction.amount',
+					'transaction.currency',
+					'transaction.creditDebitIndicator',
+					'transaction.bookingDate',
+					'transaction.transactionType',
+					'transaction.transactionStatus',
+					'transaction.counterpartyName',
+					'transaction.counterpartyAccount',
+					'transaction.financialEventType',
+				])
+				.innerJoin('transaction.bankAccount', 'account')
+				.innerJoin('account.bankConnection', 'connection')
+				.where('connection.account.id = :accountId', {accountId})
+				.andWhere('transaction.bookingDate IS NOT NULL')
+				.andWhere('(transaction.financialEventType IS NULL OR transaction.financialEventType = :eventType)', {
+					eventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.INTERNAL_TRANSFER,
+				})
+				.andWhere('transaction.transactionStatus IS NULL OR transaction.transactionStatus IN (:...statuses)', {
+					statuses: ['BOOK', 'COMPLETED', 'EXECUTED', 'PDNG'],
+				})
+				.orderBy('transaction.bookingDate', 'DESC')
+				.limit(TRANSFER_LINK_BATCH_LIMIT)
+				.getMany();
+
+			if (rows.length < 2) return;
+
+			const inputs: TransferMatcherTransactionInput[] = rows.map((row) => ({
+				id: row.id,
+				bankAccountId: row.bankAccount?.id ?? '',
+				accountProviderAccountId: accountById.get(row.bankAccountId)?.providerAccountId ?? null,
+				connectionProviderAccountId:
+					accountById.get(row.bankAccount?.id ?? '')?.bankConnection?.id ?? null,
+				amount: row.amount,
+				currency: row.currency,
+				creditDebitIndicator: row.creditDebitIndicator,
+				bookingDate: row.bookingDate,
+				transactionType: row.transactionType,
+				counterpartyName: row.counterpartyName,
+				counterpartyAccount: row.counterpartyAccount,
+			}));
+
+			const matches = matchesTransferPairs(inputs);
+			if (matches.length === 0) return;
+
+			const linkValues = matches.map((match) =>
+				this.transferLinkRepository.create({
+					legATransactionId: match.legATransactionId,
+					legBTransactionId: match.legBTransactionId,
+					evidence: match.evidence,
+					source: 'MATCHER',
+					ruleVersion: TRANSFER_MATCHER_RULE_VERSION,
+				}),
+			);
+			try {
+				await this.transferLinkRepository
+					.createQueryBuilder()
+					.insert()
+					.into(BankTransactionTransferLink)
+					.values(linkValues)
+					.orIgnore()
+					.execute();
+			} catch (error) {
+				this.logger.warn(`Transfer link persist failed: ${this.safeErrorName(error)}`);
+				return;
+			}
+
+			// mark both legs of every now-persisted link as INTERNAL_TRANSFER (guarded; never overwrites another event)
+			for (const match of matches) {
+				for (const transactionId of [match.legATransactionId, match.legBTransactionId]) {
+					await this.bankTransactionRepository
+						.createQueryBuilder()
+						.update(BankTransaction)
+						.set({
+							financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.INTERNAL_TRANSFER,
+							financialEventSource: "MATCHER" as BankTransaction["financialEventSource"],
+							financialEventRuleVersion: TRANSFER_MATCHER_RULE_VERSION,
+							categoryInputHash: null,
+						})
+						.where('id = :id', {transactionId})
+						.andWhere('(financialEventType IS NULL OR financialEventType = :eventType)', {
+							eventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.INTERNAL_TRANSFER,
+						})
+						.execute();
+
+					await this.bankTransactionRepository
+						.createQueryBuilder()
+						.update(BankTransaction)
+						.set({
+							categoryStatus: 'NOT_APPLICABLE',
+							categorySource: null,
+							categoryUpdatedAt: null,
+							categoryLastError: null,
+						})
+						.where('id = :id', {transactionId})
+						.andWhere('(financialEventType IS NULL OR financialEventType = :eventType)', {
+							eventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.INTERNAL_TRANSFER,
+						})
+						.andWhere("categorySource IS DISTINCT FROM 'MANUAL'")
+						.execute();
+				}
+			}
+		} catch (error) {
+			// transfer linking must never fail or roll back the parent synchronization
+			this.logger.warn(`Transfer link re-evaluation failed: ${this.safeErrorName(error)}`);
+		}
+	}
+
 	}
 
 	private toBalanceValues(
