@@ -11,7 +11,6 @@ import {Public} from '@modules/auth/decorators/public.decorator';
 
 import {BankingService} from '../banking.service';
 import {BankTransactionService} from '../services/bank-transaction.service';
-import {BankingSyncService} from '../services/banking-sync.service';
 import {BankConnectionAuthorizeDto} from './dtos/bank-connection-authorize.dto';
 import {BankConnectionCallbackDto} from './dtos/bank-connection-callback.dto';
 import {BankConnectionRemoveDto} from './dtos/bank-connection-remove.dto';
@@ -22,7 +21,6 @@ import {BankConnectionTransactionsQueryDto} from './dtos/bank-connection-transac
 export class BankConnectionController {
 	constructor(
 		private readonly bankingService: BankingService,
-		private readonly bankingSyncService: BankingSyncService,
 		private readonly bankTransactionService: BankTransactionService,
 		private readonly configurationService: ConfigurationService,
 	) {}
@@ -52,16 +50,6 @@ export class BankConnectionController {
 		@CurrentAccount() account: Account,
 	) {
 		await this.bankingService.removeConnection(account.id, connectionId, dto.confirmation);
-	}
-
-	@Post(':connectionId/sync')
-	@HttpCode(200)
-	@Throttle({default: {limit: 1, ttl: minutes(1)}})
-	async synchronize(
-		@Param('connectionId', new ParseUUIDPipe({version: '4'})) connectionId: string,
-		@CurrentAccount() account: Account,
-	) {
-		return this.bankingSyncService.synchronize(account.id, connectionId);
 	}
 
 	@Public()

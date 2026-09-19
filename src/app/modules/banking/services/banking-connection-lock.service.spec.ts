@@ -57,6 +57,23 @@ describe('BankingConnectionLockService', () => {
 		await firstLock.release();
 	});
 
+	it('waits briefly for the current owner when requested', async () => {
+		jest.useRealTimers();
+		const {redis} = createRedisState();
+		const service = new BankingConnectionLockService(redis);
+		const firstLock = await service.acquire('connection-id');
+		const secondLockPromise = service.acquire('connection-id', {waitForMs: 1_000});
+
+		await new Promise((resolve) => setTimeout(resolve, 100));
+		firstLock.stop();
+		await firstLock.release();
+		const secondLock = await secondLockPromise;
+
+		expect(secondLock).toBeDefined();
+		secondLock.stop();
+		await secondLock.release();
+	});
+
 	it('does not release a lock that a different token now owns', async () => {
 		const {redis, owners} = createRedisState();
 		const service = new BankingConnectionLockService(redis);

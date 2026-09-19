@@ -14,6 +14,7 @@ import {Account} from '@modules/account/account.entity';
 
 @Entity('bank_connections')
 @Index('idx_bank_connections_account_id', ['account'])
+@Index('idx_bank_connections_sync_due', ['status', 'nextSyncAt'])
 export class BankConnection {
 	@PrimaryGeneratedColumn('uuid')
 	id: string;
@@ -55,6 +56,18 @@ export class BankConnection {
 
 	@Column({type: 'text', nullable: true})
 	lastSyncError: string | null;
+
+	@Column({type: 'timestamptz', nullable: true})
+	nextSyncAt: Date | null;
+
+	@Column({type: 'timestamptz', nullable: true})
+	syncStartedAt: Date | null;
+
+	@Column({type: 'varchar', length: 32, default: 'IDLE'})
+	syncStatus: string;
+
+	@Column({type: 'integer', default: 0})
+	syncFailureCount: number;
 
 	@CreateDateColumn({type: 'timestamptz'})
 	createdAt: Date;
