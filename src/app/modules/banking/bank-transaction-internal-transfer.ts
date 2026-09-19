@@ -32,7 +32,7 @@ export type BankTransactionInternalTransferMatch = {
 const AMOUNT_SCALE = 8;
 const AMOUNT_SCALE_FACTOR = 10n ** BigInt(AMOUNT_SCALE);
 const INTERNAL_TRANSFER_TYPE = 'INTERNAL_TRANSFER';
-const BOOKED_STATUS = 'BOOK';
+const BOOKED_STATUSES = new Set(['BOOK', 'COMPLETED']);
 const TRANSFER_TYPE = 'TRANSFER';
 
 export function matchBankTransactionInternalTransfers(
@@ -83,7 +83,7 @@ function isEligible(transaction: BankTransactionInternalTransferCandidate): bool
 	const indicator = transaction.creditDebitIndicator?.trim().toUpperCase();
 	return (
 		(transaction.financialEventType === null || transaction.financialEventType === INTERNAL_TRANSFER_TYPE) &&
-		transaction.transactionStatus?.trim().toUpperCase() === BOOKED_STATUS &&
+		BOOKED_STATUSES.has(transaction.transactionStatus?.trim().toUpperCase() ?? '') &&
 		(indicator === 'DBIT' || indicator === 'CRDT') &&
 		parseAmount(transaction.amount) !== null &&
 		parseDate(transaction.bookingDate) !== null

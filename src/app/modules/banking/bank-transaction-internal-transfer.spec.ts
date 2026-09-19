@@ -118,13 +118,14 @@ describe('bank transaction internal transfer matching', () => {
 		expect(matchBankTransactionInternalTransfers([debit, creditOne, creditTwo])).toEqual([]);
 	});
 
-	it('matches two booked transfer rows on the same connection without account identifiers', () => {
+	it('matches completed transfer rows on the same connection without account identifiers', () => {
 		const debit = transaction({
 			id: 'debit',
 			bankConnectionId: 'connection-a',
 			bankAccountId: 'account-a',
 			amount: '-50.00000000',
 			creditDebitIndicator: 'DBIT',
+			transactionStatus: 'COMPLETED',
 			accountIdentifier: null,
 			counterpartyAccountIdentifier: null,
 		});
@@ -134,6 +135,7 @@ describe('bank transaction internal transfer matching', () => {
 			bankAccountId: 'account-b',
 			amount: '50.00000000',
 			creditDebitIndicator: 'CRDT',
+			transactionStatus: 'COMPLETED',
 			accountIdentifier: null,
 			counterpartyAccountIdentifier: null,
 		});
