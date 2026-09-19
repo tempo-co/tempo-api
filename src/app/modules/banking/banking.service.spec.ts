@@ -28,6 +28,7 @@ describe('BankingService authorization state lifecycle', () => {
 			{} as never,
 			{} as never,
 			connectionLockService as never,
+			{enqueueInitialSync: jest.fn()} as never,
 		);
 
 		await expect(service.removeConnection('owner-account-id', 'connection-id')).rejects.toMatchObject({
@@ -78,6 +79,7 @@ describe('BankingService authorization state lifecycle', () => {
 			{} as never,
 			{} as never,
 			connectionLockService as never,
+			{enqueueInitialSync: jest.fn()} as never,
 		);
 
 		await expect(service.removeConnection('owner-account-id', connection.id, 'DELETE')).rejects.toThrow(
@@ -122,6 +124,7 @@ describe('BankingService authorization state lifecycle', () => {
 			authorizationStateService as unknown as BankingAuthorizationStateService,
 			{} as never,
 			{acquire: jest.fn()} as never,
+			{enqueueInitialSync: jest.fn()} as never,
 		);
 
 		await expect(service.handleCallback({state: expiredState, code: 'late-provider-code'})).resolves.toBe('error');
@@ -194,6 +197,7 @@ describe('BankingService authorization state lifecycle', () => {
 					release: jest.fn().mockResolvedValue(undefined),
 				}),
 			} as never,
+			{enqueueInitialSync: jest.fn()} as never,
 		);
 
 		await expect(service.handleCallback({state: callbackState, code: 'provider-code'})).resolves.toBe('error');
@@ -271,6 +275,7 @@ describe('BankingService authorization state lifecycle', () => {
 			authorizationStateService as never,
 			{} as never,
 			connectionLockService as never,
+			{enqueueInitialSync: jest.fn()} as never,
 		);
 
 		await service.removeConnection('account-id', connection.id, 'DELETE');

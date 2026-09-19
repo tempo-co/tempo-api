@@ -112,23 +112,36 @@ export class BankingSyncService {
 		private readonly configurationService: ConfigurationService,
 	) {}
 
-	async synchronize(accountId: Account['id'], connectionId: BankConnection['id']): Promise<BankSyncRunResponseDto>;
-	async synchronize(
-		accountId: Account['id'],
-		connectionId: BankConnection['id'],
-		requireDue: true,
-	): Promise<BankSyncRunResponseDto | null>;
-	async synchronize(
-		accountId: Account['id'],
-		connectionId: BankConnection['id'],
-		requireDue = false,
-	): Promise<BankSyncRunResponseDto | null> {
+	async synchronize(accountId: Account['id'], connectionId: BankConnection['id']): Promise<BankSyncRunResponseDto> {
 		await this.findOwnedConnection(accountId, connectionId);
+		const synchronizedRun = await this.runSynchronization(accountId, connectionId, {requireDue: false});
+		if (!synchronizedRun) throw new InternalServerErrorException(BANKING_PERSISTENCE_SYNC_ERROR);
+		return synchronizedRun;
+	}
+
+	async synchronizeAutomatically(connectionId: BankConnection['id']): Promise<BankSyncRunResponseDto | null> {
+		const connection = await this.bankConnectionRepository.findOne({
+			where: {id: connectionId},
+			relations: {account: true},
+		});
+		if (!connection || connection.status !== AUTHORIZED) return null;
+
+		return this.runSynchronization(connection.account.id, connectionId, {requireDue: true});
+	}
+
+	private async runSynchronization(
+		accountId: Account['id'],
+		connectionId: BankConnection['id'],
+		options: {requireDue: boolean},
+	): Promise<BankSyncRunResponseDto | null> {
 		const lockLease = await this.connectionLockService.acquire(connectionId);
 
 		try {
-			const connection = await this.findOwnedConnection(accountId, connectionId);
-			if (requireDue && (!connection.nextSyncAt || connection.nextSyncAt.getTime() > Date.now())) return null;
+			const connection = await this.bankConnectionRepository.findOne({
+				where: {id: connectionId, account: {id: accountId}},
+			});
+			if (!connection) throw new NotFoundException(BANKING_CONNECTION_NOT_FOUND);
+			if (options.requireDue && !this.isAutomaticSyncEligible(connection)) return null;
 			const providerSessionId = await this.validateConnection(connection, lockLease);
 			let run: BankSyncRun | undefined;
 			let syncStartedAt: Date | undefined;
@@ -232,21 +245,11 @@ export class BankingSyncService {
 		}
 	}
 
-	async synchronizeAutomatically(connectionId: BankConnection['id']): Promise<BankSyncRunResponseDto | null> {
-		const connection = await this.bankConnectionRepository.findOne({
-			where: {id: connectionId},
-			relations: {account: true},
-		});
-		if (
-			!connection ||
-			connection.status !== AUTHORIZED ||
-			!connection.nextSyncAt ||
-			connection.nextSyncAt.getTime() > Date.now()
-		) {
-			return null;
-		}
-
-		return this.synchronize(connection.account.id, connection.id, true);
+	private isAutomaticSyncEligible(
+		connection: Pick<BankConnection, 'status' | 'nextSyncAt'>,
+		now = new Date(),
+	): boolean {
+		return connection.status === AUTHORIZED && connection.nextSyncAt !== null && connection.nextSyncAt <= now;
 	}
 
 	private async findOwnedConnection(accountId: Account['id'], connectionId: BankConnection['id']) {
@@ -575,13 +578,9 @@ export class BankingSyncService {
 		}
 
 		const syncFailureCount = previousFailureCount + 1;
-		const retryDelayMs = Math.min(
-			this.getBackgroundIntervalMs(),
-			BANKING_TRANSIENT_RETRY_BASE_MS * 2 ** (syncFailureCount - 1),
-		);
 
 		return {
-			nextSyncAt: new Date(finishedAt.getTime() + retryDelayMs),
+			nextSyncAt: new Date(finishedAt.getTime() + this.getRetryDelayMs(syncFailureCount)),
 			syncStartedAt: null,
 			syncStatus: status === PARTIAL ? BANK_SYNC_STATUSES.PARTIAL : BANK_SYNC_STATUSES.FAILED,
 			syncFailureCount,
@@ -590,9 +589,10 @@ export class BankingSyncService {
 
 	private getBackgroundIntervalMs(): number {
 		const configuredInterval = ms(this.configurationService.get('BANKING_SYNC_INTERVAL') as ms.StringValue);
-		return typeof configuredInterval === 'number' && Number.isFinite(configuredInterval) && configuredInterval > 0
-			? configuredInterval
-			: BANKING_DEFAULT_RETRY_AFTER_SECONDS * 1000;
+		if (typeof configuredInterval !== 'number' || !Number.isFinite(configuredInterval) || configuredInterval <= 0) {
+			throw new Error('BANKING_SYNC_INTERVAL must be a positive duration.');
+		}
+		return configuredInterval;
 	}
 
 	private async persistTransactions(
@@ -690,17 +690,17 @@ export class BankingSyncService {
 		if (!connection) return;
 
 		const syncFailureCount = (connection.syncFailureCount ?? 0) + 1;
-		const retryDelayMs = Math.min(
-			this.getBackgroundIntervalMs(),
-			BANKING_TRANSIENT_RETRY_BASE_MS * 2 ** (syncFailureCount - 1),
-		);
 		await this.bankConnectionRepository.update(connectionCriteria, {
 			lastSyncError: BANKING_PERSISTENCE_SYNC_ERROR,
 			syncStatus: BANK_SYNC_STATUSES.FAILED,
 			syncStartedAt: null,
 			syncFailureCount,
-			nextSyncAt: new Date(Date.now() + retryDelayMs),
+			nextSyncAt: new Date(Date.now() + this.getRetryDelayMs(syncFailureCount)),
 		});
+	}
+
+	private getRetryDelayMs(syncFailureCount: number): number {
+		return Math.min(this.getBackgroundIntervalMs(), BANKING_TRANSIENT_RETRY_BASE_MS * 2 ** (syncFailureCount - 1));
 	}
 
 	private toBalanceValues(

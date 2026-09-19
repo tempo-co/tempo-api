@@ -80,8 +80,7 @@ export class BankingSyncQueueService implements OnModuleInit {
 				continue;
 			}
 
-			const didEnqueue = await this.enqueueConnectionSync(connection.id, false);
-			if (!didEnqueue) continue;
+			await this.enqueueConnectionSync(connection.id, false);
 
 			const updateWhere =
 				connection.syncStatus === BANK_SYNC_STATUSES.RUNNING
@@ -117,12 +116,12 @@ export class BankingSyncQueueService implements OnModuleInit {
 		return connection.syncStartedAt !== null && connection.syncStartedAt.getTime() <= staleBefore.getTime();
 	}
 
-	private async enqueueConnectionSync(connectionId: string, initial: boolean): Promise<boolean> {
+	private async enqueueConnectionSync(connectionId: string, initial: boolean): Promise<void> {
 		const jobId = this.getJobId(connectionId);
 		const existingJob = await this.queue.getJob(jobId);
 		if (existingJob) {
 			const state = await existingJob.getState();
-			if (ACTIVE_JOB_STATES.has(state)) return true;
+			if (ACTIVE_JOB_STATES.has(state)) return;
 			await existingJob.remove();
 		}
 
@@ -138,7 +137,6 @@ export class BankingSyncQueueService implements OnModuleInit {
 			},
 		);
 		this.logger.debug(`Queued automatic bank synchronization for ${connectionId}.`);
-		return true;
 	}
 
 	private getJobId(connectionId: string): string {

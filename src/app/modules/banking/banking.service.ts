@@ -7,7 +7,6 @@ import {
 	InternalServerErrorException,
 	Logger,
 	NotFoundException,
-	Optional,
 	ServiceUnavailableException,
 } from '@nestjs/common';
 import {InjectRepository} from '@nestjs/typeorm';
@@ -82,7 +81,7 @@ export class BankingService {
 		private readonly authorizationStateService: BankingAuthorizationStateService,
 		private readonly encryptionService: BankingEncryptionService,
 		private readonly connectionLockService: BankingConnectionLockService,
-		@Optional() private readonly bankingSyncQueueService?: BankingSyncQueueService,
+		private readonly bankingSyncQueueService: BankingSyncQueueService,
 	) {}
 
 	async startAuthorization(
@@ -532,7 +531,7 @@ export class BankingService {
 			}
 		}
 
-		if (!this.bankingSyncQueueService || !authorizedConnectionId) return;
+		if (!authorizedConnectionId) return;
 		try {
 			await this.bankingSyncQueueService.enqueueInitialSync(authorizedConnectionId);
 		} catch (error) {
