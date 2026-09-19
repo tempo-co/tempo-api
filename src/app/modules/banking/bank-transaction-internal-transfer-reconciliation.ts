@@ -1,5 +1,7 @@
 import {EntityManager} from 'typeorm';
 
+import {Account} from '@modules/account/account.entity';
+
 import {
 	BANK_TRANSACTION_FINANCIAL_EVENT_SOURCES,
 	BANK_TRANSACTION_FINANCIAL_EVENT_TYPES,
@@ -17,6 +19,11 @@ export async function reconcileBankTransactionInternalTransfers(
 	manager: EntityManager,
 	ownerId: string,
 ): Promise<string[]> {
+	const owner = await manager.getRepository(Account).findOne({
+		select: {name: true},
+		where: {id: ownerId},
+	});
+	const ownerName = owner?.name ?? null;
 	const repository = manager.getRepository(BankTransaction);
 	const transactions = await repository
 		.createQueryBuilder('transaction')
@@ -34,10 +41,16 @@ export async function reconcileBankTransactionInternalTransfers(
 		transactions.map((transaction): BankTransactionInternalTransferCandidate => ({
 			id: transaction.id,
 			ownerId,
+			ownerName,
 			bankConnectionId: transaction.bankAccount.bankConnection.id,
 			bankAccountId: transaction.bankAccount.id,
 			accountIdentifier: transaction.bankAccount.accountIdentifier ?? null,
 			counterpartyAccountIdentifier: transaction.counterpartyAccountIdentifier ?? null,
+			aspspName: transaction.bankAccount.bankConnection.aspspName,
+			description: transaction.description,
+			counterpartyName: transaction.counterpartyName,
+			remittanceInformation: transaction.remittanceInformation,
+			bankTransactionDescription: transaction.bankTransactionDescription,
 			amount: transaction.amount,
 			currency: transaction.currency,
 			creditDebitIndicator: transaction.creditDebitIndicator,

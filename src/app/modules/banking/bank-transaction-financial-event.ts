@@ -15,7 +15,7 @@ export type BankTransactionFinancialEventSource =
 	(typeof BANK_TRANSACTION_FINANCIAL_EVENT_SOURCES)[keyof typeof BANK_TRANSACTION_FINANCIAL_EVENT_SOURCES];
 
 export const BANK_TRANSACTION_FINANCIAL_EVENT_RULE_VERSION = 'revolut-currency-exchange-v1';
-export const BANK_TRANSACTION_INTERNAL_TRANSFER_RULE_VERSION = 'internal-transfer-v1';
+export const BANK_TRANSACTION_INTERNAL_TRANSFER_RULE_VERSION = 'internal-transfer-v2';
 
 export const BANK_TRANSACTION_CASH_FLOW_TREATMENTS = {
 	INCOME: 'INCOME',

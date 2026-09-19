@@ -3,6 +3,7 @@ import {type BankAccountIdentifier, bankAccountIdentifiersEqual} from './bank-ac
 export const BANK_TRANSACTION_INTERNAL_TRANSFER_MATCH_EVIDENCE = {
 	COUNTERPARTY_ACCOUNT: 'COUNTERPARTY_ACCOUNT',
 	SAME_CONNECTION_TRANSFER: 'SAME_CONNECTION_TRANSFER',
+	OWNER_IDENTITY_PROVIDER_MARKER: 'OWNER_IDENTITY_PROVIDER_MARKER',
 } as const;
 
 type BankTransactionInternalTransferMatchEvidence =
@@ -11,10 +12,16 @@ type BankTransactionInternalTransferMatchEvidence =
 export type BankTransactionInternalTransferCandidate = {
 	id: string;
 	ownerId: string;
+	ownerName: string | null;
 	bankConnectionId: string;
 	bankAccountId: string;
 	accountIdentifier: BankAccountIdentifier | null;
 	counterpartyAccountIdentifier: BankAccountIdentifier | null;
+	aspspName: string | null;
+	description: string | null;
+	counterpartyName: string | null;
+	remittanceInformation: string | null;
+	bankTransactionDescription: string | null;
 	amount: string;
 	currency: string;
 	creditDebitIndicator: string | null;
@@ -34,6 +41,7 @@ const AMOUNT_SCALE_FACTOR = 10n ** BigInt(AMOUNT_SCALE);
 const INTERNAL_TRANSFER_TYPE = 'INTERNAL_TRANSFER';
 const BOOKED_STATUSES = new Set(['BOOK', 'COMPLETED']);
 const TRANSFER_TYPE = 'TRANSFER';
+const SCT_INCOMING_BANK_TRANSACTION_DESCRIPTION = 'SCT INCOMING';
 
 export function matchBankTransactionInternalTransfers(
 	transactions: readonly BankTransactionInternalTransferCandidate[],
@@ -134,7 +142,69 @@ function getEvidence(
 		return BANK_TRANSACTION_INTERNAL_TRANSFER_MATCH_EVIDENCE.SAME_CONNECTION_TRANSFER;
 	}
 
+	if (hasOwnerIdentityProviderMarker(left, right)) {
+		return BANK_TRANSACTION_INTERNAL_TRANSFER_MATCH_EVIDENCE.OWNER_IDENTITY_PROVIDER_MARKER;
+	}
+
 	return null;
+}
+
+function isTransferLike(transaction: BankTransactionInternalTransferCandidate): boolean {
+	return (
+		transaction.transactionType?.trim().toUpperCase() === TRANSFER_TYPE ||
+		normalizeEvidenceText(transaction.bankTransactionDescription) ===
+			normalizeEvidenceText(SCT_INCOMING_BANK_TRANSACTION_DESCRIPTION)
+	);
+}
+
+function hasOwnerIdentityProviderMarker(
+	left: BankTransactionInternalTransferCandidate,
+	right: BankTransactionInternalTransferCandidate,
+): boolean {
+	if (left.bankConnectionId === right.bankConnectionId) return false;
+	if (!isTransferLike(left) || !isTransferLike(right)) return false;
+
+	const leftOwnerName = normalizeEvidenceText(left.ownerName);
+	const rightOwnerName = normalizeEvidenceText(right.ownerName);
+	if (!leftOwnerName || leftOwnerName !== rightOwnerName) return false;
+	if (!containsEvidencePhrase(getEvidenceTexts(left), leftOwnerName)) return false;
+	if (!containsEvidencePhrase(getEvidenceTexts(right), rightOwnerName)) return false;
+
+	const leftAspspName = normalizeEvidenceText(left.aspspName);
+	const rightAspspName = normalizeEvidenceText(right.aspspName);
+	if (!leftAspspName || !rightAspspName) return false;
+
+	return (
+		containsEvidencePhrase(getEvidenceTexts(left), rightAspspName) ||
+		containsEvidencePhrase(getEvidenceTexts(right), leftAspspName)
+	);
+}
+
+function getEvidenceTexts(transaction: BankTransactionInternalTransferCandidate): readonly (string | null)[] {
+	return [
+		transaction.description,
+		transaction.counterpartyName,
+		transaction.remittanceInformation,
+		transaction.bankTransactionDescription,
+	];
+}
+
+function containsEvidencePhrase(values: readonly (string | null)[], phrase: string): boolean {
+	return values.some((value) => {
+		const normalizedValue = normalizeEvidenceText(value);
+		return normalizedValue.length > 0 && ` ${normalizedValue} `.includes(` ${phrase} `);
+	});
+}
+
+function normalizeEvidenceText(value: string | null | undefined): string {
+	return (
+		value
+			?.normalize('NFKD')
+			.replace(/[\u0300-\u036f]/g, '')
+			.toLowerCase()
+			.replace(/[^\p{L}\p{N}]+/gu, ' ')
+			.trim() ?? ''
+	);
 }
 
 function identifiersEqual(left: BankAccountIdentifier | null, right: BankAccountIdentifier | null): boolean {

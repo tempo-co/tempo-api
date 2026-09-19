@@ -55,6 +55,7 @@ function createManager(rows: BankTransaction[]) {
 	};
 	const repository = {
 		createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
+		findOne: jest.fn().mockResolvedValue({name: 'Synthetic Owner'}),
 		save: jest.fn().mockResolvedValue(rows),
 	} as unknown as Repository<BankTransaction>;
 	const manager = {
@@ -95,6 +96,7 @@ describe('reconcileBankTransactionInternalTransfers', () => {
 
 		expect(queryBuilder.where).toHaveBeenCalledWith('account.id = :ownerId', {ownerId: 'owner-id'});
 		expect(queryBuilder.setLock).toHaveBeenCalledWith('pessimistic_write');
+		expect(repository.findOne).toHaveBeenCalledWith({select: {name: true}, where: {id: 'owner-id'}});
 		expect(debit).toMatchObject({
 			financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.INTERNAL_TRANSFER,
 			financialEventSource: BANK_TRANSACTION_FINANCIAL_EVENT_SOURCES.MATCHER,
@@ -144,6 +146,44 @@ describe('reconcileBankTransactionInternalTransfers', () => {
 
 		await expect(reconcileBankTransactionInternalTransfers(manager, 'owner-id')).resolves.toEqual([]);
 		expect(repository.save).not.toHaveBeenCalled();
+	});
+
+	it('re-evaluates a pair classified by the previous rule version', async () => {
+		const debit = transaction({
+			id: 'debit',
+			amount: '-100.00000000',
+			creditDebitIndicator: 'DBIT',
+			financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.INTERNAL_TRANSFER,
+			financialEventSource: BANK_TRANSACTION_FINANCIAL_EVENT_SOURCES.MATCHER,
+			financialEventRuleVersion: 'internal-transfer-v1',
+			bankAccount: {
+				id: 'account-a',
+				accountIdentifier: {scheme: 'IBAN', value: 'NL91ABNA0417164300'},
+				bankConnection: {id: 'connection-a', aspspName: 'Synthetic Bank'},
+			},
+			counterpartyAccountIdentifier: {scheme: 'IBAN', value: 'NL20RABO0123456789'},
+		});
+		const credit = transaction({
+			id: 'credit',
+			financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.INTERNAL_TRANSFER,
+			financialEventSource: BANK_TRANSACTION_FINANCIAL_EVENT_SOURCES.MATCHER,
+			financialEventRuleVersion: 'internal-transfer-v1',
+			bankAccount: {
+				id: 'account-b',
+				accountIdentifier: {scheme: 'IBAN', value: 'NL20RABO0123456789'},
+				bankConnection: {id: 'connection-b', aspspName: 'Synthetic Bank'},
+			},
+			counterpartyAccountIdentifier: {scheme: 'IBAN', value: 'NL91ABNA0417164300'},
+		});
+		const {manager, repository} = createManager([debit, credit]);
+
+		await expect(reconcileBankTransactionInternalTransfers(manager, 'owner-id')).resolves.toEqual([
+			'debit',
+			'credit',
+		]);
+		expect(debit.financialEventRuleVersion).toBe(BANK_TRANSACTION_INTERNAL_TRANSFER_RULE_VERSION);
+		expect(credit.financialEventRuleVersion).toBe(BANK_TRANSACTION_INTERNAL_TRANSFER_RULE_VERSION);
+		expect(repository.save).toHaveBeenCalledWith([debit, credit]);
 	});
 
 	it('clears a stale internal event and requeues the ordinary transaction', async () => {

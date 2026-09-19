@@ -19,6 +19,12 @@ function transaction(
 		transactionType: 'TRANSFER',
 		bookingDate: '2026-09-10',
 		financialEventType: null,
+		ownerName: null,
+		aspspName: null,
+		description: null,
+		counterpartyName: null,
+		remittanceInformation: null,
+		bankTransactionDescription: null,
 		...overrides,
 	};
 }
@@ -118,7 +124,95 @@ describe('bank transaction internal transfer matching', () => {
 		expect(matchBankTransactionInternalTransfers([debit, creditOne, creditTwo])).toEqual([]);
 	});
 
-	it('matches completed transfer rows on the same connection without account identifiers', () => {
+	it('matches an owner-identity pair with a cross-provider marker', () => {
+		const debit = transaction({
+			id: 'debit',
+			bankConnectionId: 'connection-a',
+			bankAccountId: 'account-a',
+			accountIdentifier: null,
+			counterpartyAccountIdentifier: null,
+			ownerName: 'Synthetic Owner',
+			aspspName: 'Synthetic Bank',
+			description: 'To Synthetic Owner',
+			amount: '-50.00000000',
+			creditDebitIndicator: 'DBIT',
+		});
+		const credit = transaction({
+			id: 'credit',
+			bankConnectionId: 'connection-b',
+			bankAccountId: 'account-b',
+			accountIdentifier: null,
+			counterpartyAccountIdentifier: null,
+			ownerName: 'Synthetic Owner',
+			aspspName: 'Other Bank',
+			description: 'Received from Synthetic Bank for Synthetic Owner',
+			bankTransactionDescription: 'SCT INCOMING',
+			transactionType: 'OTHER',
+			amount: '50.00000000',
+			creditDebitIndicator: 'CRDT',
+		});
+
+		expect(matchBankTransactionInternalTransfers([debit, credit])).toEqual([
+			{
+				transactionIds: ['debit', 'credit'],
+				evidence: 'OWNER_IDENTITY_PROVIDER_MARKER',
+			},
+		]);
+	});
+
+	it('does not use owner identity without a cross-provider marker', () => {
+		const debit = transaction({
+			id: 'debit',
+			bankConnectionId: 'connection-a',
+			bankAccountId: 'account-a',
+			ownerName: 'Synthetic Owner',
+			aspspName: 'Synthetic Bank',
+			description: 'To Synthetic Owner',
+			amount: '-50.00000000',
+			creditDebitIndicator: 'DBIT',
+		});
+		const credit = transaction({
+			id: 'credit',
+			bankConnectionId: 'connection-b',
+			bankAccountId: 'account-b',
+			ownerName: 'Synthetic Owner',
+			aspspName: 'Other Bank',
+			description: 'Received from another bank for Synthetic Owner',
+			amount: '50.00000000',
+			creditDebitIndicator: 'CRDT',
+		});
+
+		expect(matchBankTransactionInternalTransfers([debit, credit])).toEqual([]);
+	});
+
+	it('does not match a card payment with transfer-like identity text', () => {
+		const debit = transaction({
+			id: 'debit',
+			bankConnectionId: 'connection-a',
+			bankAccountId: 'account-a',
+			ownerName: 'Synthetic Owner',
+			aspspName: 'Synthetic Bank',
+			description: 'To Synthetic Owner',
+			amount: '-50.00000000',
+			creditDebitIndicator: 'DBIT',
+		});
+		const credit = transaction({
+			id: 'credit',
+			bankConnectionId: 'connection-b',
+			bankAccountId: 'account-b',
+			ownerName: 'Synthetic Owner',
+			aspspName: 'Other Bank',
+			description: 'Received from Synthetic Bank for Synthetic Owner',
+			transactionType: 'CARD_PAYMENT',
+			bankTransactionDescription: 'Card purchase',
+			amount: '50.00000000',
+			creditDebitIndicator: 'CRDT',
+		});
+
+		expect(matchBankTransactionInternalTransfers([debit, credit])).toEqual([]);
+	});
+
+	it('matches two booked transfer rows on the same connection without account identifiers', () => {
 		const debit = transaction({
 			id: 'debit',
 			bankConnectionId: 'connection-a',
