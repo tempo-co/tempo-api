@@ -119,6 +119,7 @@ describe('BankTransactionController', () => {
 				bookingDate: '2026-08-26',
 				valueDate: '2026-08-26',
 				amount: '-4.50',
+				amountInBaseCurrency: '-4.50',
 				currency: 'EUR',
 				creditDebitIndicator: 'DBIT',
 				transactionDate: '2026-08-24',
@@ -150,6 +151,7 @@ describe('BankTransactionController', () => {
 				bookingDate: '2026-08-25',
 				valueDate: '2026-08-25',
 				amount: '-30.00',
+				amountInBaseCurrency: '-30.00',
 				currency: 'EUR',
 				creditDebitIndicator: 'DBIT',
 				transactionStatus: 'BOOK',
@@ -167,6 +169,7 @@ describe('BankTransactionController', () => {
 				bookingDate: '2026-08-20',
 				valueDate: '2026-08-20',
 				amount: '100.00',
+				amountInBaseCurrency: '100.00',
 				currency: 'EUR',
 				creditDebitIndicator: 'CRDT',
 				transactionStatus: 'BOOK',
@@ -184,6 +187,7 @@ describe('BankTransactionController', () => {
 				bookingDate: '2026-08-10',
 				valueDate: '2026-08-10',
 				amount: '20.00',
+				amountInBaseCurrency: '20.00',
 				currency: 'EUR',
 				creditDebitIndicator: 'CRDT',
 				transactionStatus: 'BOOK',
@@ -335,6 +339,100 @@ describe('BankTransactionController', () => {
 			.expect(200);
 
 		expect(bookingDateAscendingResponse.body.transactions[0].bookingDate).toBe('2026-08-10');
+	});
+
+	it('sorts mixed currencies by normalized amount before pagination', async () => {
+		const sortingTransactions = await bankTransactionRepository.save([
+			bankTransactionRepository.create({
+				bankAccountId: fixtureBankAccount.id,
+				providerTransactionId: 'currency-sort-ron',
+				entryReference: 'currency-sort-ron-entry',
+				dedupeKey: randomUUID(),
+				bookingDate: '2026-08-01',
+				valueDate: '2026-08-01',
+				amount: '100.00',
+				currency: 'RON',
+				creditDebitIndicator: 'CRDT',
+				transactionStatus: 'BOOK',
+				description: 'Currency sort RON',
+				displayDescription: 'Currency sort RON',
+			}),
+			bankTransactionRepository.create({
+				bankAccountId: fixtureBankAccount.id,
+				providerTransactionId: 'currency-sort-eur',
+				entryReference: 'currency-sort-eur-entry',
+				dedupeKey: randomUUID(),
+				bookingDate: '2026-08-01',
+				valueDate: '2026-08-01',
+				amount: '30.00',
+				currency: 'EUR',
+				creditDebitIndicator: 'CRDT',
+				transactionStatus: 'BOOK',
+				description: 'Currency sort EUR',
+				displayDescription: 'Currency sort EUR',
+			}),
+			bankTransactionRepository.create({
+				bankAccountId: fixtureBankAccount.id,
+				providerTransactionId: 'currency-sort-unavailable',
+				entryReference: 'currency-sort-unavailable-entry',
+				dedupeKey: randomUUID(),
+				bookingDate: '2026-08-01',
+				valueDate: '2026-08-01',
+				amount: '1.00',
+				currency: 'USD',
+				creditDebitIndicator: 'CRDT',
+				transactionStatus: 'BOOK',
+				description: 'Currency sort unavailable',
+				displayDescription: 'Currency sort unavailable',
+			}),
+		]);
+
+		try {
+			await bankTransactionRepository.query(
+				`UPDATE "bank_transactions"
+				 SET "amountInBaseCurrency" = CASE "providerTransactionId"
+				   WHEN 'currency-sort-ron' THEN 20.00
+				   WHEN 'currency-sort-eur' THEN 30.00
+				 END
+				 WHERE "id" IN ($1, $2, $3)`,
+				sortingTransactions.map(({id}) => id),
+			);
+
+			const ascendingResponse = await verifiedAgent
+				.get('/bank-transactions')
+				.query({
+					'pagination[pageIndex]': '0',
+					'pagination[pageSize]': '10',
+					'filter[search]': 'Currency sort',
+					'sort[by]': 'amount',
+					'sort[order]': 'ASC',
+				})
+				.expect(200);
+
+			expect(ascendingResponse.body.transactions.map(({id}: {id: string}) => id)).toEqual([
+				sortingTransactions[0].id,
+				sortingTransactions[1].id,
+				sortingTransactions[2].id,
+			]);
+
+			const descendingResponse = await verifiedAgent
+				.get('/bank-transactions')
+				.query({
+					'pagination[pageIndex]': '0',
+					'pagination[pageSize]': '10',
+					'filter[search]': 'Currency sort',
+					'sort[by]': 'amount',
+					'sort[order]': 'DESC',
+				})
+				.expect(200);
+			expect(descendingResponse.body.transactions.map(({id}: {id: string}) => id)).toEqual([
+				sortingTransactions[1].id,
+				sortingTransactions[0].id,
+				sortingTransactions[2].id,
+			]);
+		} finally {
+			await bankTransactionRepository.remove(sortingTransactions);
+		}
 	});
 
 	it('supports category and source sorting', async () => {
