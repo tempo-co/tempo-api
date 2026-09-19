@@ -217,10 +217,14 @@ describe('BankTransactionCategorizationService queue scheduling', () => {
 			id: 'exchange-transaction',
 			financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
 		});
+		const internalTransfer = createTransaction({
+			id: 'internal-transfer-transaction',
+			financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.INTERNAL_TRANSFER,
+		});
 		const ordinary = createTransaction({id: 'ordinary-transaction'});
-		const {service, queue} = createService({rows: [exchange, ordinary]});
+		const {service, queue} = createService({rows: [exchange, internalTransfer, ordinary]});
 
-		await service.enqueueForTransactions([exchange.id, ordinary.id]);
+		await service.enqueueForTransactions([exchange.id, internalTransfer.id, ordinary.id]);
 
 		expect(queue.addBulk).toHaveBeenCalledTimes(1);
 		expect(queue.addBulk.mock.calls[0][0]).toHaveLength(1);

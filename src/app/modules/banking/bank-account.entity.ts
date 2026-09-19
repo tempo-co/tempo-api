@@ -9,6 +9,7 @@ import {
 	UpdateDateColumn,
 } from 'typeorm';
 
+import type {BankAccountIdentifier} from './bank-account-identifier';
 import {BankConnection} from './bank-connection.entity';
 
 @Entity('bank_accounts')
@@ -27,6 +28,9 @@ export class BankAccount {
 
 	@Column({type: 'text'})
 	identificationHash: string;
+
+	@Column({type: 'jsonb', nullable: true})
+	accountIdentifier: BankAccountIdentifier | null;
 
 	@Column({type: 'varchar', length: 255, nullable: true})
 	name: string | null;

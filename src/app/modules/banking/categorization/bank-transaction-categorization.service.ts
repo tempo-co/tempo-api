@@ -99,12 +99,7 @@ export class BankTransactionCategorizationService {
 			where: {id: In(uniqueIds)},
 		});
 		const financialEventIds = new Set(
-			transactions
-				.filter(
-					({financialEventType}) =>
-						financialEventType === BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
-				)
-				.map(({id}) => id),
+			transactions.filter(({financialEventType}) => financialEventType !== null).map(({id}) => id),
 		);
 		const categorizationIds = uniqueIds.filter((id) => !financialEventIds.has(id));
 		if (categorizationIds.length === 0) return;

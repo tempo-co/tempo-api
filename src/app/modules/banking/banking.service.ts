@@ -579,6 +579,7 @@ export class BankingService {
 	private toBankAccountValues(account: EnableBankingAccount) {
 		return {
 			providerAccountId: account.uid as string,
+			accountIdentifier: account.accountIdentifier ?? null,
 			identificationHash: account.identificationHash,
 			name: truncate(account.name, 255),
 			details: truncate(account.details, 255),

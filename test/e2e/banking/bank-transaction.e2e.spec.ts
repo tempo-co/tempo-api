@@ -4,7 +4,7 @@ import {randomUUID} from 'node:crypto';
 import {Server} from 'node:net';
 import request from 'supertest';
 import TestAgent from 'supertest/lib/agent';
-import {Repository} from 'typeorm';
+import {DataSource, Repository} from 'typeorm';
 
 import {ConfigurationService} from '@core/config/config.service';
 import {Account} from '@modules/account/account.entity';
@@ -16,7 +16,9 @@ import {
 	BANK_TRANSACTION_FINANCIAL_EVENT_RULE_VERSION,
 	BANK_TRANSACTION_FINANCIAL_EVENT_SOURCES,
 	BANK_TRANSACTION_FINANCIAL_EVENT_TYPES,
+	BANK_TRANSACTION_INTERNAL_TRANSFER_RULE_VERSION,
 } from '@modules/banking/bank-transaction-financial-event';
+import {reconcileBankTransactionInternalTransfers} from '@modules/banking/bank-transaction-internal-transfer-reconciliation';
 import {BankTransaction} from '@modules/banking/bank-transaction.entity';
 import {OpenAiBankTransactionCategorizationProvider} from '@modules/banking/categorization/providers/openai-bank-transaction-categorization.provider';
 
@@ -863,5 +865,142 @@ describe('BankTransactionController', () => {
 			categoryPromptVersion: null,
 			categoryLastError: null,
 		});
+	});
+
+	it('excludes a verified internal pair from future cash-flow consumers but keeps third-party transfers ordinary', async () => {
+		const dataSource = app.get(DataSource);
+		const ownAccountA = {scheme: 'IBAN' as const, value: 'NL91ABNA0417164300'};
+		const ownAccountB = {scheme: 'IBAN' as const, value: 'NL20RABO0123456789'};
+		const thirdPartyAccount = {scheme: 'IBAN' as const, value: 'NL30OTHER0000000000'};
+		const secondaryConnection = await bankConnectionRepository.save(
+			bankConnectionRepository.create({
+				account,
+				provider: 'enable-banking',
+				aspspName: 'Synthetic Bank',
+				aspspCountry: 'NL',
+				status: 'AUTHORIZED',
+				consentValidUntil: new Date('2030-01-01T00:00:00.000Z'),
+				providerSessionId: 'synthetic-provider-session-internal-transfer',
+			}),
+		);
+		const secondaryBankAccount = await bankAccountRepository.save(
+			bankAccountRepository.create({
+				bankConnection: secondaryConnection,
+				providerAccountId: 'synthetic-provider-account-secondary',
+				identificationHash: 'synthetic-identification-secondary',
+				name: 'Synthetic savings',
+				currency: 'EUR',
+				accountIdentifier: ownAccountB,
+				isActive: true,
+			}),
+		);
+		fixtureBankAccount.accountIdentifier = ownAccountA;
+		await bankAccountRepository.save(fixtureBankAccount);
+
+		const transactions = await bankTransactionRepository.save([
+			bankTransactionRepository.create({
+				bankAccountId: fixtureBankAccount.id,
+				providerTransactionId: 'synthetic-internal-debit',
+				entryReference: 'synthetic-internal-debit-entry',
+				dedupeKey: randomUUID(),
+				bookingDate: '2026-09-10',
+				valueDate: '2026-09-10',
+				amount: '-100.00',
+				amountInBaseCurrency: '-100.00',
+				currency: 'EUR',
+				creditDebitIndicator: 'DBIT',
+				transactionType: 'TRANSFER',
+				transactionStatus: 'BOOK',
+				description: 'Synthetic internal debit',
+				displayDescription: 'Synthetic internal debit',
+				counterpartyAccountIdentifier: ownAccountB,
+			}),
+			bankTransactionRepository.create({
+				bankAccountId: secondaryBankAccount.id,
+				providerTransactionId: 'synthetic-internal-credit',
+				entryReference: 'synthetic-internal-credit-entry',
+				dedupeKey: randomUUID(),
+				bookingDate: '2026-09-12',
+				valueDate: '2026-09-12',
+				amount: '100.40',
+				amountInBaseCurrency: '100.40',
+				currency: 'EUR',
+				creditDebitIndicator: 'CRDT',
+				transactionType: 'TRANSFER',
+				transactionStatus: 'BOOK',
+				description: 'Synthetic internal credit',
+				displayDescription: 'Synthetic internal credit',
+				counterpartyAccountIdentifier: ownAccountA,
+			}),
+			bankTransactionRepository.create({
+				bankAccountId: fixtureBankAccount.id,
+				providerTransactionId: 'synthetic-third-party-debit',
+				entryReference: 'synthetic-third-party-debit-entry',
+				dedupeKey: randomUUID(),
+				bookingDate: '2026-09-10',
+				valueDate: '2026-09-10',
+				amount: '-55.00',
+				amountInBaseCurrency: '-55.00',
+				currency: 'EUR',
+				creditDebitIndicator: 'DBIT',
+				transactionType: 'TRANSFER',
+				transactionStatus: 'BOOK',
+				description: 'Synthetic third-party debit',
+				displayDescription: 'Synthetic third-party debit',
+				counterpartyAccountIdentifier: thirdPartyAccount,
+			}),
+			bankTransactionRepository.create({
+				bankAccountId: secondaryBankAccount.id,
+				providerTransactionId: 'synthetic-third-party-credit',
+				entryReference: 'synthetic-third-party-credit-entry',
+				dedupeKey: randomUUID(),
+				bookingDate: '2026-09-10',
+				valueDate: '2026-09-10',
+				amount: '55.00',
+				amountInBaseCurrency: '55.00',
+				currency: 'EUR',
+				creditDebitIndicator: 'CRDT',
+				transactionType: 'TRANSFER',
+				transactionStatus: 'BOOK',
+				description: 'Synthetic third-party credit',
+				displayDescription: 'Synthetic third-party credit',
+				counterpartyAccountIdentifier: thirdPartyAccount,
+			}),
+		]);
+
+		try {
+			await dataSource.transaction((manager) => reconcileBankTransactionInternalTransfers(manager, account.id));
+
+			const internalResponse = await verifiedAgent
+				.get('/bank-transactions')
+				.query({'filter[financialEventTypes][]': 'INTERNAL_TRANSFER', 'pagination[pageSize]': '50'})
+				.expect(200);
+			expect(internalResponse.body.total).toBe(2);
+			expect(internalResponse.body.transactions).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({
+						financialEventType: 'INTERNAL_TRANSFER',
+						financialEventSource: 'MATCHER',
+						financialEventRuleVersion: BANK_TRANSACTION_INTERNAL_TRANSFER_RULE_VERSION,
+						cashFlowTreatment: BANK_TRANSACTION_CASH_FLOW_TREATMENTS.INTERNAL,
+					}),
+				]),
+			);
+			expect(JSON.stringify(internalResponse.body)).not.toContain(ownAccountA.value);
+			expect(JSON.stringify(internalResponse.body)).not.toContain(ownAccountB.value);
+
+			const externalResponses = await Promise.all(
+				transactions
+					.slice(2)
+					.map((transaction) => verifiedAgent.get(`/bank-transactions/${transaction.id}`).expect(200)),
+			);
+			expect(externalResponses.map(({body}) => body.cashFlowTreatment)).toEqual(['EXPENSE', 'INCOME']);
+			expect(externalResponses.every(({body}) => body.financialEventType === null)).toBe(true);
+		} finally {
+			await bankTransactionRepository.delete(transactions.map(({id}) => id));
+			await bankConnectionRepository.delete(secondaryConnection.id);
+			fixtureBankAccount.accountIdentifier = null;
+			await bankAccountRepository.save(fixtureBankAccount);
+		}
 	});
 });

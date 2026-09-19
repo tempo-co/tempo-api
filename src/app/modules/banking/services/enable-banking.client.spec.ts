@@ -132,6 +132,7 @@ describe('EnableBankingClient', () => {
 					accounts: [
 						{
 							uid: 'account-id',
+							account_id: {iban: 'NL91 ABNA 0417 1643 00'},
 							identification_hash: 'account-hash',
 							name: 'Main account',
 							details: 'Everyday spending',
@@ -152,6 +153,7 @@ describe('EnableBankingClient', () => {
 			accounts: [
 				{
 					uid: 'account-id',
+					accountIdentifier: {scheme: 'IBAN', value: 'NL91ABNA0417164300'},
 					identificationHash: 'account-hash',
 					name: 'Main account',
 					details: 'Everyday spending',
@@ -168,6 +170,46 @@ describe('EnableBankingClient', () => {
 		expect(requestUrl.pathname).toBe('/sessions');
 		expect(requestInit.method).toBe('POST');
 		expect(JSON.parse(String(requestInit.body))).toEqual({code: 'provider-code'});
+	});
+
+	it('maps account details for an existing provider account', async () => {
+		fetchMock.mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({
+					uid: 'account-id',
+					account_id: {iban: 'NL20 RABO 0123 4567 89'},
+					identification_hash: 'account-hash',
+					currency: 'EUR',
+				}),
+				{status: 200, headers: {'content-type': 'application/json'}},
+			),
+		);
+
+		await expect(client.getAccountDetails('account-id')).resolves.toEqual({
+			uid: 'account-id',
+			accountIdentifier: {scheme: 'IBAN', value: 'NL20RABO0123456789'},
+			identificationHash: 'account-hash',
+			currency: 'EUR',
+		});
+	});
+
+	it('uses a comparable BBAN from the provider account identifier list', async () => {
+		fetchMock.mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({
+					uid: 'account-id',
+					account_id: {other: {identification: 'NL20RABO0123456789', scheme_name: 'BBAN'}},
+					all_account_ids: [{identification: '0123456789', scheme_name: 'BBAN'}],
+					identification_hash: 'account-hash',
+					currency: 'EUR',
+				}),
+				{status: 200, headers: {'content-type': 'application/json'}},
+			),
+		);
+
+		await expect(client.getAccountDetails('account-id')).resolves.toMatchObject({
+			accountIdentifier: {scheme: 'BBAN', value: 'NL20RABO0123456789'},
+		});
 	});
 
 	it('requests ASPSPs for personal account-information access', async () => {
@@ -378,6 +420,33 @@ describe('EnableBankingClient', () => {
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 		const requestUrl = new URL(String(fetchMock.mock.calls[0][0]));
 		expect(requestUrl.pathname).toBe('/sessions/session-id');
+	});
+
+	it('extracts the provider counterparty account from a transaction leg', async () => {
+		fetchMock.mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({
+					transactions: [
+						{
+							transaction_id: 'transfer-1',
+							transaction_amount: {currency: 'EUR', amount: '100.00'},
+							credit_debit_indicator: 'DBIT',
+							creditor: {name: 'Own account'},
+							creditor_account: {iban: 'NL20 RABO 0123 4567 89'},
+							debtor_account: {iban: 'NL91 ABNA 0417 1643 00'},
+							status: 'BOOK',
+						},
+					],
+				}),
+				{status: 200, headers: {'content-type': 'application/json'}},
+			),
+		);
+
+		await expect(client.getAccountTransactions('account-id', {strategy: 'default'})).resolves.toEqual([
+			expect.objectContaining({
+				counterpartyAccountIdentifier: {scheme: 'IBAN', value: 'NL20RABO0123456789'},
+			}),
+		]);
 	});
 
 	it.each([

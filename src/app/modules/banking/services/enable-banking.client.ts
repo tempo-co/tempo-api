@@ -4,6 +4,7 @@ import {readFileSync} from 'node:fs';
 
 import {ConfigurationService} from '@core/config/config.service';
 
+import {normalizeBankAccountIdentifier} from '../bank-account-identifier';
 import {normalizeBankTransactionLocation} from '../bank-transaction-location';
 import {
 	EnableBankingAccount,
@@ -135,6 +136,14 @@ export class EnableBankingClient {
 		}
 
 		return {status, accountIds: rawAccounts as string[]};
+	}
+
+	async getAccountDetails(accountId: string, signal?: AbortSignal): Promise<EnableBankingAccount> {
+		const response = await this.request(`/accounts/${encodeURIComponent(accountId)}/details`, undefined, signal);
+		const account = this.parseAccount(response)[0];
+		if (!account) throw new EnableBankingClientError('invalid_provider_response');
+
+		return {...account, uid: account.uid ?? accountId};
 	}
 
 	async getAccountBalances(accountId: string, signal?: AbortSignal): Promise<EnableBankingBalance[]> {
@@ -282,6 +291,8 @@ export class EnableBankingClient {
 		const record = this.asRecord(rawAccount);
 		const identificationHash = this.asString(record?.identification_hash);
 		const currency = this.asString(record?.currency);
+		const accountIdentifier =
+			this.parseAccountIdentifier(record?.account_id) ?? this.parseAllAccountIdentifiers(record?.all_account_ids);
 
 		if (!identificationHash || !currency || currency.length !== 3) {
 			return [];
@@ -290,6 +301,7 @@ export class EnableBankingClient {
 		return [
 			{
 				uid: this.asString(record?.uid),
+				...(accountIdentifier ? {accountIdentifier} : {}),
 				identificationHash,
 				name: this.asOptionalString(record?.name),
 				details: this.asOptionalString(record?.details),
@@ -298,6 +310,37 @@ export class EnableBankingClient {
 				usage: this.asOptionalString(record?.usage),
 			},
 		];
+	}
+
+	private parseAccountIdentifier(rawIdentifier: unknown) {
+		const record = this.asRecord(rawIdentifier);
+		if (!record) return null;
+
+		for (const [scheme, key] of [
+			['IBAN', 'iban'],
+			['BBAN', 'bban'],
+		] as const) {
+			const identifier = normalizeBankAccountIdentifier(scheme, record[key]);
+			if (identifier) return identifier;
+		}
+
+		const other = this.asRecord(record.other);
+		const otherIdentifier = normalizeBankAccountIdentifier(other?.scheme_name, other?.identification);
+		if (otherIdentifier) return otherIdentifier;
+
+		return null;
+	}
+
+	private parseAllAccountIdentifiers(rawIdentifiers: unknown) {
+		if (!Array.isArray(rawIdentifiers)) return null;
+
+		for (const rawIdentifier of rawIdentifiers) {
+			const record = this.asRecord(rawIdentifier);
+			const identifier = normalizeBankAccountIdentifier(record?.scheme_name, record?.identification);
+			if (identifier) return identifier;
+		}
+
+		return null;
 	}
 
 	private parseBalances(response: unknown): EnableBankingBalance[] {
@@ -374,6 +417,13 @@ export class EnableBankingClient {
 		const debtorName = this.asString(debtor?.name);
 		const counterparty =
 			creditDebitIndicator === 'DBIT' ? creditor : creditDebitIndicator === 'CRDT' ? debtor : undefined;
+		const counterpartyAccount =
+			creditDebitIndicator === 'DBIT'
+				? record?.creditor_account
+				: creditDebitIndicator === 'CRDT'
+					? record?.debtor_account
+					: undefined;
+		const counterpartyAccountIdentifier = this.parseAccountIdentifier(counterpartyAccount);
 		const counterpartyName =
 			creditDebitIndicator === 'DBIT'
 				? (creditorName ?? debtorName)
@@ -407,6 +457,7 @@ export class EnableBankingClient {
 				valueDate: this.asOptionalString(record?.value_date) ?? this.asOptionalString(record?.transaction_date),
 				description,
 				counterpartyName,
+				...(counterpartyAccountIdentifier ? {counterpartyAccountIdentifier} : {}),
 				...(counterpartyLocation ? {counterpartyLocation} : {}),
 				remittanceInformation,
 				bankTransactionCode: this.asOptionalString(bankTransactionCode?.code),

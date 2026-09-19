@@ -1,3 +1,4 @@
+import type {BankAccountIdentifier} from './bank-account-identifier';
 import type {BankTransactionLocation} from './bank-transaction-location';
 
 export type EnableBankingAspsp = {
@@ -25,6 +26,7 @@ export type StartEnableBankingAuthorizationResult = {
 
 export type EnableBankingAccount = {
 	uid?: string;
+	accountIdentifier?: BankAccountIdentifier;
 	identificationHash: string;
 	name?: string;
 	details?: string;
@@ -71,6 +73,7 @@ export type EnableBankingTransaction = {
 	valueDate?: string;
 	description?: string;
 	counterpartyName?: string;
+	counterpartyAccountIdentifier?: BankAccountIdentifier;
 	counterpartyLocation?: BankTransactionLocation;
 	remittanceInformation?: string;
 	bankTransactionCode?: string;

@@ -20,6 +20,10 @@ import {BankingEncryptionService} from './banking-encryption.service';
 import {BankingSyncService} from './banking-sync.service';
 import {EnableBankingClient, EnableBankingClientError} from './enable-banking.client';
 
+jest.mock('../bank-transaction-internal-transfer-reconciliation', () => ({
+	reconcileBankTransactionInternalTransfers: jest.fn().mockResolvedValue([]),
+}));
+
 type Deferred<T> = {
 	promise: Promise<T>;
 	resolve: (value: T | PromiseLike<T>) => void;
@@ -95,6 +99,7 @@ describe('BankingSyncService', () => {
 			bankAccount: {update: jest.fn().mockResolvedValue(undefined)},
 		};
 		const transactionManager = {
+			query: jest.fn().mockResolvedValue([]),
 			getRepository: jest.fn((entity: unknown) => {
 				if (entity === BankConnection) return persistenceRepositories.bankConnection;
 				if (entity === BankSyncRun) return persistenceRepositories.bankSyncRun;
@@ -111,6 +116,7 @@ describe('BankingSyncService', () => {
 		);
 		const enableBankingClientMock = {
 			getSessionAccounts: jest.fn().mockResolvedValue({status: 'AUTHORIZED', accountIds: []}),
+			getAccountDetails: jest.fn().mockResolvedValue({}),
 		};
 		const encryptionServiceMock = {
 			decrypt: jest.fn().mockReturnValue('provider-session'),
@@ -172,6 +178,7 @@ describe('BankingSyncService synchronization lock', () => {
 	let renewalShouldFail: boolean;
 	let enableBankingClient: {
 		getSessionAccounts: jest.Mock;
+		getAccountDetails: jest.Mock;
 		getAccountBalances: jest.Mock;
 		getAccountTransactions: jest.Mock;
 	};
@@ -277,13 +284,17 @@ describe('BankingSyncService synchronization lock', () => {
 		};
 		const dataSource = {
 			transaction: jest.fn(async (callback: (manager: unknown) => Promise<void>) =>
-				callback({getRepository: jest.fn().mockReturnValue(transactionRepository)}),
+				callback({
+					query: jest.fn().mockResolvedValue([]),
+					getRepository: jest.fn().mockReturnValue(transactionRepository),
+				}),
 			),
 		};
 		enableBankingClient = {
 			getSessionAccounts: jest
 				.fn()
 				.mockResolvedValue({status: 'AUTHORIZED', accountIds: ['provider-account-id']}),
+			getAccountDetails: jest.fn().mockResolvedValue({}),
 			getAccountBalances: jest.fn().mockResolvedValue([]),
 			getAccountTransactions: jest.fn().mockImplementation(() => transactionGate.promise),
 		};
@@ -615,6 +626,26 @@ describe('BankingSyncService transaction event persistence', () => {
 			financialEventSource: BANK_TRANSACTION_FINANCIAL_EVENT_SOURCES.RULE,
 			financialEventRuleVersion: BANK_TRANSACTION_FINANCIAL_EVENT_RULE_VERSION,
 			categoryInputHash: null,
+		});
+	});
+
+	it('stores the normalized provider counterparty identifier for private matching', () => {
+		const service = createServiceForTransactionValues();
+		const values = toBankTransactionValues(
+			service,
+			{
+				id: 'provider-transfer-id',
+				amount: '100.00',
+				currency: 'EUR',
+				creditDebitIndicator: 'DBIT',
+				counterpartyAccountIdentifier: {scheme: 'IBAN', value: 'NL20RABO0123456789'},
+			},
+			{id: 'bank-account-id', currency: 'EUR'},
+			'Synthetic Bank',
+		);
+
+		expect(values).toMatchObject({
+			counterpartyAccountIdentifier: {scheme: 'IBAN', value: 'NL20RABO0123456789'},
 		});
 	});
 

@@ -34,6 +34,7 @@ import {
 	BANK_TRANSACTION_FINANCIAL_EVENT_TYPES,
 	detectBankTransactionFinancialEvent,
 } from '../bank-transaction-financial-event';
+import {reconcileBankTransactionInternalTransfers} from '../bank-transaction-internal-transfer-reconciliation';
 import {normalizeBankTransactionLocation} from '../bank-transaction-location';
 import {normalizeBankTransactionType} from '../bank-transaction-type';
 import {BankTransaction} from '../bank-transaction.entity';
@@ -209,6 +210,7 @@ export class BankingSyncService {
 				const status = this.getRunStatus(fetchResult);
 				const finishedAt = new Date();
 				const persistenceResult = await this.persistSync(
+					accountId,
 					connection,
 					run,
 					fetchResult,
@@ -363,6 +365,21 @@ export class BankingSyncService {
 			if (authoritativeAccountIds && !authoritativeAccountIds.has(bankAccount.providerAccountId)) continue;
 			if (!authoritativeAccountIds && !bankAccount.isActive) continue;
 
+			if (!bankAccount.accountIdentifier) {
+				try {
+					const accountDetails = await this.enableBankingClient.getAccountDetails(
+						bankAccount.providerAccountId,
+						lockLease.signal,
+					);
+					if (accountDetails.accountIdentifier) {
+						bankAccount.accountIdentifier = accountDetails.accountIdentifier;
+					}
+				} catch (error) {
+					lockLease.assertHealthy();
+					this.logger.warn(`Bank account identifier enrichment failed: ${this.safeErrorName(error)}`);
+				}
+			}
+
 			let balances: EnableBankingBalance[] = [];
 			let transactions: EnableBankingTransaction[] = [];
 			let balancesSucceeded = false;
@@ -430,6 +447,7 @@ export class BankingSyncService {
 	}
 
 	private async persistSync(
+		accountId: Account['id'],
 		connection: BankConnection,
 		run: BankSyncRun,
 		fetchResult: SyncFetchResult,
@@ -452,6 +470,9 @@ export class BankingSyncService {
 
 		const schedulingUpdate = this.getSchedulingUpdate(connection, fetchResult, status, finishedAt);
 		await this.dataSource.transaction(async (manager) => {
+			await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+				`tempo:bank-internal-transfer:${accountId}`,
+			]);
 			const connectionRepository = manager.getRepository(BankConnection);
 			const runRepository = manager.getRepository(BankSyncRun);
 			const balanceRepository = manager.getRepository(BankAccountBalance);
@@ -476,6 +497,13 @@ export class BankingSyncService {
 			}
 
 			for (const accountResult of fetchResult.accounts) {
+				if (accountResult.bankAccount.accountIdentifier) {
+					await bankAccountRepository.update(
+						{id: accountResult.bankAccount.id},
+						{accountIdentifier: accountResult.bankAccount.accountIdentifier},
+					);
+				}
+
 				if (accountResult.balancesSucceeded && accountResult.balances.length > 0) {
 					await balanceRepository.insert(
 						accountResult.balances.map((balance) =>
@@ -509,6 +537,10 @@ export class BankingSyncService {
 						);
 					}
 				}
+			}
+
+			if (status === SUCCEEDED) {
+				persistedTransactionIds.push(...(await reconcileBankTransactionInternalTransfers(manager, accountId)));
 			}
 
 			await runRepository.update(
@@ -881,6 +913,7 @@ export class BankingSyncService {
 			description,
 			displayDescription,
 			counterpartyName,
+			counterpartyAccountIdentifier: transaction.counterpartyAccountIdentifier ?? null,
 			merchantCategoryCode,
 			remittanceInformation,
 			merchantLocation,

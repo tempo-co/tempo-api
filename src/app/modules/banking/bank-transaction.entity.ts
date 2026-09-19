@@ -9,6 +9,7 @@ import {
 	UpdateDateColumn,
 } from 'typeorm';
 
+import type {BankAccountIdentifier} from './bank-account-identifier';
 import {BankAccount} from './bank-account.entity';
 import type {
 	BankTransactionFinancialEventSource,
@@ -85,6 +86,9 @@ export class BankTransaction {
 
 	@Column({type: 'varchar', length: 255, nullable: true})
 	counterpartyName: string | null;
+
+	@Column({type: 'jsonb', nullable: true})
+	counterpartyAccountIdentifier: BankAccountIdentifier | null;
 
 	@Column({type: 'jsonb', nullable: true})
 	merchantLocation: BankTransactionLocation | null;
