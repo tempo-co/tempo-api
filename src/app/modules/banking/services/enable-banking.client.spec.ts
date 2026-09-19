@@ -381,6 +381,79 @@ describe('EnableBankingClient', () => {
 	});
 
 	it.each([
+		['umlaut', 'S\u00fcdbahnhof Store'],
+		['acute accent', 'Caf\u00e9 Central'],
+		['circumflex', 'Cr\u00eaperie Belle'],
+		['capital diacritic start', '\u00cele River Transit'],
+		['grave accent', 'D\u00e9p\u00f4t Goods'],
+		['middle dot', 'G\u00b7Roast Coffee'],
+	])('decodes valid UTF-8 bodies regardless of a legacy declared charset (%s)', async (_case, merchant) => {
+		// Some feeds declare iso-8859-1 while emitting UTF-8 bytes; the bytes are authoritative.
+		fetchMock.mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({
+					transactions: [
+						{
+							transaction_id: 'multi-byte-1',
+							transaction_amount: {currency: 'EUR', amount: '1.00'},
+							credit_debit_indicator: 'DBIT',
+							note: merchant,
+							creditor: {name: merchant},
+						},
+					],
+				}),
+				{status: 200, headers: {'content-type': 'application/json; charset=iso-8859-1'}},
+			),
+		);
+
+		const transactions = await client.getAccountTransactions('account-id', {strategy: 'default'});
+
+		expect(transactions).toEqual([expect.objectContaining({description: merchant, counterpartyName: merchant})]);
+	});
+
+	it('decodes legacy single-byte bodies with the declared charset', async () => {
+		const body = JSON.stringify({
+			transactions: [
+				{
+					transaction_id: 'declared-single-byte-1',
+					transaction_amount: {currency: 'EUR', amount: '1.00'},
+					credit_debit_indicator: 'DBIT',
+					note: 'Grote Caf\u00e9 Seel\u00e6nd',
+				},
+			],
+		});
+		const bytes = Buffer.from(body, 'latin1') as unknown as ArrayBuffer;
+		fetchMock.mockResolvedValueOnce(
+			new Response(bytes, {status: 200, headers: {'content-type': 'application/json; charset=latin-1'}}),
+		);
+
+		const transactions = await client.getAccountTransactions('account-id', {strategy: 'default'});
+
+		expect(transactions).toEqual([expect.objectContaining({description: 'Grote Café Seelænd'})]);
+	});
+
+	it('decodes legacy single-byte bodies without a charset declaration as windows-1252', async () => {
+		const body = JSON.stringify({
+			transactions: [
+				{
+					transaction_id: 'undeclared-single-byte-1',
+					transaction_amount: {currency: 'EUR', amount: '1.00'},
+					credit_debit_indicator: 'DBIT',
+					note: 'Grote Caf\u00e9 Seel\u00e6nd',
+				},
+			],
+		});
+		const bytes = Buffer.from(body, 'latin1') as unknown as ArrayBuffer;
+		fetchMock.mockResolvedValueOnce(
+			new Response(bytes, {status: 200, headers: {'content-type': 'application/json'}}),
+		);
+
+		const transactions = await client.getAccountTransactions('account-id', {strategy: 'default'});
+
+		expect(transactions).toEqual([expect.objectContaining({description: 'Grote Café Seelænd'})]);
+	});
+
+	it.each([
 		['missing status', {accounts: ['account-1']}],
 		['missing accounts', {status: 'AUTHORIZED'}],
 		['non-string account ID', {status: 'AUTHORIZED', accounts: ['account-1', 2]}],
