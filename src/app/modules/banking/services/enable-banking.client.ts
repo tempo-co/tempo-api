@@ -381,6 +381,7 @@ export class EnableBankingClient {
 					? (debtorName ?? creditorName)
 					: (creditorName ?? debtorName);
 		const counterpartyLocation = this.parseCounterpartyLocation(counterparty);
+		const counterpartyAccount = this.asOptionalString(counterparty?.account)?.trim() ?? null;
 		const remittanceInformation = this.parseRemittanceInformation(record?.remittance_information);
 		const bankTransactionCode = this.asRecord(record?.bank_transaction_code);
 		const balanceAfter = this.parseAmountAndCurrency(record?.balance_after_transaction);
@@ -407,6 +408,7 @@ export class EnableBankingClient {
 				valueDate: this.asOptionalString(record?.value_date) ?? this.asOptionalString(record?.transaction_date),
 				description,
 				counterpartyName,
+				counterpartyAccount: counterpartyAccount ?? undefined,
 				...(counterpartyLocation ? {counterpartyLocation} : {}),
 				remittanceInformation,
 				bankTransactionCode: this.asOptionalString(bankTransactionCode?.code),

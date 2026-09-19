@@ -798,6 +798,7 @@ export class BankingSyncService {
 		const currency = transaction.currency.toUpperCase();
 		const description = truncate(transaction.description, 500);
 		const counterpartyName = truncate(transaction.counterpartyName, 255);
+		const counterpartyAccount = truncate(transaction.counterpartyAccount ?? null, 255);
 		const displayDescription = getBankTransactionDisplayDescription({description, counterpartyName});
 		const remittanceInformation = truncate(transaction.remittanceInformation, 10_000);
 		const transactionDate = this.toDateOnly(transaction.transactionDate);
@@ -881,6 +882,7 @@ export class BankingSyncService {
 			description,
 			displayDescription,
 			counterpartyName,
+			counterpartyAccount,
 			merchantCategoryCode,
 			remittanceInformation,
 			merchantLocation,

@@ -71,6 +71,7 @@ export type EnableBankingTransaction = {
 	valueDate?: string;
 	description?: string;
 	counterpartyName?: string;
+	counterpartyAccount?: string;
 	counterpartyLocation?: BankTransactionLocation;
 	remittanceInformation?: string;
 	bankTransactionCode?: string;

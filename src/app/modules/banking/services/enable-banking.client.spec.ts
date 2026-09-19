@@ -695,6 +695,66 @@ describe('EnableBankingClient', () => {
 		for (const transaction of transactions) expect(transaction).not.toHaveProperty('counterpartyLocation');
 	});
 
+	it('parses the direction-selected counterparty account identifier', async () => {
+		fetchMock.mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({
+					transactions: [
+						{
+							transaction_id: 'debit-with-creditor-account',
+							transaction_amount: {currency: 'EUR', amount: '10.00'},
+							credit_debit_indicator: 'DBIT',
+							creditor: {name: 'Peer', account: 'NL91ABNA0417164300'},
+						},
+						{
+							transaction_id: 'credit-with-debtor-account',
+							transaction_amount: {currency: 'EUR', amount: '10.00'},
+							credit_debit_indicator: 'CRDT',
+							debtor: {name: 'Payer', account: '  REVOLUT-XYZ  '},
+						},
+					],
+				}),
+				{status: 200, headers: {'content-type': 'application/json'}},
+			),
+		);
+
+		const transactions = await client.getAccountTransactions('account-id', {strategy: 'default'});
+
+		expect(transactions[0].counterpartyAccount).toBe('NL91ABNA0417164300');
+		expect(transactions[1].counterpartyAccount).toBe('REVOLUT-XYZ');
+	});
+
+	it('omits the counterparty account when the direction-selected party or its account is missing', async () => {
+		fetchMock.mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({
+					transactions: [
+						{
+							transaction_id: 'debit-missing-creditor-account',
+							transaction_amount: {currency: 'EUR', amount: '1.00'},
+							credit_debit_indicator: 'DBIT',
+							creditor: {name: 'No Account'},
+							debtor: {name: 'Fallback', account: 'SHOULD-NOT-BE-USED'},
+						},
+						{
+							transaction_id: 'credit-missing-debtor',
+							transaction_amount: {currency: 'EUR', amount: '2.00'},
+							credit_debit_indicator: 'CRDT',
+							creditor: {name: 'Only Creditor', account: 'ALSO-NOT-USED'},
+						},
+					],
+				}),
+				{status: 200, headers: {'content-type': 'application/json'}},
+			),
+		);
+
+		const transactions = await client.getAccountTransactions('account-id', {strategy: 'default'});
+
+		expect(transactions[0].counterpartyAccount ?? null).toBeNull();
+		expect(transactions[1].counterpartyAccount ?? null).toBeNull();
+		expect(JSON.stringify(transactions)).not.toContain('SHOULD-NOT-BE-USED');
+	});
+
 	it('propagates a supplied cancellation signal to transaction requests', async () => {
 		const controller = new AbortController();
 		fetchMock.mockResolvedValueOnce(
