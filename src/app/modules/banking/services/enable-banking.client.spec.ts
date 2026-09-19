@@ -309,6 +309,34 @@ describe('EnableBankingClient', () => {
 		});
 	});
 
+	it('captures Retry-After for a non-429 rate-limit response', async () => {
+		fetchMock.mockResolvedValueOnce(
+			new Response(JSON.stringify({error: 'ASPSP_RATE_LIMIT_EXCEEDED'}), {
+				status: 400,
+				headers: {'content-type': 'application/json', 'retry-after': '23'},
+			}),
+		);
+
+		await expect(client.getAccountBalances('account-id')).rejects.toMatchObject({
+			code: 'ASPSP_RATE_LIMIT_EXCEEDED',
+			providerStatus: 400,
+			retryAfterSeconds: 23,
+		});
+	});
+
+	it('ignores an unsafe numeric Retry-After value', async () => {
+		fetchMock.mockResolvedValueOnce(
+			new Response(JSON.stringify({error: 'ASPSP_RATE_LIMIT_EXCEEDED'}), {
+				status: 400,
+				headers: {'content-type': 'application/json', 'retry-after': '999999999999999999999999'},
+			}),
+		);
+
+		await expect(client.getAccountBalances('account-id')).rejects.toMatchObject({
+			code: 'ASPSP_RATE_LIMIT_EXCEEDED',
+			retryAfterSeconds: undefined,
+		});
+	});
 	it('propagates an error from the country-only fallback', async () => {
 		fetchMock
 			.mockResolvedValueOnce(

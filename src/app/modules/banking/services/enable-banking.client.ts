@@ -16,6 +16,7 @@ import {
 	StartEnableBankingAuthorizationInput,
 	StartEnableBankingAuthorizationResult,
 } from '../enable-banking.types';
+import {isValidRetryAfterSeconds} from './banking-sync.constants';
 
 const JWT_TTL_SECONDS = 60 * 60;
 const JWT_REFRESH_MARGIN_SECONDS = 60;
@@ -191,8 +192,7 @@ export class EnableBankingClient {
 		}
 
 		const responseText = await response.text();
-		const retryAfterSeconds =
-			response.status === 429 ? this.parseRetryAfter(response.headers.get('retry-after')) : undefined;
+		const retryAfterSeconds = this.parseRetryAfter(response.headers.get('retry-after'));
 		let responseBody: unknown;
 
 		if (responseText) {
@@ -456,7 +456,10 @@ export class EnableBankingClient {
 	private parseRetryAfter(value: string | null): number | undefined {
 		if (!value) return undefined;
 
-		if (/^\d+$/.test(value)) return Number(value);
+		if (/^\d+$/.test(value)) {
+			const seconds = Number(value);
+			return isValidRetryAfterSeconds(seconds) ? seconds : undefined;
+		}
 
 		const retryAt = Date.parse(value);
 		if (Number.isNaN(retryAt)) return undefined;

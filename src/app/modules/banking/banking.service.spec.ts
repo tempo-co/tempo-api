@@ -28,6 +28,7 @@ describe('BankingService authorization state lifecycle', () => {
 			{} as never,
 			{} as never,
 			connectionLockService as never,
+			{enqueueInitialSync: jest.fn()} as never,
 		);
 
 		await expect(service.removeConnection('owner-account-id', 'connection-id')).rejects.toMatchObject({
@@ -60,6 +61,7 @@ describe('BankingService authorization state lifecycle', () => {
 			),
 		};
 		const connectionLock = {
+			assertHealthy: jest.fn(),
 			stop: jest.fn(),
 			release: jest.fn().mockResolvedValue(undefined),
 		};
@@ -77,6 +79,7 @@ describe('BankingService authorization state lifecycle', () => {
 			{} as never,
 			{} as never,
 			connectionLockService as never,
+			{enqueueInitialSync: jest.fn()} as never,
 		);
 
 		await expect(service.removeConnection('owner-account-id', connection.id, 'DELETE')).rejects.toThrow(
@@ -121,6 +124,7 @@ describe('BankingService authorization state lifecycle', () => {
 			authorizationStateService as unknown as BankingAuthorizationStateService,
 			{} as never,
 			{acquire: jest.fn()} as never,
+			{enqueueInitialSync: jest.fn()} as never,
 		);
 
 		await expect(service.handleCallback({state: expiredState, code: 'late-provider-code'})).resolves.toBe('error');
@@ -186,7 +190,14 @@ describe('BankingService authorization state lifecycle', () => {
 			} as never,
 			authorizationStateService as unknown as BankingAuthorizationStateService,
 			{encrypt: jest.fn().mockReturnValue('encrypted-session')} as never,
-			{acquire: jest.fn()} as never,
+			{
+				acquire: jest.fn().mockResolvedValue({
+					assertHealthy: jest.fn(),
+					stop: jest.fn(),
+					release: jest.fn().mockResolvedValue(undefined),
+				}),
+			} as never,
+			{enqueueInitialSync: jest.fn()} as never,
 		);
 
 		await expect(service.handleCallback({state: callbackState, code: 'provider-code'})).resolves.toBe('error');
@@ -246,6 +257,7 @@ describe('BankingService authorization state lifecycle', () => {
 			}),
 		};
 		const connectionLock = {
+			assertHealthy: jest.fn(),
 			stop: jest.fn(),
 			release: jest.fn().mockResolvedValue(undefined),
 		};
@@ -263,6 +275,7 @@ describe('BankingService authorization state lifecycle', () => {
 			authorizationStateService as never,
 			{} as never,
 			connectionLockService as never,
+			{enqueueInitialSync: jest.fn()} as never,
 		);
 
 		await service.removeConnection('account-id', connection.id, 'DELETE');
@@ -275,5 +288,108 @@ describe('BankingService authorization state lifecycle', () => {
 			'pending-connection-two',
 		]);
 		expect(authorizationStateService.removeForConnection).not.toHaveBeenCalled();
+	});
+
+	it('queues the first automatic synchronization only after authorization commits', async () => {
+		const callbackState = 'successful-state';
+		const state = {
+			accountId: 'account-id',
+			connectionId: 'connection-id',
+			aspspName: 'ABN AMRO',
+			aspspCountry: 'NL',
+			replacesConnectionId: null,
+			expiresAt: Date.now() + 60_000,
+		};
+		const connection = {
+			id: state.connectionId,
+			status: 'PENDING_AUTHORIZATION',
+			authorizationStateHash: hashState(callbackState),
+		};
+		const events: string[] = [];
+		const transactionConnectionRepository = {
+			findOne: jest.fn().mockResolvedValueOnce(connection).mockResolvedValueOnce(null),
+			update: jest.fn().mockResolvedValue(undefined),
+			delete: jest.fn().mockResolvedValue(undefined),
+		};
+		const bankConnectionRepository = {
+			findOne: jest.fn().mockResolvedValue(connection),
+		};
+		const dataSource = {
+			transaction: jest.fn(async (callback: (manager: unknown) => Promise<void>) => {
+				const result = await callback({
+					getRepository: jest.fn((entity: unknown) =>
+						entity === BankConnection ? transactionConnectionRepository : {findOne: jest.fn()},
+					),
+				});
+				events.push('transaction-commit');
+				return result;
+			}),
+		};
+		const authorizationStateService = {
+			consumeWithStatus: jest.fn().mockResolvedValue({status: 'consumed', state}),
+		};
+		const queueService = {
+			enqueueInitialSync: jest.fn().mockImplementation(async () => {
+				events.push('queue');
+			}),
+		};
+		const connectionLock = {
+			assertHealthy: jest.fn(),
+			stop: jest.fn().mockImplementation(() => events.push('lock-stop')),
+			release: jest.fn().mockImplementation(async () => events.push('lock-release')),
+		};
+		const connectionLockService = {
+			acquire: jest.fn().mockResolvedValue(connectionLock),
+		};
+		const service = new BankingService(
+			bankConnectionRepository as never,
+			{} as never,
+			{} as never,
+			{} as never,
+			{} as never,
+			dataSource as never,
+			{
+				createSession: jest.fn().mockResolvedValue({
+					sessionId: 'provider-session',
+					consentValidUntil: '2030-01-01T00:00:00.000Z',
+					aspsp: {name: 'ABN AMRO', country: 'NL'},
+					accounts: [],
+				}),
+			} as never,
+			authorizationStateService as never,
+			{encrypt: jest.fn().mockReturnValue('encrypted-session')} as never,
+			connectionLockService as never,
+			queueService as never,
+		);
+
+		await expect(service.handleCallback({state: callbackState, code: 'provider-code'})).resolves.toBe('connected');
+
+		expect(transactionConnectionRepository.update).toHaveBeenCalledWith(
+			{id: state.connectionId},
+			expect.objectContaining({
+				status: 'AUTHORIZED',
+				nextSyncAt: expect.any(Date),
+				syncStatus: 'QUEUED',
+			}),
+		);
+		expect(events).toEqual([
+			'transaction-commit',
+			'lock-stop',
+			'lock-release',
+			'lock-stop',
+			'lock-release',
+			'queue',
+		]);
+		expect(queueService.enqueueInitialSync).toHaveBeenCalledWith(state.connectionId);
+		expect(connectionLockService.acquire).toHaveBeenNthCalledWith(
+			1,
+			expect.stringMatching(/^authorization:/),
+			expect.objectContaining({waitForMs: expect.any(Number)}),
+		);
+		expect(connectionLockService.acquire).toHaveBeenNthCalledWith(
+			2,
+			state.connectionId,
+			expect.objectContaining({waitForMs: expect.any(Number)}),
+		);
 	});
 });

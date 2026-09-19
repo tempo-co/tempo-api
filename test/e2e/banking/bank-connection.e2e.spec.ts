@@ -25,6 +25,7 @@ import {
 import {BankTransaction} from '@modules/banking/bank-transaction.entity';
 import {EnableBankingBalance, EnableBankingTransaction} from '@modules/banking/enable-banking.types';
 import {BankingEncryptionService} from '@modules/banking/services/banking-encryption.service';
+import {BankingSyncService} from '@modules/banking/services/banking-sync.service';
 import {EnableBankingClient, EnableBankingClientError} from '@modules/banking/services/enable-banking.client';
 
 import {
@@ -775,13 +776,18 @@ describe('BankConnectionController', () => {
 
 	it('synchronizes balances and transactions without exposing provider identifiers', async () => {
 		const {connection, bankAccount} = await createAuthorizedConnection('sync-provider-session');
+		await bankConnectionRepository.update(
+			{id: connection.id},
+			{nextSyncAt: new Date(Date.now() - 1), syncStatus: 'QUEUED'},
+		);
 		const balances = makeBalances();
 		const transactions = makeTransactions('sync');
 		getAccountBalances.mockResolvedValueOnce(balances);
 		getAccountTransactions.mockResolvedValueOnce(transactions);
 
-		const firstResponse = await verifiedAgent.post(`/bank-connections/${connection.id}/sync`).expect(200);
-		expect(firstResponse.body).toEqual(
+		const firstResponse = await app.get(BankingSyncService).synchronizeAutomatically(connection.id);
+		if (!firstResponse) throw new Error('Expected automatic synchronization to run.');
+		expect(firstResponse).toEqual(
 			expect.objectContaining({
 				status: 'SUCCEEDED',
 				requestedFrom: null,
@@ -863,9 +869,14 @@ describe('BankConnectionController', () => {
 			referenceNumber: 'reference-sync-0-updated',
 		};
 		getAccountTransactions.mockResolvedValueOnce(updatedTransactions);
+		await bankConnectionRepository.update(
+			{id: connection.id},
+			{nextSyncAt: new Date(Date.now() - 1), syncStatus: 'QUEUED'},
+		);
 
-		const secondResponse = await verifiedAgent.post(`/bank-connections/${connection.id}/sync`).expect(200);
-		expect(secondResponse.body).toEqual(
+		const secondResponse = await app.get(BankingSyncService).synchronizeAutomatically(connection.id);
+		if (!secondResponse) throw new Error('Expected the incremental automatic synchronization to run.');
+		expect(secondResponse).toEqual(
 			expect.objectContaining({
 				status: 'SUCCEEDED',
 				requestedFrom: expect.any(String),
@@ -954,8 +965,9 @@ describe('BankConnectionController', () => {
 				.mockResolvedValueOnce([sourceLeg, ordinaryPayment])
 				.mockResolvedValueOnce([targetLeg]);
 
-			const firstResponse = await verifiedAgent.post(`/bank-connections/${connection.id}/sync`).expect(200);
-			expect(firstResponse.body).toEqual(
+			// The manual sync endpoint was removed; synchronize through the automatic path.
+			const firstResponse = await app.get(BankingSyncService).synchronizeAutomatically(connection.id);
+			expect(firstResponse).toEqual(
 				expect.objectContaining({
 					status: 'SUCCEEDED',
 					transactionsFetched: 3,
@@ -1015,8 +1027,8 @@ describe('BankConnectionController', () => {
 			getAccountTransactions
 				.mockResolvedValueOnce([sourceLeg, ordinaryPayment])
 				.mockResolvedValueOnce([targetLeg]);
-			const secondResponse = await verifiedAgent.post(`/bank-connections/${connection.id}/sync`).expect(200);
-			expect(secondResponse.body).toEqual(
+			const secondResponse = await app.get(BankingSyncService).synchronize(account.id, connection.id);
+			expect(secondResponse).toEqual(
 				expect.objectContaining({
 					status: 'SUCCEEDED',
 					transactionsFetched: 3,
@@ -1190,24 +1202,10 @@ describe('BankConnectionController', () => {
 		}
 	});
 
-	it('enforces authentication, verification, ownership, and authorized status for synchronization', async () => {
-		const {connection} = await createAuthorizedConnection('auth-check-session');
+	it('does not expose a manual synchronization endpoint', async () => {
+		const {connection} = await createAuthorizedConnection('manual-sync-removed');
 
-		await request(httpServer).post(`/bank-connections/${connection.id}/sync`).expect(401);
-		await unverifiedAgent.post(`/bank-connections/${connection.id}/sync`).expect(403);
-		await otherVerifiedAgent.post(`/bank-connections/${connection.id}/sync`).expect(404);
-		await verifiedAgent.post('/bank-connections/not-a-uuid/sync').expect(400);
-
-		const pendingConnection = await bankConnectionRepository.save(
-			bankConnectionRepository.create({
-				account,
-				provider: 'enable-banking',
-				aspspName: 'ABN AMRO',
-				aspspCountry: 'NL',
-				status: 'PENDING_AUTHORIZATION',
-			}),
-		);
-		await verifiedAgent.post(`/bank-connections/${pendingConnection.id}/sync`).expect(409);
+		await verifiedAgent.post(`/bank-connections/${connection.id}/sync`).expect(404);
 	});
 
 	it('marks expired consent before synchronization', async () => {
@@ -1227,7 +1225,9 @@ describe('BankConnectionController', () => {
 			getSessionAccounts.mockClear();
 			getAccountBalances.mockClear();
 			getAccountTransactions.mockClear();
-			await verifiedAgent.post(`/bank-connections/${connection.id}/sync`).expect(409);
+			await expect(app.get(BankingSyncService).synchronize(account.id, connection.id)).rejects.toMatchObject({
+				status: 409,
+			});
 
 			expect(getSessionAccounts).not.toHaveBeenCalled();
 			expect(getAccountBalances).not.toHaveBeenCalled();
@@ -1257,9 +1257,9 @@ describe('BankConnectionController', () => {
 		getAccountTransactions.mockResolvedValue([]);
 
 		try {
-			const response = await verifiedAgent.post(`/bank-connections/${connection.id}/sync`).expect(200);
+			const response = await app.get(BankingSyncService).synchronize(account.id, connection.id);
 
-			expect(response.body.status).toBe('SUCCEEDED');
+			expect(response.status).toBe('SUCCEEDED');
 			expect(await bankAccountRepository.findOneBy({id: bankAccounts[0].id})).toMatchObject({
 				isActive: true,
 			});
@@ -1288,9 +1288,9 @@ describe('BankConnectionController', () => {
 		getAccountTransactions.mockResolvedValue([]);
 
 		try {
-			const response = await verifiedAgent.post(`/bank-connections/${connection.id}/sync`).expect(200);
+			const response = await app.get(BankingSyncService).synchronize(account.id, connection.id);
 
-			expect(response.body).toMatchObject({
+			expect(response).toMatchObject({
 				status: 'PARTIAL',
 				errorMessage: 'Some bank data could not be synchronized.',
 			});
@@ -1311,9 +1311,9 @@ describe('BankConnectionController', () => {
 		getAccountTransactions.mockResolvedValue([]);
 
 		try {
-			const response = await verifiedAgent.post(`/bank-connections/${connection.id}/sync`).expect(200);
+			const response = await app.get(BankingSyncService).synchronize(account.id, connection.id);
 
-			expect(response.body).toMatchObject({
+			expect(response).toMatchObject({
 				status: 'PARTIAL',
 				rateLimitSource: 'enable-banking',
 				retryAfterSeconds: 17,
@@ -1341,15 +1341,15 @@ describe('BankConnectionController', () => {
 			return makeTransactions('partial');
 		});
 
-		const response = await verifiedAgent.post(`/bank-connections/${connection.id}/sync`).expect(200);
-		expect(response.body.status).toBe('PARTIAL');
-		expect(response.body.errorMessage).toBe('Some bank data could not be synchronized.');
+		const response = await app.get(BankingSyncService).synchronize(account.id, connection.id);
+		expect(response.status).toBe('PARTIAL');
+		expect(response.errorMessage).toBe('Some bank data could not be synchronized.');
 		const successfulBankAccount = await bankAccountRepository.findOne({
 			where: {bankConnection: {id: connection.id}, providerAccountId: 'partial-success-account'},
 		});
 		if (!successfulBankAccount) throw new Error('Expected successful bank account.');
 		expect(await bankTransactionRepository.count({where: {bankAccountId: successfulBankAccount.id}})).toBe(5);
-		expect(JSON.stringify(response.body)).not.toContain('provider_unreachable');
+		expect(JSON.stringify(response)).not.toContain('provider_unreachable');
 	});
 
 	it('rolls back balance and transaction persistence when a transaction cannot be stored', async () => {
@@ -1362,8 +1362,10 @@ describe('BankConnectionController', () => {
 			},
 		]);
 
-		const response = await verifiedAgent.post(`/bank-connections/${connection.id}/sync`).expect(500);
-		expect(response.body.message).toBe('Bank synchronization could not be saved.');
+		await expect(app.get(BankingSyncService).synchronize(account.id, connection.id)).rejects.toMatchObject({
+			status: 500,
+			message: 'Bank synchronization could not be saved.',
+		});
 		expect(await bankAccountBalanceRepository.count({where: {bankAccountId: bankAccount.id}})).toBe(0);
 		expect(await bankTransactionRepository.count({where: {bankAccountId: bankAccount.id}})).toBe(0);
 		expect(await bankSyncRunRepository.count({where: {bankConnection: {id: connection.id}}})).toBe(1);
@@ -1416,6 +1418,7 @@ describe('BankConnectionController', () => {
 				status: 'AUTHORIZED',
 				providerSessionId: app.get(BankingEncryptionService).encrypt(providerSessionId),
 				consentValidUntil: new Date(Date.now() + 60 * 60 * 1000),
+				nextSyncAt: new Date(Date.now() - 60 * 1000),
 			}),
 		);
 		const bankAccounts = await bankAccountRepository.save(

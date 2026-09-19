@@ -14,6 +14,8 @@ export const BANKING_CONSENT_EXPIRED = 'Bank consent has expired. Please reconne
 
 export const BANKING_PARTIAL_SYNC_ERROR = 'Some bank data could not be synchronized.';
 export const BANKING_FAILED_SYNC_ERROR = 'Bank synchronization failed.';
+export const BANKING_RATE_LIMITED_SYNC_ERROR =
+	'Bank access is temporarily rate-limited. The next automatic attempt will wait for the provider cooldown.';
 export const BANKING_PERSISTENCE_SYNC_ERROR = 'Bank synchronization could not be saved.';
 export const BANKING_SYNC_ALREADY_IN_PROGRESS = 'A bank synchronization is already in progress.';
 
