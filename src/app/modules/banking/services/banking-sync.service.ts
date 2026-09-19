@@ -788,6 +788,11 @@ export class BankingSyncService {
 	 */
 	private async linkOwnerTransfers(accountId: Account['id']): Promise<void> {
 		try {
+			// Note: concurrent syncs of two connections sharing an owner serialize on their
+			// per-connection lock, not on an owner-level lock. Race mitigations are the leg
+			// uniqueness constraints (orIgnore suppresses duplicate pairs) and the guarded
+			// event-stamp predicate; a rare same-leg double-stamp is benign (same values).
+			// An owner-level lock is deferred until measured contention warrants it.
 			const bankAccounts = await this.bankAccountRepository.find({
 				select: ['id', 'providerAccountId'],
 				where: {bankConnection: {account: {id: accountId}}},
@@ -827,9 +832,12 @@ export class BankingSyncService {
 				.andWhere('(transaction.financialEventType IS NULL OR transaction.financialEventType = :eventType)', {
 					eventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.INTERNAL_TRANSFER,
 				})
-				.andWhere('transaction.transactionStatus IS NULL OR transaction.transactionStatus IN (:...statuses)', {
-					statuses: ['BOOK', 'COMPLETED', 'EXECUTED', 'PDNG'],
-				})
+				.andWhere(
+					'(transaction.transactionStatus IS NULL OR transaction.transactionStatus IN (:...statuses))',
+					{
+						statuses: ['BOOK', 'COMPLETED', 'EXECUTED', 'PDNG'],
+					},
+				)
 				.orderBy('transaction.bookingDate', 'DESC')
 				.limit(TRANSFER_LINK_BATCH_LIMIT)
 				.getMany();
@@ -842,7 +850,7 @@ export class BankingSyncService {
 				id: row.id,
 				bankAccountId: row.bankAccountId,
 				accountProviderAccountId: accountById.get(row.bankAccountId)?.providerAccountId ?? null,
-				connectionProviderAccountId: accountById.get(row.bankAccount?.id ?? '')?.bankConnection?.id ?? null,
+				connectionProviderAccountId: accountById.get(row.bankAccountId)?.bankConnection?.id ?? null,
 				amount: row.amount,
 				currency: row.currency,
 				creditDebitIndicator: row.creditDebitIndicator,
@@ -851,12 +859,6 @@ export class BankingSyncService {
 				counterpartyName: row.counterpartyName,
 				counterpartyAccount: row.counterpartyAccount,
 			}));
-
-			for (const input of inputs.slice(0, 6)) {
-				this.logger.warn(
-					`Transfer candidate: id=${input.id} evidence=null cp=${input.counterpartyAccount ?? 'none'} type=${input.transactionType} ind=${input.creditDebitIndicator}`,
-				);
-			}
 
 			const matches = matchesTransferPairs(inputs);
 
@@ -885,44 +887,42 @@ export class BankingSyncService {
 				return;
 			}
 
-			// mark both legs of every now-persisted link as INTERNAL_TRANSFER (guarded; never overwrites another event)
-			for (const match of matches) {
-				for (const transactionId of [match.legATransactionId, match.legBTransactionId]) {
-					const updateQueryBuilder = this.bankTransactionRepository
-						.createQueryBuilder()
-						.update(BankTransaction)
-						.set({
-							financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.INTERNAL_TRANSFER,
-							financialEventSource: 'MATCHER' as BankTransaction['financialEventSource'],
-							financialEventRuleVersion: TRANSFER_MATCHER_RULE_VERSION,
-							categoryInputHash: null,
-						})
-						.where('"id" = :transactionId')
-						.andWhere('("financialEventType" IS NULL OR "financialEventType" = :eventType)', {
-							transactionId,
-							eventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.INTERNAL_TRANSFER,
-						});
+			// mark both legs of every now-persisted link as INTERNAL_TRANSFER (guarded; never overwrites another event).
+			// Two updates: the classification stamp is atomic across all legs, then the categorization
+			// reset applies the MANUAL-preservation guard on the rows that were actually stamped.
+			const linkedTransactionIds = [
+				...new Set(matches.flatMap((match) => [match.legATransactionId, match.legBTransactionId])),
+			];
+			await this.bankTransactionRepository
+				.createQueryBuilder()
+				.update(BankTransaction)
+				.set({
+					financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.INTERNAL_TRANSFER,
+					financialEventSource: 'MATCHER' as BankTransaction['financialEventSource'],
+					financialEventRuleVersion: TRANSFER_MATCHER_RULE_VERSION,
+					categoryInputHash: null,
+				})
+				.where('"id" IN (:...linkedTransactionIds)', {linkedTransactionIds})
+				.andWhere('("financialEventType" IS NULL OR "financialEventType" = :eventType)', {
+					eventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.INTERNAL_TRANSFER,
+				})
+				.execute();
 
-					await updateQueryBuilder.execute();
-
-					await this.bankTransactionRepository
-						.createQueryBuilder()
-						.update(BankTransaction)
-						.set({
-							categoryStatus: 'NOT_APPLICABLE',
-							categorySource: null,
-							categoryUpdatedAt: null,
-							categoryLastError: null,
-						})
-						.where('"id" = :transactionId')
-						.andWhere('("financialEventType" IS NULL OR "financialEventType" = :eventType)', {
-							transactionId,
-							eventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.INTERNAL_TRANSFER,
-						})
-						.andWhere(`"categorySource" IS DISTINCT FROM 'MANUAL'`)
-						.execute();
-				}
-			}
+			await this.bankTransactionRepository
+				.createQueryBuilder()
+				.update(BankTransaction)
+				.set({
+					categoryStatus: 'NOT_APPLICABLE',
+					categorySource: null,
+					categoryUpdatedAt: null,
+					categoryLastError: null,
+				})
+				.where('"id" IN (:...linkedTransactionIds)', {linkedTransactionIds})
+				.andWhere('("financialEventType" IS NULL OR "financialEventType" = :eventType)', {
+					eventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.INTERNAL_TRANSFER,
+				})
+				.andWhere(`"categorySource" IS DISTINCT FROM 'MANUAL'`)
+				.execute();
 		} catch (error) {
 			// transfer linking must never fail or roll back the parent synchronization
 			this.logger.warn(`Transfer link re-evaluation failed: ${this.safeErrorName(error)}`);

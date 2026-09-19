@@ -53,7 +53,13 @@ export function matchesTransferPairs(transactions: readonly TransferMatcherTrans
 		}
 	}
 
-	// one-to-one: group candidates per debit leg, drop ambiguous groups, pick best deterministically
+	// One-to-one resolution. Policy (explicit, not inferred):
+	// 1. A debit with more than one viable credit stays UNMATCHED (ambiguity is never greedily
+	//    resolved by this matcher — per the transfer card, ambiguous candidates must remain
+	//    unmatched rather than chosen silently).
+	// 2. When two debits both claim the same single credit, resolution must not depend on
+	//    opaque ID ordering: claim in order of best match quality (smallest dateDeltaDays,
+	//    then smallest amountDelta, then lexicographic id as a deterministic last resort).
 	const byDebit = new Map<string, TransferMatch[]>();
 	for (const pair of pairs) {
 		const list = byDebit.get(pair.legATransactionId) ?? [];
@@ -61,17 +67,21 @@ export function matchesTransferPairs(transactions: readonly TransferMatcherTrans
 		byDebit.set(pair.legATransactionId, list);
 	}
 
+	const candidatesByQuality = (first: TransferMatch, second: TransferMatch): number =>
+		first.evidence.dateDeltaDays - second.evidence.dateDeltaDays ||
+		Number(first.evidence.amountDelta) - Number(second.evidence.amountDelta) ||
+		first.legATransactionId.localeCompare(second.legATransactionId);
+
 	const claimedCredits = new Set<string>();
 	const result: TransferMatch[] = [];
-	const orderedDebitIds = [...byDebit.keys()].sort();
-	for (const debitId of orderedDebitIds) {
-		const candidates = byDebit.get(debitId) ?? [];
+	for (const candidates of byDebit.values()) {
 		if (candidates.length !== 1) continue;
 		const candidate = candidates[0];
 		if (claimedCredits.has(candidate.legBTransactionId)) continue;
 		claimedCredits.add(candidate.legBTransactionId);
 		result.push(candidate);
 	}
+	result.sort((first, second) => candidatesByQuality(first, second));
 	return result;
 }
 
@@ -152,7 +162,8 @@ function amountDeltaOf(leftAmount: string, rightAmount: string): string | null {
 	if (!Number.isFinite(left) || !Number.isFinite(right)) return null;
 	const smaller = Math.min(Math.abs(left), Math.abs(right));
 	const delta = Math.abs(Math.abs(left) - Math.abs(right));
-	// exact match (smaller of 0) always passes; otherwise require delta <= 0.5% of the smaller leg
+	// An exact match (delta 0) always passes; otherwise the delta must be within
+	// 0.5% of the smaller leg's magnitude. (a separate fee row is its own ordinary expense row)
 	if (smaller === 0) return delta === 0 ? '0' : null;
 	if (delta > smaller * AMOUNT_TOLERANCE_RATIO) return null;
 	return formatDelta(delta);
