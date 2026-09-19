@@ -229,7 +229,7 @@ export class BankingSyncService {
 					syncStartedAt,
 				);
 				await this.enqueuePersistedTransactions(persistenceResult.persistedTransactionIds);
-				await this.linkOwnerTransfers(connection.accountId);
+				await this.linkOwnerTransfers(accountId);
 				lockLease.assertHealthy();
 
 				const completedRun = await this.bankSyncRunRepository.findOneBy({id: run.id});
@@ -779,6 +779,7 @@ export class BankingSyncService {
 
 	private getRetryDelayMs(syncFailureCount: number): number {
 		return Math.min(this.getBackgroundIntervalMs(), BANKING_TRANSIENT_RETRY_BASE_MS * 2 ** (syncFailureCount - 1));
+	}
 
 	/**
 	 * Detects and links internal transfers across all of the owner's bank accounts.
@@ -926,8 +927,6 @@ export class BankingSyncService {
 			// transfer linking must never fail or roll back the parent synchronization
 			this.logger.warn(`Transfer link re-evaluation failed: ${this.safeErrorName(error)}`);
 		}
-	}
-
 	}
 
 	private toBalanceValues(

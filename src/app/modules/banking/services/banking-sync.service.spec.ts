@@ -607,7 +607,9 @@ describe('BankingSyncService transaction event persistence', () => {
 			{} as never,
 			{} as never,
 			{} as never,
-			{get: jest.fn().mockReturnValue('6h')} as never,
+			{} as never,
+			{} as never,
+			{get: jest.fn().mockReturnValue('6h')} as unknown as ConfigurationService,
 		);
 	}
 
