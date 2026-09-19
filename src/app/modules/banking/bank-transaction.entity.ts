@@ -53,6 +53,9 @@ export class BankTransaction {
 	@Column({type: 'numeric', precision: 20, scale: 8})
 	amount: string;
 
+	@Column({type: 'numeric', precision: 30, scale: 12, nullable: true})
+	amountInBaseCurrency: string | null;
+
 	@Column({type: 'varchar', length: 3})
 	currency: string;
 

@@ -21,6 +21,9 @@ export class Account {
 	@Expose()
 	isEmailVerified: boolean;
 
+	@Column({type: 'varchar', length: 3, nullable: true})
+	baseCurrency: string | null;
+
 	@Column({type: 'varchar', length: 255})
 	@Exclude()
 	password: string;
