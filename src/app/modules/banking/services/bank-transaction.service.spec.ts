@@ -62,6 +62,7 @@ describe('BankTransactionService display descriptions', () => {
 		const service = new BankTransactionService(
 			{} as Repository<BankConnection>,
 			repository as unknown as Repository<BankTransaction>,
+			{} as never,
 		);
 
 		const response = await service.findById('account-id', transaction.id);
@@ -80,6 +81,7 @@ describe('BankTransactionService display descriptions', () => {
 		const service = new BankTransactionService(
 			{findOne: jest.fn().mockResolvedValue({id: 'connection-id'})} as unknown as Repository<BankConnection>,
 			repository as unknown as Repository<BankTransaction>,
+			{} as never,
 		);
 
 		const response = await service.findAllByConnectionId('account-id', 'connection-id', 10);
@@ -107,6 +109,7 @@ describe('BankTransactionService display descriptions', () => {
 		const service = new BankTransactionService(
 			{} as Repository<BankConnection>,
 			repository as unknown as Repository<BankTransaction>,
+			{} as never,
 		);
 
 		const response = await service.findById('account-id', transaction.id);
@@ -135,6 +138,7 @@ describe('BankTransactionService display descriptions', () => {
 		const service = new BankTransactionService(
 			{findOne: jest.fn().mockResolvedValue({id: 'connection-id'})} as unknown as Repository<BankConnection>,
 			repository as unknown as Repository<BankTransaction>,
+			{} as never,
 		);
 
 		const response = await service.findAllByConnectionId('account-id', 'connection-id', 10);
@@ -155,6 +159,7 @@ describe('BankTransactionService display descriptions', () => {
 		const service = new BankTransactionService(
 			{} as Repository<BankConnection>,
 			repository as unknown as Repository<BankTransaction>,
+			{} as never,
 		);
 
 		await service.findAll('account-id', {

@@ -17,6 +17,7 @@ import {
 	BANK_TRANSACTION_FINANCIAL_EVENT_SOURCES,
 	BANK_TRANSACTION_FINANCIAL_EVENT_TYPES,
 } from '@modules/banking/bank-transaction-financial-event';
+import {BankTransactionTransferLink} from '@modules/banking/bank-transaction-transfer-link.entity';
 import {BankTransaction} from '@modules/banking/bank-transaction.entity';
 import {OpenAiBankTransactionCategorizationProvider} from '@modules/banking/categorization/providers/openai-bank-transaction-categorization.provider';
 
@@ -40,6 +41,7 @@ describe('BankTransactionController', () => {
 	let bankConnectionRepository: Repository<BankConnection>;
 	let bankAccountRepository: Repository<BankAccount>;
 	let bankTransactionRepository: Repository<BankTransaction>;
+	let transferLinkRepository: Repository<BankTransactionTransferLink>;
 	let fixtureConnection: BankConnection;
 	let fixtureBankAccount: BankAccount;
 	let fixtureTransaction: BankTransaction;
@@ -66,6 +68,9 @@ describe('BankTransactionController', () => {
 		bankConnectionRepository = app.get<Repository<BankConnection>>(getRepositoryToken(BankConnection));
 		bankAccountRepository = app.get<Repository<BankAccount>>(getRepositoryToken(BankAccount));
 		bankTransactionRepository = app.get<Repository<BankTransaction>>(getRepositoryToken(BankTransaction));
+		transferLinkRepository = app.get<Repository<BankTransactionTransferLink>>(
+			getRepositoryToken(BankTransactionTransferLink),
+		);
 
 		verifiedAgent = await loginAgent(httpServer, VERIFIED_ACCOUNT_EMAIL, VERIFIED_ACCOUNT_PASSWORD);
 		unverifiedAgent = await loginAgent(httpServer, UNVERIFIED_ACCOUNT_EMAIL, UNVERIFIED_ACCOUNT_PASSWORD);
@@ -765,5 +770,76 @@ describe('BankTransactionController', () => {
 			categoryPromptVersion: null,
 			categoryLastError: null,
 		});
+	});
+	it('exposes the transfer link for a linked transaction and 404s otherwise', async () => {
+		const legA = await bankTransactionRepository.save(
+			bankTransactionRepository.create({
+				bankAccountId: fixtureTransaction.bankAccountId,
+				providerTransactionId: 'provider-transfer-link-a',
+				entryReference: 'entry-transfer-link-a',
+				dedupeKey: randomUUID(),
+				bookingDate: '2026-08-24',
+				valueDate: '2026-08-24',
+				amount: '-10.00',
+				currency: 'EUR',
+				creditDebitIndicator: 'DBIT',
+				transactionType: 'OTHER',
+				transactionStatus: 'BOOK',
+				displayDescription: 'Transfer out',
+				categoryStatus: 'NOT_APPLICABLE',
+				financialEventType: 'INTERNAL_TRANSFER',
+				financialEventSource: 'MATCHER' as BankTransaction['financialEventSource'],
+				financialEventRuleVersion: 'banking-transfer-recognition-v1',
+			}),
+		);
+		const legB = await bankTransactionRepository.save(
+			bankTransactionRepository.create({
+				bankAccountId: fixtureTransaction.bankAccountId,
+				providerTransactionId: 'provider-transfer-link-b',
+				entryReference: 'entry-transfer-link-b',
+				dedupeKey: randomUUID(),
+				bookingDate: '2026-08-25',
+				valueDate: '2026-08-25',
+				amount: '10.00',
+				currency: 'EUR',
+				creditDebitIndicator: 'CRDT',
+				transactionType: 'OTHER',
+				transactionStatus: 'BOOK',
+				displayDescription: 'Transfer in',
+				categoryStatus: 'NOT_APPLICABLE',
+				financialEventType: 'INTERNAL_TRANSFER',
+				financialEventSource: 'MATCHER' as BankTransaction['financialEventSource'],
+				financialEventRuleVersion: 'banking-transfer-recognition-v1',
+			}),
+		);
+		const link = await transferLinkRepository.save(
+			transferLinkRepository.create({
+				legATransactionId: legA.id,
+				legBTransactionId: legB.id,
+				evidence: {currency: 'EUR', amountDelta: '0.00', dateDeltaDays: 1, matchedOn: 'COUNTERPARTY_ACCOUNT'},
+				ruleVersion: 'banking-transfer-recognition-v1',
+			}),
+		);
+
+		try {
+			const response = await verifiedAgent.get(`/bank-transactions/${legA.id}/transfer-link`).expect(200);
+			expect(response.body).toEqual({
+				legATransactionId: legA.id,
+				legBTransactionId: legB.id,
+				evidence: {currency: 'EUR', amountDelta: '0.00', dateDeltaDays: 1, matchedOn: 'COUNTERPARTY_ACCOUNT'},
+				ruleVersion: 'banking-transfer-recognition-v1',
+			});
+
+			// the counterpart leg sees the same link
+			const counterpart = await verifiedAgent.get(`/bank-transactions/${legB.id}/transfer-link`).expect(200);
+			expect(counterpart.body.legATransactionId).toBe(legA.id);
+
+			// the other owner cannot see it
+			await otherVerifiedAgent.get(`/bank-transactions/${legA.id}/transfer-link`).expect(404);
+			// a non-linked transaction has no link
+			await verifiedAgent.get(`/bank-transactions/${fixtureTransaction.id}/transfer-link`).expect(404);
+		} finally {
+			await transferLinkRepository.delete(link.id);
+		}
 	});
 });

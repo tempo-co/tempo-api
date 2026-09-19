@@ -2,6 +2,7 @@ import type {BankTransactionDirection} from './bank-transaction-direction';
 
 export const BANK_TRANSACTION_FINANCIAL_EVENT_TYPES = {
 	CURRENCY_EXCHANGE: 'CURRENCY_EXCHANGE',
+	INTERNAL_TRANSFER: 'INTERNAL_TRANSFER',
 } as const;
 export type BankTransactionFinancialEventType =
 	(typeof BANK_TRANSACTION_FINANCIAL_EVENT_TYPES)[keyof typeof BANK_TRANSACTION_FINANCIAL_EVENT_TYPES];
@@ -70,7 +71,10 @@ export function getBankTransactionCashFlowTreatment(
 	financialEventType: BankTransactionFinancialEventType | string | null | undefined,
 	direction: BankTransactionDirection | string | null | undefined,
 ): BankTransactionCashFlowTreatment {
-	if (financialEventType === BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE) {
+	if (
+		financialEventType === BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE ||
+		financialEventType === BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.INTERNAL_TRANSFER
+	) {
 		return BANK_TRANSACTION_CASH_FLOW_TREATMENTS.INTERNAL;
 	}
 	if (direction === BANK_TRANSACTION_CASH_FLOW_TREATMENTS.INCOME) {

@@ -83,6 +83,9 @@ export class BankTransaction {
 	@Column({type: 'varchar', length: 255, nullable: true})
 	counterpartyName: string | null;
 
+	@Column({type: 'varchar', length: 255, nullable: true})
+	counterpartyAccount: string | null;
+
 	@Column({type: 'jsonb', nullable: true})
 	merchantLocation: BankTransactionLocation | null;
 

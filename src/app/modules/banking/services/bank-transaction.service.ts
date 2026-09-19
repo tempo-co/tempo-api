@@ -4,7 +4,11 @@ import {Brackets, Repository} from 'typeorm';
 
 import {Account} from '@modules/account/account.entity';
 
-import {BANKING_CONNECTION_NOT_FOUND, BANKING_TRANSACTION_NOT_FOUND} from '../api/constants/banking-messages.constants';
+import {
+	BANKING_CONNECTION_NOT_FOUND,
+	BANKING_TRANSACTION_NOT_FOUND,
+	BANKING_TRANSFER_LINK_NOT_FOUND,
+} from '../api/constants/banking-messages.constants';
 import {BankConnectionTransactionsResponseDto} from '../api/dtos/bank-connection-response.dto';
 import {
 	BankTransactionQueryDto,
@@ -14,9 +18,11 @@ import {
 	DEFAULT_BANK_TRANSACTION_PAGE_SIZE,
 } from '../api/dtos/bank-transaction-query.dto';
 import {BankTransactionResponseDto, BankTransactionsResponseDto} from '../api/dtos/bank-transaction-response.dto';
+import {BankTransferLinkResponseDto} from '../api/dtos/bank-transfer-link-response.dto';
 import {BankConnection} from '../bank-connection.entity';
 import {toBankTransactionDirection} from '../bank-transaction-direction';
 import {getBankTransactionCashFlowTreatment} from '../bank-transaction-financial-event';
+import {BankTransactionTransferLink} from '../bank-transaction-transfer-link.entity';
 import {BANK_TRANSACTION_TYPES} from '../bank-transaction-type';
 import {BankTransaction} from '../bank-transaction.entity';
 import {createBankTransactionCategorizationInputHash} from '../categorization/bank-transaction-categorization-input';
@@ -33,6 +39,8 @@ export class BankTransactionService {
 		private readonly bankConnectionRepository: Repository<BankConnection>,
 		@InjectRepository(BankTransaction)
 		private readonly bankTransactionRepository: Repository<BankTransaction>,
+		@InjectRepository(BankTransactionTransferLink)
+		private readonly transferLinkRepository: Repository<BankTransactionTransferLink>,
 	) {}
 
 	async findAll(
@@ -165,6 +173,28 @@ export class BankTransactionService {
 		return this.toResponse(transaction);
 	}
 
+	async findTransferLink(
+		accountId: Account['id'],
+		transactionId: BankTransaction['id'],
+	): Promise<BankTransferLinkResponseDto> {
+		const transaction = await this.createOwnerScopedQuery(accountId)
+			.andWhere('transaction.id = :transactionId', {transactionId})
+			.getOne();
+		if (!transaction) throw new NotFoundException(BANKING_TRANSACTION_NOT_FOUND);
+
+		const link = await this.transferLinkRepository.findOne({
+			where: [{legATransactionId: transactionId}, {legBTransactionId: transactionId}],
+		});
+		if (!link) throw new NotFoundException(BANKING_TRANSFER_LINK_NOT_FOUND);
+
+		return {
+			legATransactionId: link.legATransactionId,
+			legBTransactionId: link.legBTransactionId,
+			evidence: link.evidence,
+			ruleVersion: link.ruleVersion,
+		};
+	}
+
 	async updateCategory(
 		accountId: Account['id'],
 		id: BankTransaction['id'],
@@ -251,6 +281,7 @@ export class BankTransactionService {
 			description: transaction.description,
 			displayDescription: transaction.displayDescription,
 			counterpartyName: transaction.counterpartyName,
+			counterpartyAccount: transaction.counterpartyAccount,
 			category: (transaction.category as BankTransactionResponseDto['category']) ?? null,
 			categoryStatus: (transaction.categoryStatus ?? 'PENDING') as BankTransactionResponseDto['categoryStatus'],
 			categorySource: (transaction.categorySource as BankTransactionResponseDto['categorySource']) ?? null,

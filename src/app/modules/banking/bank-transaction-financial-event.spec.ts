@@ -84,6 +84,22 @@ describe('bank transaction financial events', () => {
 		).toBe(BANK_TRANSACTION_CASH_FLOW_TREATMENTS.INTERNAL);
 	});
 
+	it('exposes an INTERNAL_TRANSFER event type', () => {
+		expect(BANK_TRANSACTION_FINANCIAL_EVENT_TYPES as Record<string, string>).toHaveProperty(
+			'INTERNAL_TRANSFER',
+			'INTERNAL_TRANSFER',
+		);
+	});
+
+	it('maps an internal transfer to internal cash-flow treatment regardless of direction', () => {
+		expect(
+			getBankTransactionCashFlowTreatment(BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.INTERNAL_TRANSFER, 'EXPENSE'),
+		).toBe(BANK_TRANSACTION_CASH_FLOW_TREATMENTS.INTERNAL);
+		expect(
+			getBankTransactionCashFlowTreatment(BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.INTERNAL_TRANSFER, 'INCOME'),
+		).toBe(BANK_TRANSACTION_CASH_FLOW_TREATMENTS.INTERNAL);
+	});
+
 	it.each([
 		['INCOME', BANK_TRANSACTION_CASH_FLOW_TREATMENTS.INCOME],
 		['EXPENSE', BANK_TRANSACTION_CASH_FLOW_TREATMENTS.EXPENSE],

@@ -23,6 +23,7 @@ export class BankTransactionResponseDto {
 	description: string | null;
 	displayDescription: string;
 	counterpartyName: string | null;
+	counterpartyAccount: string | null;
 	amount: string;
 	currency: string;
 	creditDebitIndicator: string | null;

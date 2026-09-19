@@ -23,6 +23,11 @@ export class BankTransactionController {
 		return this.bankTransactionService.findById(account.id, id);
 	}
 
+	@Get(':id/transfer-link')
+	findTransferLink(@CurrentAccount() account: Account, @Param('id', new ParseUUIDPipe({version: '4'})) id: string) {
+		return this.bankTransactionService.findTransferLink(account.id, id);
+	}
+
 	@Patch(':id/category')
 	updateCategory(
 		@CurrentAccount() account: Account,
