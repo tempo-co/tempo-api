@@ -9,3 +9,8 @@ export const BANK_CONNECTION_SYNC_QUEUE = 'bank-connection-sync';
 export const DISPATCH_BANK_CONNECTION_SYNCS_JOB = 'dispatch-bank-connection-syncs';
 export const SYNC_BANK_CONNECTION_JOB = 'sync-bank-connection';
 export const BANK_CONNECTION_SYNC_SCHEDULER_ID = 'bank-connection-sync-dispatcher';
+
+export const BANK_TRANSACTION_AMOUNT_CONVERSION_QUEUE = 'bank-transaction-amount-conversion';
+export const BACKFILL_BANK_TRANSACTION_AMOUNTS_JOB = 'backfill-bank-transaction-amounts';
+export const BANK_TRANSACTION_AMOUNT_CONVERSION_JOB = 'convert-bank-transaction-amounts';
+export const BANK_TRANSACTION_AMOUNT_CONVERSION_SCHEDULER_ID = 'bank-transaction-amount-conversion-scheduler';

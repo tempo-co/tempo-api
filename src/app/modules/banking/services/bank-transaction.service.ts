@@ -107,7 +107,7 @@ export class BankTransactionService {
 		const sortOrder = queryParams.sort?.order ?? BankTransactionSortOrder.DESC;
 		const sortColumn =
 			sortField === BankTransactionSortField.AMOUNT
-				? 'transaction.amount'
+				? 'transaction.amountInBaseCurrency'
 				: sortField === BankTransactionSortField.CATEGORY
 					? 'transaction.category'
 					: sortField === BankTransactionSortField.SOURCE
