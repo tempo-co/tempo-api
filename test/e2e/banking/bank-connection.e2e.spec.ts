@@ -965,8 +965,9 @@ describe('BankConnectionController', () => {
 				.mockResolvedValueOnce([sourceLeg, ordinaryPayment])
 				.mockResolvedValueOnce([targetLeg]);
 
-			const firstResponse = await verifiedAgent.post(`/bank-connections/${connection.id}/sync`).expect(200);
-			expect(firstResponse.body).toEqual(
+			// The manual sync endpoint was removed; synchronize through the automatic path.
+			const firstResponse = await app.get(BankingSyncService).synchronizeAutomatically(connection.id);
+			expect(firstResponse).toEqual(
 				expect.objectContaining({
 					status: 'SUCCEEDED',
 					transactionsFetched: 3,
@@ -1026,8 +1027,8 @@ describe('BankConnectionController', () => {
 			getAccountTransactions
 				.mockResolvedValueOnce([sourceLeg, ordinaryPayment])
 				.mockResolvedValueOnce([targetLeg]);
-			const secondResponse = await verifiedAgent.post(`/bank-connections/${connection.id}/sync`).expect(200);
-			expect(secondResponse.body).toEqual(
+			const secondResponse = await app.get(BankingSyncService).synchronize(account.id, connection.id);
+			expect(secondResponse).toEqual(
 				expect.objectContaining({
 					status: 'SUCCEEDED',
 					transactionsFetched: 3,
@@ -1417,6 +1418,7 @@ describe('BankConnectionController', () => {
 				status: 'AUTHORIZED',
 				providerSessionId: app.get(BankingEncryptionService).encrypt(providerSessionId),
 				consentValidUntil: new Date(Date.now() + 60 * 60 * 1000),
+				nextSyncAt: new Date(Date.now() - 60 * 1000),
 			}),
 		);
 		const bankAccounts = await bankAccountRepository.save(
