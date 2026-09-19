@@ -8,12 +8,12 @@ import {BankAccountBalance} from '../bank-account-balance.entity';
 import {BankAccount} from '../bank-account.entity';
 import {BankConnection} from '../bank-connection.entity';
 import {BankSyncRun} from '../bank-sync-run.entity';
-import {BankTransactionTransferLink} from '../bank-transaction-transfer-link.entity';
 import {
 	BANK_TRANSACTION_FINANCIAL_EVENT_RULE_VERSION,
 	BANK_TRANSACTION_FINANCIAL_EVENT_SOURCES,
 	BANK_TRANSACTION_FINANCIAL_EVENT_TYPES,
 } from '../bank-transaction-financial-event';
+import {BankTransactionTransferLink} from '../bank-transaction-transfer-link.entity';
 import {BankTransaction} from '../bank-transaction.entity';
 import {BankTransactionCategorizationService} from '../categorization/bank-transaction-categorization.service';
 import {BankingConnectionLockService} from './banking-connection-lock.service';

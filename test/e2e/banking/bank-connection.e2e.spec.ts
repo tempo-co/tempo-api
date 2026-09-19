@@ -22,6 +22,7 @@ import {
 	BANK_TRANSACTION_FINANCIAL_EVENT_SOURCES,
 	BANK_TRANSACTION_FINANCIAL_EVENT_TYPES,
 } from '@modules/banking/bank-transaction-financial-event';
+import {BankTransactionTransferLink} from '@modules/banking/bank-transaction-transfer-link.entity';
 import {BankTransaction} from '@modules/banking/bank-transaction.entity';
 import {EnableBankingBalance, EnableBankingTransaction} from '@modules/banking/enable-banking.types';
 import {BankingEncryptionService} from '@modules/banking/services/banking-encryption.service';
@@ -57,6 +58,7 @@ describe('BankConnectionController', () => {
 	let createSession: jest.SpiedFunction<EnableBankingClient['createSession']>;
 	let getSessionAccounts: jest.SpiedFunction<EnableBankingClient['getSessionAccounts']>;
 	let getAccountBalances: jest.SpiedFunction<EnableBankingClient['getAccountBalances']>;
+	let transferLinkRepository: Repository<BankTransactionTransferLink>;
 	let getAccountTransactions: jest.SpiedFunction<EnableBankingClient['getAccountTransactions']>;
 	const sessionAccountIdsBySession = new Map<string, string[]>();
 
@@ -72,6 +74,9 @@ describe('BankConnectionController', () => {
 		bankSyncRunRepository = app.get<Repository<BankSyncRun>>(getRepositoryToken(BankSyncRun));
 		bankAccountBalanceRepository = app.get<Repository<BankAccountBalance>>(getRepositoryToken(BankAccountBalance));
 		bankTransactionRepository = app.get<Repository<BankTransaction>>(getRepositoryToken(BankTransaction));
+		transferLinkRepository = app.get<Repository<BankTransactionTransferLink>>(
+			getRepositoryToken(BankTransactionTransferLink),
+		);
 		redis = app.get<Redis>(REDIS);
 		enableBankingClient = app.get(EnableBankingClient);
 		getAspsps = jest.spyOn(enableBankingClient, 'getAspsps');
@@ -1043,6 +1048,203 @@ describe('BankConnectionController', () => {
 					],
 				}),
 			).toBe(2);
+		} finally {
+			await bankConnectionRepository.delete(connection.id);
+		}
+	});
+
+	it('links same-owner internal transfer pairs and remains idempotent', async () => {
+		const {connection, bankAccounts} = await createAuthorizedConnectionFixture(
+			'transfer-link-session',
+			[
+				{
+					providerAccountId: 'transfer-source-account',
+					identificationHash: 'hash-transfer-source',
+					currency: 'EUR',
+				},
+				{
+					providerAccountId: 'transfer-target-account',
+					identificationHash: 'hash-transfer-target',
+					currency: 'EUR',
+				},
+			],
+			'Revolut',
+		);
+		const [sourceBankAccount, targetBankAccount] = bankAccounts;
+
+		// A cross-account transfer inside one provider session: the debit leg's
+		// counterparty account equals the target bank account's provider account id.
+		const sourceLeg: EnableBankingTransaction = {
+			providerTransactionId: 'provider-transfer-source',
+			entryReference: 'entry-transfer-source',
+			amount: '100.00',
+			currency: 'EUR',
+			creditDebitIndicator: 'DBIT',
+			status: 'BOOK',
+			bookingDate: '2026-09-10',
+			valueDate: '2026-09-10',
+			description: 'To savings',
+			counterpartyName: 'Savings',
+			counterpartyAccount: 'transfer-target-account',
+			remittanceInformation: undefined,
+		};
+		const targetLeg: EnableBankingTransaction = {
+			providerTransactionId: 'provider-transfer-target',
+			entryReference: 'entry-transfer-target',
+			amount: '100.00',
+			currency: 'EUR',
+			creditDebitIndicator: 'CRDT',
+			status: 'BOOK',
+			bookingDate: '2026-09-11',
+			valueDate: '2026-09-11',
+			description: 'From main',
+			counterpartyName: 'Main account',
+			remittanceInformation: undefined,
+		};
+		// Negative control: an ordinary card payment that must not link to anything.
+		const ordinaryPayment: EnableBankingTransaction = {
+			providerTransactionId: 'provider-transfer-card-payment',
+			entryReference: 'entry-transfer-card-payment',
+			amount: '3.00',
+			currency: 'EUR',
+			creditDebitIndicator: 'DBIT',
+			status: 'BOOK',
+			bookingDate: '2026-09-10',
+			valueDate: '2026-09-10',
+			description: 'Card payment',
+			bankTransactionCode: 'PMNT',
+			bankTransactionSubCode: 'CARD',
+			counterpartyName: 'Shop',
+			remittanceInformation: undefined,
+		};
+
+		try {
+			getAccountBalances.mockResolvedValue([]);
+			getAccountTransactions
+				.mockResolvedValueOnce([sourceLeg, ordinaryPayment])
+				.mockResolvedValueOnce([targetLeg]);
+
+			await verifiedAgent.post(`/bank-connections/${connection.id}/sync`).expect(200);
+
+			const persisted = await bankTransactionRepository.find({
+				where: [
+					{providerTransactionId: sourceLeg.providerTransactionId},
+					{providerTransactionId: targetLeg.providerTransactionId},
+					{providerTransactionId: ordinaryPayment.providerTransactionId},
+				],
+			});
+			const sourceRow = persisted.find(
+				({providerTransactionId}) => providerTransactionId === sourceLeg.providerTransactionId,
+			);
+			const targetRow = persisted.find(
+				({providerTransactionId}) => providerTransactionId === targetLeg.providerTransactionId,
+			);
+			const ordinaryRow = persisted.find(
+				({providerTransactionId}) => providerTransactionId === ordinaryPayment.providerTransactionId,
+			);
+			if (!sourceRow || !targetRow || !ordinaryRow) throw new Error('Expected all three rows to persist.');
+
+			// both legs got the transfer event; ordinary payment unaffected
+			expect(sourceRow).toMatchObject({
+				financialEventType: 'INTERNAL_TRANSFER',
+				financialEventSource: 'MATCHER',
+				categoryStatus: 'NOT_APPLICABLE',
+			});
+			expect(targetRow).toMatchObject({
+				financialEventType: 'INTERNAL_TRANSFER',
+				categoryStatus: 'NOT_APPLICABLE',
+			});
+			expect(ordinaryRow).toMatchObject({
+				financialEventType: null,
+				categoryStatus: 'PENDING',
+			});
+
+			// link persisted with evidence, between the two legs only
+			const links = await transferLinkRepository.find();
+			expect(links).toHaveLength(1);
+			const linkLegIds = [links[0].legATransactionId, links[0].legBTransactionId].sort();
+			expect(linkLegIds).toEqual([sourceRow.id, targetRow.id].sort());
+			expect(links[0].evidence).toEqual(
+				expect.objectContaining({currency: 'EUR', matchedOn: 'COUNTERPARTY_ACCOUNT', dateDeltaDays: 1}),
+			);
+			expect(links[0].ruleVersion).toBe('banking-transfer-recognition-v1');
+
+			// idempotent rerun: same sync again; still exactly one link, no reclassification churn
+			getAccountBalances.mockResolvedValue([]);
+			getAccountTransactions
+				.mockResolvedValueOnce([sourceLeg, ordinaryPayment])
+				.mockResolvedValueOnce([targetLeg]);
+			await verifiedAgent.post(`/bank-connections/${connection.id}/sync`).expect(200);
+			expect(await transferLinkRepository.count()).toBe(1);
+			expect(await bankTransactionRepository.count({where: {financialEventType: 'INTERNAL_TRANSFER'}})).toBe(2);
+		} finally {
+			await bankConnectionRepository.delete(connection.id);
+			void sourceBankAccount;
+			void targetBankAccount;
+		}
+	});
+
+	it('does not link cross-account pairs without provider evidence or across owners', async () => {
+		const {connection} = await createAuthorizedConnectionFixture(
+			'transfer-no-evidence-session',
+			[
+				{
+					providerAccountId: 'transfer-no-evidence-a',
+					identificationHash: 'hash-transfer-no-evidence-a',
+					currency: 'EUR',
+				},
+				{
+					providerAccountId: 'transfer-no-evidence-b',
+					identificationHash: 'hash-transfer-no-evidence-b',
+					currency: 'EUR',
+				},
+			],
+			'ABN AMRO',
+		);
+		// both legs same currency, opposite direction, equal amount, dates within window,
+		// but no counterparty account evidence: must stay unmatched
+		const debitLeg: EnableBankingTransaction = {
+			providerTransactionId: 'provider-transfer-no-evidence-debit',
+			entryReference: 'entry-transfer-no-evidence-debit',
+			amount: '50.00',
+			currency: 'EUR',
+			creditDebitIndicator: 'DBIT',
+			status: 'BOOK',
+			bookingDate: '2026-09-10',
+			valueDate: '2026-09-10',
+			description: 'Unknown outgoing',
+			counterpartyName: 'Someone',
+			remittanceInformation: undefined,
+		};
+		const creditLeg: EnableBankingTransaction = {
+			providerTransactionId: 'provider-transfer-no-evidence-credit',
+			entryReference: 'entry-transfer-no-evidence-credit',
+			amount: '50.00',
+			currency: 'EUR',
+			creditDebitIndicator: 'CRDT',
+			status: 'BOOK',
+			bookingDate: '2026-09-11',
+			valueDate: '2026-09-11',
+			description: 'Unknown incoming',
+			counterpartyName: 'Someone else',
+			remittanceInformation: undefined,
+		};
+
+		try {
+			getAccountBalances.mockResolvedValue([]);
+			getAccountTransactions.mockResolvedValueOnce([debitLeg, creditLeg]).mockResolvedValueOnce([]);
+
+			await verifiedAgent.post(`/bank-connections/${connection.id}/sync`).expect(200);
+
+			expect(await transferLinkRepository.count()).toBe(0);
+			expect(await bankTransactionRepository.count({where: {financialEventType: 'INTERNAL_TRANSFER'}})).toBe(0);
+			const rows = await bankTransactionRepository.find({
+				where: [
+					{providerTransactionId: debitLeg.providerTransactionId},
+					{providerTransactionId: creditLeg.providerTransactionId},
+				],
+			});
+			for (const row of rows) expect(row.categoryStatus).not.toBe('NOT_APPLICABLE');
 		} finally {
 			await bankConnectionRepository.delete(connection.id);
 		}

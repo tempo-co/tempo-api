@@ -251,7 +251,7 @@ export class BankTransactionService {
 			description: transaction.description,
 			displayDescription: transaction.displayDescription,
 			counterpartyName: transaction.counterpartyName,
-		counterpartyAccount: transaction.counterpartyAccount,
+			counterpartyAccount: transaction.counterpartyAccount,
 			category: (transaction.category as BankTransactionResponseDto['category']) ?? null,
 			categoryStatus: (transaction.categoryStatus ?? 'PENDING') as BankTransactionResponseDto['categoryStatus'],
 			categorySource: (transaction.categorySource as BankTransactionResponseDto['categorySource']) ?? null,

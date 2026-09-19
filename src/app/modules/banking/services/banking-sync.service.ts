@@ -29,18 +29,13 @@ import {BankAccountBalance} from '../bank-account-balance.entity';
 import {BankAccount} from '../bank-account.entity';
 import {BankConnection} from '../bank-connection.entity';
 import {BankSyncRun} from '../bank-sync-run.entity';
-import {BankTransactionTransferLink} from '../bank-transaction-transfer-link.entity';
-import {
-	TRANSFER_MATCHER_RULE_VERSION,
-	matchesTransferPairs,
-	type TransferMatcherTransactionInput,
-} from './bank-transaction-transfer-matcher';
 import {getBankTransactionDisplayDescription} from '../bank-transaction-display';
 import {
 	BANK_TRANSACTION_FINANCIAL_EVENT_TYPES,
 	detectBankTransactionFinancialEvent,
 } from '../bank-transaction-financial-event';
 import {normalizeBankTransactionLocation} from '../bank-transaction-location';
+import {BankTransactionTransferLink} from '../bank-transaction-transfer-link.entity';
 import {normalizeBankTransactionType} from '../bank-transaction-type';
 import {BankTransaction} from '../bank-transaction.entity';
 import {selectPreferredBalance, truncate} from '../banking.utils';
@@ -54,6 +49,11 @@ import {
 	EnableBankingTransactionFetchOptions,
 } from '../enable-banking.types';
 import {BankingEncryptionError} from '../errors/banking-encryption.error';
+import {
+	TRANSFER_MATCHER_RULE_VERSION,
+	type TransferMatcherTransactionInput,
+	matchesTransferPairs,
+} from './bank-transaction-transfer-matcher';
 import {BankingConnectionLock, BankingConnectionLockService} from './banking-connection-lock.service';
 import {BankingEncryptionService} from './banking-encryption.service';
 import {
@@ -115,7 +115,7 @@ export class BankingSyncService {
 		private readonly bankSyncRunRepository: Repository<BankSyncRun>,
 		@InjectRepository(BankTransactionTransferLink)
 		private readonly transferLinkRepository: Repository<BankTransactionTransferLink>,
-	@InjectRepository(BankTransaction)
+		@InjectRepository(BankTransaction)
 		private readonly bankTransactionRepository: Repository<BankTransaction>,
 		private readonly dataSource: DataSource,
 		private readonly enableBankingClient: EnableBankingClient,
@@ -693,7 +693,7 @@ export class BankingSyncService {
 				.andWhere('"financialEventType" = :financialEventType', {
 					financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
 				})
-				.andWhere('"categorySource" IS DISTINCT FROM \'MANUAL\'')
+				.andWhere(`"categorySource" IS DISTINCT FROM 'MANUAL'`)
 				.execute();
 		}
 
@@ -719,7 +719,7 @@ export class BankingSyncService {
 					categoryUpdatedAt: null,
 				})
 				.where('id = :id', {id: existingTransaction.id})
-				.andWhere("categorySource IS DISTINCT FROM 'MANUAL'")
+				.andWhere(`categorySource IS DISTINCT FROM 'MANUAL'`)
 				.andWhere('categoryStatus IS DISTINCT FROM :completedCategoryStatus', {
 					completedCategoryStatus: 'COMPLETED',
 				})
@@ -792,17 +792,23 @@ export class BankingSyncService {
 				where: {bankConnection: {account: {id: accountId}}},
 				relations: {bankConnection: true},
 			});
-			if (bankAccounts.length < 2) return;
+			if (bankAccounts.length < 2) {
+				this.logger.warn('Transfer matching skipped: fewer than 2 bank accounts');
+				return;
+			}
 
 			const accountById = new Map(
-				bankAccounts.map((account) => [account.id, account as BankAccount & {bankConnection?: {id: string} | null}]),
+				bankAccounts.map((account) => [
+					account.id,
+					account as BankAccount & {bankConnection?: {id: string} | null},
+				]),
 			);
 
 			const rows = await this.bankTransactionRepository
 				.createQueryBuilder('transaction')
 				.select([
 					'transaction.id',
-					'bankAccount.id',
+					'transaction.bankAccountId',
 					'transaction.amount',
 					'transaction.currency',
 					'transaction.creditDebitIndicator',
@@ -827,14 +833,15 @@ export class BankingSyncService {
 				.limit(TRANSFER_LINK_BATCH_LIMIT)
 				.getMany();
 
-			if (rows.length < 2) return;
+			if (rows.length < 2) {
+				return;
+			}
 
 			const inputs: TransferMatcherTransactionInput[] = rows.map((row) => ({
 				id: row.id,
-				bankAccountId: row.bankAccount?.id ?? '',
+				bankAccountId: row.bankAccountId,
 				accountProviderAccountId: accountById.get(row.bankAccountId)?.providerAccountId ?? null,
-				connectionProviderAccountId:
-					accountById.get(row.bankAccount?.id ?? '')?.bankConnection?.id ?? null,
+				connectionProviderAccountId: accountById.get(row.bankAccount?.id ?? '')?.bankConnection?.id ?? null,
 				amount: row.amount,
 				currency: row.currency,
 				creditDebitIndicator: row.creditDebitIndicator,
@@ -844,7 +851,14 @@ export class BankingSyncService {
 				counterpartyAccount: row.counterpartyAccount,
 			}));
 
+			for (const input of inputs.slice(0, 6)) {
+				this.logger.warn(
+					`Transfer candidate: id=${input.id} evidence=null cp=${input.counterpartyAccount ?? 'none'} type=${input.transactionType} ind=${input.creditDebitIndicator}`,
+				);
+			}
+
 			const matches = matchesTransferPairs(inputs);
+
 			if (matches.length === 0) return;
 
 			const linkValues = matches.map((match) =>
@@ -857,13 +871,14 @@ export class BankingSyncService {
 				}),
 			);
 			try {
-				await this.transferLinkRepository
+				const insertQueryBuilder = this.transferLinkRepository
 					.createQueryBuilder()
 					.insert()
 					.into(BankTransactionTransferLink)
 					.values(linkValues)
-					.orIgnore()
-					.execute();
+					.orIgnore();
+
+				await insertQueryBuilder.execute();
 			} catch (error) {
 				this.logger.warn(`Transfer link persist failed: ${this.safeErrorName(error)}`);
 				return;
@@ -872,20 +887,22 @@ export class BankingSyncService {
 			// mark both legs of every now-persisted link as INTERNAL_TRANSFER (guarded; never overwrites another event)
 			for (const match of matches) {
 				for (const transactionId of [match.legATransactionId, match.legBTransactionId]) {
-					await this.bankTransactionRepository
+					const updateQueryBuilder = this.bankTransactionRepository
 						.createQueryBuilder()
 						.update(BankTransaction)
 						.set({
 							financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.INTERNAL_TRANSFER,
-							financialEventSource: "MATCHER" as BankTransaction["financialEventSource"],
+							financialEventSource: 'MATCHER' as BankTransaction['financialEventSource'],
 							financialEventRuleVersion: TRANSFER_MATCHER_RULE_VERSION,
 							categoryInputHash: null,
 						})
-						.where('id = :id', {transactionId})
-						.andWhere('(financialEventType IS NULL OR financialEventType = :eventType)', {
+						.where('"id" = :transactionId')
+						.andWhere('("financialEventType" IS NULL OR "financialEventType" = :eventType)', {
+							transactionId,
 							eventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.INTERNAL_TRANSFER,
-						})
-						.execute();
+						});
+
+					await updateQueryBuilder.execute();
 
 					await this.bankTransactionRepository
 						.createQueryBuilder()
@@ -896,11 +913,12 @@ export class BankingSyncService {
 							categoryUpdatedAt: null,
 							categoryLastError: null,
 						})
-						.where('id = :id', {transactionId})
-						.andWhere('(financialEventType IS NULL OR financialEventType = :eventType)', {
+						.where('"id" = :transactionId')
+						.andWhere('("financialEventType" IS NULL OR "financialEventType" = :eventType)', {
+							transactionId,
 							eventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.INTERNAL_TRANSFER,
 						})
-						.andWhere("categorySource IS DISTINCT FROM 'MANUAL'")
+						.andWhere(`"categorySource" IS DISTINCT FROM 'MANUAL'`)
 						.execute();
 				}
 			}

@@ -10,7 +10,13 @@ export class AddBankTransactionTransferLinks20260919130000 implements MigrationI
 			new Table({
 				name: 'bank_transaction_transfer_links',
 				columns: [
-					{name: 'id', type: 'uuid', isPrimary: true, generationStrategy: 'uuid', default: 'gen_random_uuid()'},
+					{
+						name: 'id',
+						type: 'uuid',
+						isPrimary: true,
+						generationStrategy: 'uuid',
+						default: 'gen_random_uuid()',
+					},
 					{name: 'legATransactionId', type: 'uuid', isNullable: false},
 					{name: 'legBTransactionId', type: 'uuid', isNullable: false},
 					{name: 'evidence', type: 'jsonb', isNullable: false},
@@ -38,7 +44,10 @@ export class AddBankTransactionTransferLinks20260919130000 implements MigrationI
 				uniques: [
 					new TableUnique({name: 'uq_transfer_links_leg_a', columnNames: ['legATransactionId']}),
 					new TableUnique({name: 'uq_transfer_links_leg_b', columnNames: ['legBTransactionId']}),
-					new TableUnique({name: 'uq_transfer_links_legs', columnNames: ['legATransactionId', 'legBTransactionId']}),
+					new TableUnique({
+						name: 'uq_transfer_links_legs',
+						columnNames: ['legATransactionId', 'legBTransactionId'],
+					}),
 				],
 			}),
 		);
