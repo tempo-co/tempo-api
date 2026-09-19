@@ -2,7 +2,6 @@ import {InjectQueue} from '@nestjs/bullmq';
 import {Injectable, Logger, OnModuleInit} from '@nestjs/common';
 import {InjectRepository} from '@nestjs/typeorm';
 import {Queue} from 'bullmq';
-import ms from 'ms';
 import {LessThanOrEqual, Not, Repository} from 'typeorm';
 
 import {ConfigurationService} from '@core/config/config.service';
@@ -15,13 +14,12 @@ import {
 
 import {BankConnection} from '../bank-connection.entity';
 import {BankingConnectionLockService} from './banking-connection-lock.service';
-import {BANK_SYNC_STATUSES} from './banking-sync.constants';
+import {BANK_CONNECTION_STATUSES, BANK_SYNC_STATUSES, resolveDurationMs} from './banking-sync.constants';
 
 export type BankConnectionSyncJobData = {
 	connectionId?: string;
 };
 
-const AUTHORIZED = 'AUTHORIZED';
 const MAX_DISPATCH_BATCH = 100;
 const ACTIVE_JOB_STATES = new Set(['active', 'delayed', 'prioritized', 'waiting', 'waiting-children']);
 
@@ -60,7 +58,7 @@ export class BankingSyncQueueService implements OnModuleInit {
 		const staleBefore = new Date(now.getTime() - this.getRunningTimeoutMs());
 		const connections = await this.bankConnectionRepository
 			.createQueryBuilder('connection')
-			.where('connection.status = :status', {status: AUTHORIZED})
+			.where('connection.status = :status', {status: BANK_CONNECTION_STATUSES.AUTHORIZED})
 			.andWhere(
 				'(connection.nextSyncAt <= :now OR (connection.syncStatus = :running AND connection.syncStartedAt <= :staleBefore))',
 				{now, running: BANK_SYNC_STATUSES.RUNNING, staleBefore},
@@ -86,13 +84,13 @@ export class BankingSyncQueueService implements OnModuleInit {
 				connection.syncStatus === BANK_SYNC_STATUSES.RUNNING
 					? {
 							id: connection.id,
-							status: AUTHORIZED,
+							status: BANK_CONNECTION_STATUSES.AUTHORIZED,
 							syncStatus: BANK_SYNC_STATUSES.RUNNING,
 							syncStartedAt: LessThanOrEqual(staleBefore),
 						}
 					: {
 							id: connection.id,
-							status: AUTHORIZED,
+							status: BANK_CONNECTION_STATUSES.AUTHORIZED,
 							nextSyncAt: LessThanOrEqual(now),
 							syncStatus: Not(BANK_SYNC_STATUSES.RUNNING),
 						};
@@ -108,7 +106,7 @@ export class BankingSyncQueueService implements OnModuleInit {
 	}
 
 	public isSynchronizationDue(connection: BankConnection, now = new Date()): boolean {
-		if (connection.status !== AUTHORIZED) return false;
+		if (connection.status !== BANK_CONNECTION_STATUSES.AUTHORIZED) return false;
 		const due = connection.nextSyncAt !== null && connection.nextSyncAt.getTime() <= now.getTime();
 		if (connection.syncStatus !== BANK_SYNC_STATUSES.RUNNING) return due;
 
@@ -144,18 +142,16 @@ export class BankingSyncQueueService implements OnModuleInit {
 	}
 
 	private getRunningTimeoutMs(): number {
-		const value = ms(this.configurationService.get('BANKING_SYNC_RUNNING_TIMEOUT') as ms.StringValue);
-		if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
-			throw new Error('BANKING_SYNC_RUNNING_TIMEOUT must be a positive duration.');
-		}
-		return value;
+		return resolveDurationMs(
+			this.configurationService.get('BANKING_SYNC_RUNNING_TIMEOUT'),
+			'BANKING_SYNC_RUNNING_TIMEOUT',
+		);
 	}
 
 	private getDispatchIntervalMs(): number {
-		const value = ms(this.configurationService.get('BANKING_SYNC_DISPATCH_INTERVAL') as ms.StringValue);
-		if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
-			throw new Error('BANKING_SYNC_DISPATCH_INTERVAL must be a positive duration.');
-		}
-		return value;
+		return resolveDurationMs(
+			this.configurationService.get('BANKING_SYNC_DISPATCH_INTERVAL'),
+			'BANKING_SYNC_DISPATCH_INTERVAL',
+		);
 	}
 }

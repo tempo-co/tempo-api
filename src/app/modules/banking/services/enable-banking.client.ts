@@ -16,7 +16,7 @@ import {
 	StartEnableBankingAuthorizationInput,
 	StartEnableBankingAuthorizationResult,
 } from '../enable-banking.types';
-import {BANKING_MAX_RETRY_AFTER_SECONDS} from './banking-sync.constants';
+import {isValidRetryAfterSeconds} from './banking-sync.constants';
 
 const JWT_TTL_SECONDS = 60 * 60;
 const JWT_REFRESH_MARGIN_SECONDS = 60;
@@ -458,7 +458,7 @@ export class EnableBankingClient {
 
 		if (/^\d+$/.test(value)) {
 			const seconds = Number(value);
-			return Number.isSafeInteger(seconds) && seconds <= BANKING_MAX_RETRY_AFTER_SECONDS ? seconds : undefined;
+			return isValidRetryAfterSeconds(seconds) ? seconds : undefined;
 		}
 
 		const retryAt = Date.parse(value);

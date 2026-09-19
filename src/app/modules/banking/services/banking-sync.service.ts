@@ -7,7 +7,6 @@ import {
 	NotFoundException,
 } from '@nestjs/common';
 import {InjectRepository} from '@nestjs/typeorm';
-import ms from 'ms';
 import {createHash} from 'node:crypto';
 import {DataSource, In, Not, Repository} from 'typeorm';
 
@@ -48,19 +47,17 @@ import {BankingEncryptionError} from '../errors/banking-encryption.error';
 import {BankingConnectionLock, BankingConnectionLockService} from './banking-connection-lock.service';
 import {BankingEncryptionService} from './banking-encryption.service';
 import {
-	BANKING_DEFAULT_RETRY_AFTER_SECONDS,
-	BANKING_MAX_RETRY_AFTER_SECONDS,
 	BANKING_TRANSIENT_RETRY_BASE_MS,
+	BANK_CONNECTION_STATUSES,
 	BANK_SYNC_STATUSES,
+	resolveDurationMs,
+	sanitizeRetryAfterSeconds,
 } from './banking-sync.constants';
 import {EnableBankingClient, EnableBankingClientError} from './enable-banking.client';
 
-const AUTHORIZED = 'AUTHORIZED';
-const EXPIRED = 'EXPIRED';
-const RUNNING = 'RUNNING';
-const SUCCEEDED = 'SUCCEEDED';
-const FAILED = 'FAILED';
-const PARTIAL = 'PARTIAL';
+const SUCCEEDED = BANK_SYNC_STATUSES.SUCCEEDED;
+const FAILED = BANK_SYNC_STATUSES.FAILED;
+const PARTIAL = BANK_SYNC_STATUSES.PARTIAL;
 
 const INCREMENTAL_OVERLAP_DAYS = 7;
 const MAX_DATE_TIME_MS = 8_640_000_000_000_000;
@@ -124,7 +121,7 @@ export class BankingSyncService {
 			where: {id: connectionId},
 			relations: {account: true},
 		});
-		if (!connection || connection.status !== AUTHORIZED) return null;
+		if (!connection || connection.status !== BANK_CONNECTION_STATUSES.AUTHORIZED) return null;
 
 		return this.runSynchronization(connection.account.id, connectionId, {requireDue: true});
 	}
@@ -152,7 +149,7 @@ export class BankingSyncService {
 				const claimResult = await this.bankConnectionRepository.update(
 					{
 						id: connection.id,
-						status: AUTHORIZED,
+						status: BANK_CONNECTION_STATUSES.AUTHORIZED,
 						providerSessionId: connection.providerSessionId as string,
 						syncStatus: Not(BANK_SYNC_STATUSES.RUNNING),
 					},
@@ -178,7 +175,7 @@ export class BankingSyncService {
 				run = await this.bankSyncRunRepository.save(
 					this.bankSyncRunRepository.create({
 						bankConnection: {id: connection.id},
-						status: RUNNING,
+						status: BANK_SYNC_STATUSES.RUNNING,
 						requestedFrom,
 						requestedTo,
 					}),
@@ -249,7 +246,11 @@ export class BankingSyncService {
 		connection: Pick<BankConnection, 'status' | 'nextSyncAt'>,
 		now = new Date(),
 	): boolean {
-		return connection.status === AUTHORIZED && connection.nextSyncAt !== null && connection.nextSyncAt <= now;
+		return (
+			connection.status === BANK_CONNECTION_STATUSES.AUTHORIZED &&
+			connection.nextSyncAt !== null &&
+			connection.nextSyncAt <= now
+		);
 	}
 
 	private async findOwnedConnection(accountId: Account['id'], connectionId: BankConnection['id']) {
@@ -261,7 +262,7 @@ export class BankingSyncService {
 	}
 
 	private async validateConnection(connection: BankConnection, lockLease: BankingConnectionLock): Promise<string> {
-		if (connection.status !== AUTHORIZED) {
+		if (connection.status !== BANK_CONNECTION_STATUSES.AUTHORIZED) {
 			throw new ConflictException(BANKING_CONNECTION_NOT_AUTHORIZED);
 		}
 
@@ -284,14 +285,13 @@ export class BankingSyncService {
 			const result = await this.bankConnectionRepository.update(
 				{
 					id: connection.id,
-					status: AUTHORIZED,
+					status: BANK_CONNECTION_STATUSES.AUTHORIZED,
 					providerSessionId: connection.providerSessionId as string,
 				},
 				{
-					status: EXPIRED,
+					status: BANK_CONNECTION_STATUSES.EXPIRED,
 					lastSyncError: BANKING_CONSENT_EXPIRED,
-					nextSyncAt: null,
-					syncStatus: BANK_SYNC_STATUSES.EXPIRED,
+					...this.expiredSchedulingUpdate(),
 				},
 			);
 			if (result.affected === 0) throw new Error('bank_sync_ownership_lost');
@@ -329,7 +329,7 @@ export class BankingSyncService {
 			);
 			lockLease.assertHealthy();
 
-			if (sessionAccounts.status !== AUTHORIZED) {
+			if (sessionAccounts.status !== BANK_CONNECTION_STATUSES.AUTHORIZED) {
 				throw new EnableBankingClientError('provider_session_not_authorized');
 			}
 
@@ -527,7 +527,7 @@ export class BankingSyncService {
 			);
 
 			const connectionUpdateResult = await connectionRepository.update(ownershipCriteria, {
-				status: fetchResult.connectionExpired ? EXPIRED : connection.status,
+				status: fetchResult.connectionExpired ? BANK_CONNECTION_STATUSES.EXPIRED : connection.status,
 				lastSyncedAt: status === SUCCEEDED || status === PARTIAL ? finishedAt : connection.lastSyncedAt,
 				lastSyncError: errorMessage,
 				...schedulingUpdate,
@@ -536,6 +536,14 @@ export class BankingSyncService {
 		});
 
 		return {transactionsAdded, persistedTransactionIds: [...new Set(persistedTransactionIds)]};
+	}
+
+	private expiredSchedulingUpdate(): Pick<BankConnection, 'nextSyncAt' | 'syncStartedAt' | 'syncStatus'> {
+		return {
+			nextSyncAt: null,
+			syncStartedAt: null,
+			syncStatus: BANK_SYNC_STATUSES.EXPIRED,
+		};
 	}
 
 	private getSchedulingUpdate(
@@ -548,9 +556,7 @@ export class BankingSyncService {
 
 		if (fetchResult.connectionExpired) {
 			return {
-				nextSyncAt: null,
-				syncStartedAt: null,
-				syncStatus: BANK_SYNC_STATUSES.EXPIRED,
+				...this.expiredSchedulingUpdate(),
 				syncFailureCount: previousFailureCount,
 			};
 		}
@@ -588,11 +594,10 @@ export class BankingSyncService {
 	}
 
 	private getBackgroundIntervalMs(): number {
-		const configuredInterval = ms(this.configurationService.get('BANKING_SYNC_INTERVAL') as ms.StringValue);
-		if (typeof configuredInterval !== 'number' || !Number.isFinite(configuredInterval) || configuredInterval <= 0) {
-			throw new Error('BANKING_SYNC_INTERVAL must be a positive duration.');
-		}
-		return configuredInterval;
+		return resolveDurationMs(
+			this.configurationService.get('BANKING_SYNC_INTERVAL') as string,
+			'BANKING_SYNC_INTERVAL',
+		);
 	}
 
 	private async persistTransactions(
@@ -674,7 +679,7 @@ export class BankingSyncService {
 	private async markPersistenceFailure(connectionId: string, runId?: string, syncStartedAt?: Date): Promise<void> {
 		if (runId) {
 			await this.bankSyncRunRepository.update(
-				{id: runId, status: RUNNING},
+				{id: runId, status: BANK_SYNC_STATUSES.RUNNING},
 				{status: FAILED, finishedAt: new Date(), errorMessage: BANKING_PERSISTENCE_SYNC_ERROR},
 			);
 		}
@@ -863,12 +868,7 @@ export class BankingSyncService {
 
 		return {
 			source: 'enable-banking',
-			retryAfterSeconds:
-				error.retryAfterSeconds !== undefined &&
-				Number.isFinite(error.retryAfterSeconds) &&
-				error.retryAfterSeconds <= BANKING_MAX_RETRY_AFTER_SECONDS
-					? error.retryAfterSeconds
-					: BANKING_DEFAULT_RETRY_AFTER_SECONDS,
+			retryAfterSeconds: sanitizeRetryAfterSeconds(error.retryAfterSeconds),
 		};
 	}
 

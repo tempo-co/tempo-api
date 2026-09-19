@@ -45,21 +45,19 @@ import {BankingAuthorizationStateService} from './services/banking-authorization
 import {type BankingConnectionLock, BankingConnectionLockService} from './services/banking-connection-lock.service';
 import {BankingEncryptionService} from './services/banking-encryption.service';
 import {BankingSyncQueueService} from './services/banking-sync-queue.service';
-import {BANK_SYNC_STATUSES} from './services/banking-sync.constants';
+import {BANK_CONNECTION_STATUSES, BANK_SYNC_STATUSES} from './services/banking-sync.constants';
 import {EnableBankingClient, EnableBankingClientError} from './services/enable-banking.client';
 
 const PROVIDER = 'enable-banking';
-const PENDING_AUTHORIZATION = 'PENDING_AUTHORIZATION';
 const AUTHORIZATION_LOCK_WAIT_MS = 10_000;
-const AUTHORIZED = 'AUTHORIZED';
-const CANCELLED = 'CANCELLED';
-const FAILED = 'FAILED';
-const EXPIRED = 'EXPIRED';
-const DESTRUCTIVE_CONNECTION_STATUSES = [AUTHORIZED, EXPIRED] as const;
+const DESTRUCTIVE_CONNECTION_STATUSES = [
+	BANK_CONNECTION_STATUSES.AUTHORIZED,
+	BANK_CONNECTION_STATUSES.EXPIRED,
+] as const;
 const REMOVABLE_CONNECTION_STATUSES = [
-	PENDING_AUTHORIZATION,
-	CANCELLED,
-	FAILED,
+	BANK_CONNECTION_STATUSES.PENDING_AUTHORIZATION,
+	BANK_CONNECTION_STATUSES.CANCELLED,
+	BANK_CONNECTION_STATUSES.FAILED,
 	...DESTRUCTIVE_CONNECTION_STATUSES,
 ] as const;
 
@@ -108,7 +106,7 @@ export class BankingService {
 				provider: PROVIDER,
 				aspspName: aspsp.name,
 				aspspCountry: aspsp.country,
-				status: PENDING_AUTHORIZATION,
+				status: BANK_CONNECTION_STATUSES.PENDING_AUTHORIZATION,
 			}),
 		);
 
@@ -124,7 +122,7 @@ export class BankingService {
 			});
 			const authorizationStateHash = this.hashAuthorizationState(state);
 			const bindingResult = await this.bankConnectionRepository.update(
-				{id: connection.id, status: PENDING_AUTHORIZATION},
+				{id: connection.id, status: BANK_CONNECTION_STATUSES.PENDING_AUTHORIZATION},
 				{authorizationStateHash},
 			);
 			if (bindingResult.affected === 0) {
@@ -148,15 +146,15 @@ export class BankingService {
 				await this.updatePendingAuthorization(
 					{
 						id: connection.id,
-						status: PENDING_AUTHORIZATION,
+						status: BANK_CONNECTION_STATUSES.PENDING_AUTHORIZATION,
 						authorizationStateHash: this.hashAuthorizationState(state),
 					},
-					FAILED,
+					BANK_CONNECTION_STATUSES.FAILED,
 				);
 			} else {
 				await this.bankConnectionRepository.update(
-					{id: connection.id, status: PENDING_AUTHORIZATION},
-					{status: FAILED, authorizationStateHash: null},
+					{id: connection.id, status: BANK_CONNECTION_STATUSES.PENDING_AUTHORIZATION},
+					{status: BANK_CONNECTION_STATUSES.FAILED, authorizationStateHash: null},
 				);
 			}
 
@@ -256,7 +254,7 @@ export class BankingService {
 						provider: candidateConnection.provider,
 						aspspName: candidateConnection.aspspName,
 						aspspCountry: candidateConnection.aspspCountry,
-						status: PENDING_AUTHORIZATION,
+						status: BANK_CONNECTION_STATUSES.PENDING_AUTHORIZATION,
 					},
 					order: {id: 'ASC'},
 					lock: {mode: 'pessimistic_write'},
@@ -292,8 +290,8 @@ export class BankingService {
 					authorizationConnectionIdsToClean = [connectionId, ...pendingConnectionIds];
 					if (pendingConnectionIds.length > 0) {
 						await connectionRepository.update(
-							{id: In(pendingConnectionIds), status: PENDING_AUTHORIZATION},
-							{status: CANCELLED, authorizationStateHash: null},
+							{id: In(pendingConnectionIds), status: BANK_CONNECTION_STATUSES.PENDING_AUTHORIZATION},
+							{status: BANK_CONNECTION_STATUSES.CANCELLED, authorizationStateHash: null},
 						);
 					}
 				}
@@ -311,12 +309,7 @@ export class BankingService {
 				}
 			}
 
-			connectionLock.stop();
-			try {
-				await connectionLock.release();
-			} catch (error) {
-				this.logger.warn(`Banking synchronization lock release failed: ${this.getSafeErrorCode(error)}`);
-			}
+			await this.releaseLockSafely(connectionLock, 'Banking synchronization lock release failed');
 		}
 	}
 
@@ -346,7 +339,7 @@ export class BankingService {
 		const authorizationStateHash = this.hashAuthorizationState(query.state);
 		const pendingConnectionCriteria = {
 			id: state.connectionId,
-			status: PENDING_AUTHORIZATION,
+			status: BANK_CONNECTION_STATUSES.PENDING_AUTHORIZATION,
 			authorizationStateHash,
 		};
 		const connection = await this.bankConnectionRepository.findOne({
@@ -355,13 +348,15 @@ export class BankingService {
 		if (!connection) return 'error';
 
 		if (query.error) {
-			const status = this.isCancellation(query.error) ? CANCELLED : FAILED;
+			const status = this.isCancellation(query.error)
+				? BANK_CONNECTION_STATUSES.CANCELLED
+				: BANK_CONNECTION_STATUSES.FAILED;
 			const transitioned = await this.updatePendingAuthorization(pendingConnectionCriteria, status);
-			return transitioned && status === CANCELLED ? 'cancelled' : 'error';
+			return transitioned && status === BANK_CONNECTION_STATUSES.CANCELLED ? 'cancelled' : 'error';
 		}
 
 		if (!query.code) {
-			await this.updatePendingAuthorization(pendingConnectionCriteria, FAILED);
+			await this.updatePendingAuthorization(pendingConnectionCriteria, BANK_CONNECTION_STATUSES.FAILED);
 			return 'error';
 		}
 
@@ -377,7 +372,7 @@ export class BankingService {
 			return 'connected';
 		} catch (error) {
 			this.logger.warn(`Enable Banking authorization failed: ${this.getSafeErrorCode(error)}`);
-			await this.updatePendingAuthorization(pendingConnectionCriteria, FAILED);
+			await this.updatePendingAuthorization(pendingConnectionCriteria, BANK_CONNECTION_STATUSES.FAILED);
 			return 'error';
 		}
 	}
@@ -430,7 +425,7 @@ export class BankingService {
 				const pendingConnection = await connectionRepository.findOne({
 					where: {
 						id: connectionId,
-						status: PENDING_AUTHORIZATION,
+						status: BANK_CONNECTION_STATUSES.PENDING_AUTHORIZATION,
 						authorizationStateHash,
 						account: {id: accountId},
 					},
@@ -466,7 +461,7 @@ export class BankingService {
 					{id: targetConnection.id},
 					{
 						providerSessionId: this.encryptionService.encrypt(session.sessionId),
-						status: AUTHORIZED,
+						status: BANK_CONNECTION_STATUSES.AUTHORIZED,
 						authorizationStateHash: null,
 						aspspName: session.aspsp.name,
 						aspspCountry: session.aspsp.country,
@@ -516,19 +511,9 @@ export class BankingService {
 			assertLocksHealthy();
 		} finally {
 			if (connectionLock) {
-				connectionLock.stop();
-				try {
-					await connectionLock.release();
-				} catch (error) {
-					this.logger.warn(`Bank authorization lock release failed: ${this.getSafeErrorCode(error)}`);
-				}
+				await this.releaseLockSafely(connectionLock, 'Bank authorization lock release failed');
 			}
-			authorizationLock.stop();
-			try {
-				await authorizationLock.release();
-			} catch (error) {
-				this.logger.warn(`Bank authorization scope lock release failed: ${this.getSafeErrorCode(error)}`);
-			}
+			await this.releaseLockSafely(authorizationLock, 'Bank authorization scope lock release failed');
 		}
 
 		if (!authorizedConnectionId) return;
@@ -559,8 +544,11 @@ export class BankingService {
 		if (!state || state.length > 256) return;
 
 		await this.bankConnectionRepository.update(
-			{authorizationStateHash: this.hashAuthorizationState(state), status: PENDING_AUTHORIZATION},
-			{status: FAILED, authorizationStateHash: null},
+			{
+				authorizationStateHash: this.hashAuthorizationState(state),
+				status: BANK_CONNECTION_STATUSES.PENDING_AUTHORIZATION,
+			},
+			{status: BANK_CONNECTION_STATUSES.FAILED, authorizationStateHash: null},
 		);
 	}
 
@@ -673,6 +661,15 @@ export class BankingService {
 		}
 
 		return new InternalServerErrorException(BANKING_AUTHORIZATION_START_FAILED);
+	}
+
+	private async releaseLockSafely(lock: BankingConnectionLock, warning: string): Promise<void> {
+		lock.stop();
+		try {
+			await lock.release();
+		} catch (error) {
+			this.logger.warn(`${warning}: ${this.getSafeErrorCode(error)}`);
+		}
 	}
 
 	private getSafeErrorCode(error: unknown): string {
