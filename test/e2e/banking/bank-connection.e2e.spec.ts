@@ -1124,7 +1124,7 @@ describe('BankConnectionController', () => {
 				.mockResolvedValueOnce([sourceLeg, ordinaryPayment])
 				.mockResolvedValueOnce([targetLeg]);
 
-			await verifiedAgent.post(`/bank-connections/${connection.id}/sync`).expect(200);
+			await app.get(BankingSyncService).synchronizeAutomatically(connection.id);
 
 			const persisted = await bankTransactionRepository.find({
 				where: [
@@ -1174,7 +1174,7 @@ describe('BankConnectionController', () => {
 			getAccountTransactions
 				.mockResolvedValueOnce([sourceLeg, ordinaryPayment])
 				.mockResolvedValueOnce([targetLeg]);
-			await verifiedAgent.post(`/bank-connections/${connection.id}/sync`).expect(200);
+			await app.get(BankingSyncService).synchronizeAutomatically(connection.id);
 			expect(await transferLinkRepository.count()).toBe(1);
 			expect(await bankTransactionRepository.count({where: {financialEventType: 'INTERNAL_TRANSFER'}})).toBe(2);
 		} finally {
@@ -1234,7 +1234,7 @@ describe('BankConnectionController', () => {
 			getAccountBalances.mockResolvedValue([]);
 			getAccountTransactions.mockResolvedValueOnce([debitLeg, creditLeg]).mockResolvedValueOnce([]);
 
-			await verifiedAgent.post(`/bank-connections/${connection.id}/sync`).expect(200);
+			await app.get(BankingSyncService).synchronizeAutomatically(connection.id);
 
 			expect(await transferLinkRepository.count()).toBe(0);
 			expect(await bankTransactionRepository.count({where: {financialEventType: 'INTERNAL_TRANSFER'}})).toBe(0);
