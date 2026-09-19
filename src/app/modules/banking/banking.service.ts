@@ -42,21 +42,22 @@ import {EnableBankingAccount, EnableBankingSession} from './enable-banking.types
 import {BankingAuthorizationStateError} from './errors/banking-authorization-state.error';
 import {BankingEncryptionError} from './errors/banking-encryption.error';
 import {BankingAuthorizationStateService} from './services/banking-authorization-state.service';
-import {BankingConnectionLockService} from './services/banking-connection-lock.service';
+import {type BankingConnectionLock, BankingConnectionLockService} from './services/banking-connection-lock.service';
 import {BankingEncryptionService} from './services/banking-encryption.service';
+import {BankingSyncQueueService} from './services/banking-sync-queue.service';
+import {BANK_CONNECTION_STATUSES, BANK_SYNC_STATUSES} from './services/banking-sync.constants';
 import {EnableBankingClient, EnableBankingClientError} from './services/enable-banking.client';
 
 const PROVIDER = 'enable-banking';
-const PENDING_AUTHORIZATION = 'PENDING_AUTHORIZATION';
-const AUTHORIZED = 'AUTHORIZED';
-const CANCELLED = 'CANCELLED';
-const FAILED = 'FAILED';
-const EXPIRED = 'EXPIRED';
-const DESTRUCTIVE_CONNECTION_STATUSES = [AUTHORIZED, EXPIRED] as const;
+const AUTHORIZATION_LOCK_WAIT_MS = 10_000;
+const DESTRUCTIVE_CONNECTION_STATUSES = [
+	BANK_CONNECTION_STATUSES.AUTHORIZED,
+	BANK_CONNECTION_STATUSES.EXPIRED,
+] as const;
 const REMOVABLE_CONNECTION_STATUSES = [
-	PENDING_AUTHORIZATION,
-	CANCELLED,
-	FAILED,
+	BANK_CONNECTION_STATUSES.PENDING_AUTHORIZATION,
+	BANK_CONNECTION_STATUSES.CANCELLED,
+	BANK_CONNECTION_STATUSES.FAILED,
 	...DESTRUCTIVE_CONNECTION_STATUSES,
 ] as const;
 
@@ -78,6 +79,7 @@ export class BankingService {
 		private readonly authorizationStateService: BankingAuthorizationStateService,
 		private readonly encryptionService: BankingEncryptionService,
 		private readonly connectionLockService: BankingConnectionLockService,
+		private readonly bankingSyncQueueService: BankingSyncQueueService,
 	) {}
 
 	async startAuthorization(
@@ -104,7 +106,7 @@ export class BankingService {
 				provider: PROVIDER,
 				aspspName: aspsp.name,
 				aspspCountry: aspsp.country,
-				status: PENDING_AUTHORIZATION,
+				status: BANK_CONNECTION_STATUSES.PENDING_AUTHORIZATION,
 			}),
 		);
 
@@ -120,7 +122,7 @@ export class BankingService {
 			});
 			const authorizationStateHash = this.hashAuthorizationState(state);
 			const bindingResult = await this.bankConnectionRepository.update(
-				{id: connection.id, status: PENDING_AUTHORIZATION},
+				{id: connection.id, status: BANK_CONNECTION_STATUSES.PENDING_AUTHORIZATION},
 				{authorizationStateHash},
 			);
 			if (bindingResult.affected === 0) {
@@ -144,15 +146,15 @@ export class BankingService {
 				await this.updatePendingAuthorization(
 					{
 						id: connection.id,
-						status: PENDING_AUTHORIZATION,
+						status: BANK_CONNECTION_STATUSES.PENDING_AUTHORIZATION,
 						authorizationStateHash: this.hashAuthorizationState(state),
 					},
-					FAILED,
+					BANK_CONNECTION_STATUSES.FAILED,
 				);
 			} else {
 				await this.bankConnectionRepository.update(
-					{id: connection.id, status: PENDING_AUTHORIZATION},
-					{status: FAILED, authorizationStateHash: null},
+					{id: connection.id, status: BANK_CONNECTION_STATUSES.PENDING_AUTHORIZATION},
+					{status: BANK_CONNECTION_STATUSES.FAILED, authorizationStateHash: null},
 				);
 			}
 
@@ -207,6 +209,9 @@ export class BankingService {
 					status: connection.status,
 					consentValidUntil: connection.consentValidUntil,
 					lastSyncedAt: connection.lastSyncedAt,
+					lastSyncError: connection.lastSyncError,
+					nextSyncAt: connection.nextSyncAt,
+					syncStatus: connection.syncStatus,
 					bankAccounts: accountsWithBalances.map(([bankAccount, latestBalances]) =>
 						this.toBankAccountResponse(bankAccount, latestBalances),
 					),
@@ -230,7 +235,9 @@ export class BankingService {
 		let authorizationConnectionIdsToClean = [connectionId];
 
 		try {
+			connectionLock.assertHealthy();
 			await this.dataSource.transaction(async (manager) => {
+				connectionLock.assertHealthy();
 				const connectionRepository = manager.getRepository(BankConnection);
 				const bankAccountRepository = manager.getRepository(BankAccount);
 				const candidateConnection = await connectionRepository.findOne({
@@ -247,7 +254,7 @@ export class BankingService {
 						provider: candidateConnection.provider,
 						aspspName: candidateConnection.aspspName,
 						aspspCountry: candidateConnection.aspspCountry,
-						status: PENDING_AUTHORIZATION,
+						status: BANK_CONNECTION_STATUSES.PENDING_AUTHORIZATION,
 					},
 					order: {id: 'ASC'},
 					lock: {mode: 'pessimistic_write'},
@@ -283,13 +290,14 @@ export class BankingService {
 					authorizationConnectionIdsToClean = [connectionId, ...pendingConnectionIds];
 					if (pendingConnectionIds.length > 0) {
 						await connectionRepository.update(
-							{id: In(pendingConnectionIds), status: PENDING_AUTHORIZATION},
-							{status: CANCELLED, authorizationStateHash: null},
+							{id: In(pendingConnectionIds), status: BANK_CONNECTION_STATUSES.PENDING_AUTHORIZATION},
+							{status: BANK_CONNECTION_STATUSES.CANCELLED, authorizationStateHash: null},
 						);
 					}
 				}
 
 				await connectionRepository.remove(connection);
+				connectionLock.assertHealthy();
 			});
 			deletionCommitted = true;
 		} finally {
@@ -301,12 +309,7 @@ export class BankingService {
 				}
 			}
 
-			connectionLock.stop();
-			try {
-				await connectionLock.release();
-			} catch (error) {
-				this.logger.warn(`Banking synchronization lock release failed: ${this.getSafeErrorCode(error)}`);
-			}
+			await this.releaseLockSafely(connectionLock, 'Banking synchronization lock release failed');
 		}
 	}
 
@@ -336,7 +339,7 @@ export class BankingService {
 		const authorizationStateHash = this.hashAuthorizationState(query.state);
 		const pendingConnectionCriteria = {
 			id: state.connectionId,
-			status: PENDING_AUTHORIZATION,
+			status: BANK_CONNECTION_STATUSES.PENDING_AUTHORIZATION,
 			authorizationStateHash,
 		};
 		const connection = await this.bankConnectionRepository.findOne({
@@ -345,13 +348,15 @@ export class BankingService {
 		if (!connection) return 'error';
 
 		if (query.error) {
-			const status = this.isCancellation(query.error) ? CANCELLED : FAILED;
+			const status = this.isCancellation(query.error)
+				? BANK_CONNECTION_STATUSES.CANCELLED
+				: BANK_CONNECTION_STATUSES.FAILED;
 			const transitioned = await this.updatePendingAuthorization(pendingConnectionCriteria, status);
-			return transitioned && status === CANCELLED ? 'cancelled' : 'error';
+			return transitioned && status === BANK_CONNECTION_STATUSES.CANCELLED ? 'cancelled' : 'error';
 		}
 
 		if (!query.code) {
-			await this.updatePendingAuthorization(pendingConnectionCriteria, FAILED);
+			await this.updatePendingAuthorization(pendingConnectionCriteria, BANK_CONNECTION_STATUSES.FAILED);
 			return 'error';
 		}
 
@@ -367,7 +372,7 @@ export class BankingService {
 			return 'connected';
 		} catch (error) {
 			this.logger.warn(`Enable Banking authorization failed: ${this.getSafeErrorCode(error)}`);
-			await this.updatePendingAuthorization(pendingConnectionCriteria, FAILED);
+			await this.updatePendingAuthorization(pendingConnectionCriteria, BANK_CONNECTION_STATUSES.FAILED);
 			return 'error';
 		}
 	}
@@ -384,90 +389,139 @@ export class BankingService {
 			throw new EnableBankingClientError('invalid_provider_response');
 		}
 
-		await this.dataSource.transaction(async (manager) => {
-			const connectionRepository = manager.getRepository(BankConnection);
-			const bankAccountRepository = manager.getRepository(BankAccount);
-
-			const pendingConnection = await connectionRepository.findOne({
-				where: {
-					id: connectionId,
-					status: PENDING_AUTHORIZATION,
-					authorizationStateHash,
-					account: {id: accountId},
-				},
-				lock: {mode: 'pessimistic_write'},
-			});
-			if (!pendingConnection) {
-				throw new BankingAuthorizationStateError('state_superseded');
-			}
-
-			if (replacesConnectionId === undefined) {
-				throw new BankingAuthorizationStateError('state_superseded');
-			}
-
-			// Re-authorizing an ASPSP refreshes the existing connection instead of
-			// creating a parallel one with duplicated bank accounts and transactions.
-			const reusableConnection = await connectionRepository.findOne({
-				where: this.getReusableConnectionWhere(
-					accountId,
-					pendingConnection.aspspName,
-					pendingConnection.aspspCountry,
-					replacesConnectionId === null ? undefined : replacesConnectionId,
-				),
-				lock: {mode: 'pessimistic_write'},
-				...(replacesConnectionId === null ? {order: {createdAt: 'DESC'}} : {}),
-			});
-			if (replacesConnectionId !== null && !reusableConnection) {
-				throw new BankingAuthorizationStateError('state_superseded');
-			}
-			const targetConnection = reusableConnection ?? pendingConnection;
-
-			await connectionRepository.update(
-				{id: targetConnection.id},
-				{
-					providerSessionId: this.encryptionService.encrypt(session.sessionId),
-					status: AUTHORIZED,
-					authorizationStateHash: null,
-					aspspName: session.aspsp.name,
-					aspspCountry: session.aspsp.country,
-					consentValidUntil,
-					lastSyncError: null,
-				},
-			);
-
-			for (const account of session.accounts) {
-				if (!account.uid) continue;
-
-				const values = this.toBankAccountValues(account);
-				let bankAccount = await bankAccountRepository.findOne({
-					where: {bankConnection: {id: targetConnection.id}, providerAccountId: account.uid},
-				});
-
-				if (!bankAccount) {
-					bankAccount = await bankAccountRepository.findOne({
-						where: {
-							bankConnection: {id: targetConnection.id},
-							identificationHash: account.identificationHash,
-						},
-					});
-				}
-
-				if (!bankAccount) {
-					bankAccount = bankAccountRepository.create({
-						bankConnection: {id: targetConnection.id},
-						...values,
-					});
-				} else {
-					Object.assign(bankAccount, values);
-				}
-
-				await bankAccountRepository.save(bankAccount);
-			}
-
-			if (targetConnection.id !== pendingConnection.id) {
-				await connectionRepository.delete({id: pendingConnection.id});
-			}
+		let authorizedConnectionId: string | undefined;
+		const authorizationLockKey = this.getAuthorizationLockKey(accountId, session.aspsp.name, session.aspsp.country);
+		const authorizationLock = await this.connectionLockService.acquire(authorizationLockKey, {
+			waitForMs: AUTHORIZATION_LOCK_WAIT_MS,
 		});
+		let connectionLock: BankingConnectionLock | undefined;
+		const assertLocksHealthy = () => {
+			authorizationLock.assertHealthy();
+			connectionLock?.assertHealthy();
+		};
+
+		try {
+			assertLocksHealthy();
+			let lockConnectionId = replacesConnectionId ?? connectionId;
+			if (replacesConnectionId === null) {
+				const reusableConnection = await this.bankConnectionRepository.findOne({
+					where: this.getReusableConnectionWhere(accountId, session.aspsp.name, session.aspsp.country),
+					order: {createdAt: 'DESC'},
+				});
+				lockConnectionId = reusableConnection?.id ?? connectionId;
+			}
+			if (lockConnectionId !== authorizationLockKey) {
+				connectionLock = await this.connectionLockService.acquire(lockConnectionId, {
+					waitForMs: AUTHORIZATION_LOCK_WAIT_MS,
+				});
+			}
+			assertLocksHealthy();
+
+			await this.dataSource.transaction(async (manager) => {
+				assertLocksHealthy();
+				const connectionRepository = manager.getRepository(BankConnection);
+				const bankAccountRepository = manager.getRepository(BankAccount);
+
+				const pendingConnection = await connectionRepository.findOne({
+					where: {
+						id: connectionId,
+						status: BANK_CONNECTION_STATUSES.PENDING_AUTHORIZATION,
+						authorizationStateHash,
+						account: {id: accountId},
+					},
+					lock: {mode: 'pessimistic_write'},
+				});
+				if (!pendingConnection) {
+					throw new BankingAuthorizationStateError('state_superseded');
+				}
+
+				if (replacesConnectionId === undefined) {
+					throw new BankingAuthorizationStateError('state_superseded');
+				}
+
+				// Re-authorizing an ASPSP refreshes the existing connection instead of
+				// creating a parallel one with duplicated bank accounts and transactions.
+				const reusableConnection = await connectionRepository.findOne({
+					where: this.getReusableConnectionWhere(
+						accountId,
+						pendingConnection.aspspName,
+						pendingConnection.aspspCountry,
+						replacesConnectionId === null ? undefined : replacesConnectionId,
+					),
+					lock: {mode: 'pessimistic_write'},
+					...(replacesConnectionId === null ? {order: {createdAt: 'DESC'}} : {}),
+				});
+				if (replacesConnectionId !== null && !reusableConnection) {
+					throw new BankingAuthorizationStateError('state_superseded');
+				}
+				const targetConnection = reusableConnection ?? pendingConnection;
+				authorizedConnectionId = targetConnection.id;
+
+				await connectionRepository.update(
+					{id: targetConnection.id},
+					{
+						providerSessionId: this.encryptionService.encrypt(session.sessionId),
+						status: BANK_CONNECTION_STATUSES.AUTHORIZED,
+						authorizationStateHash: null,
+						aspspName: session.aspsp.name,
+						aspspCountry: session.aspsp.country,
+						consentValidUntil,
+						lastSyncError: null,
+						nextSyncAt: new Date(),
+						syncStartedAt: null,
+						syncStatus: BANK_SYNC_STATUSES.QUEUED,
+						syncFailureCount: 0,
+					},
+				);
+
+				for (const account of session.accounts) {
+					if (!account.uid) continue;
+
+					const values = this.toBankAccountValues(account);
+					let bankAccount = await bankAccountRepository.findOne({
+						where: {bankConnection: {id: targetConnection.id}, providerAccountId: account.uid},
+					});
+
+					if (!bankAccount) {
+						bankAccount = await bankAccountRepository.findOne({
+							where: {
+								bankConnection: {id: targetConnection.id},
+								identificationHash: account.identificationHash,
+							},
+						});
+					}
+
+					if (!bankAccount) {
+						bankAccount = bankAccountRepository.create({
+							bankConnection: {id: targetConnection.id},
+							...values,
+						});
+					} else {
+						Object.assign(bankAccount, values);
+					}
+
+					await bankAccountRepository.save(bankAccount);
+				}
+
+				if (targetConnection.id !== pendingConnection.id) {
+					await connectionRepository.delete({id: pendingConnection.id});
+				}
+				assertLocksHealthy();
+			});
+			assertLocksHealthy();
+		} finally {
+			if (connectionLock) {
+				await this.releaseLockSafely(connectionLock, 'Bank authorization lock release failed');
+			}
+			await this.releaseLockSafely(authorizationLock, 'Bank authorization scope lock release failed');
+		}
+
+		if (!authorizedConnectionId) return;
+		try {
+			await this.bankingSyncQueueService.enqueueInitialSync(authorizedConnectionId);
+		} catch (error) {
+			this.logger.warn(`Initial bank synchronization enqueue failed: ${this.getSafeErrorCode(error)}`);
+		}
 	}
 
 	private async getAspsps(country?: string) {
@@ -490,9 +544,16 @@ export class BankingService {
 		if (!state || state.length > 256) return;
 
 		await this.bankConnectionRepository.update(
-			{authorizationStateHash: this.hashAuthorizationState(state), status: PENDING_AUTHORIZATION},
-			{status: FAILED, authorizationStateHash: null},
+			{
+				authorizationStateHash: this.hashAuthorizationState(state),
+				status: BANK_CONNECTION_STATUSES.PENDING_AUTHORIZATION,
+			},
+			{status: BANK_CONNECTION_STATUSES.FAILED, authorizationStateHash: null},
 		);
+	}
+
+	private getAuthorizationLockKey(accountId: string, aspspName: string, aspspCountry: string): string {
+		return `authorization:${this.hashAuthorizationState(`${accountId}:${aspspName}:${aspspCountry}`)}`;
 	}
 
 	private hashAuthorizationState(state: string): string {
@@ -600,6 +661,15 @@ export class BankingService {
 		}
 
 		return new InternalServerErrorException(BANKING_AUTHORIZATION_START_FAILED);
+	}
+
+	private async releaseLockSafely(lock: BankingConnectionLock, warning: string): Promise<void> {
+		lock.stop();
+		try {
+			await lock.release();
+		} catch (error) {
+			this.logger.warn(`${warning}: ${this.getSafeErrorCode(error)}`);
+		}
 	}
 
 	private getSafeErrorCode(error: unknown): string {

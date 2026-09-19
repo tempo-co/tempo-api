@@ -61,6 +61,11 @@ export const configSchema = z
 		ENABLE_BANKING_REDIRECT_URL: z.string().url(),
 		BANKING_SESSION_ENCRYPTION_KEY_B64: z.string().min(1),
 
+		// --- Banking synchronization ---
+		BANKING_SYNC_INTERVAL: durationSchema.default('6h'),
+		BANKING_SYNC_DISPATCH_INTERVAL: durationSchema.default('10m'),
+		BANKING_SYNC_RUNNING_TIMEOUT: durationSchema.default('30m'),
+
 		// --- Email ---
 		EMAIL_HOST: z.string().min(1),
 		EMAIL_PORT: portSchema,
