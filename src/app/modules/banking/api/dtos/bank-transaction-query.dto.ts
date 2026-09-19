@@ -18,6 +18,10 @@ import {DEFAULT_PAGE_INDEX, DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS} from '@core/pa
 import {transformStrictDecimalInteger} from '@core/pagination/pagination.transform';
 
 import {
+	BANK_TRANSACTION_FINANCIAL_EVENT_TYPES,
+	type BankTransactionFinancialEventType,
+} from '../../bank-transaction-financial-event';
+import {
 	BANK_TRANSACTION_CATEGORIZATION_SOURCES,
 	type BankTransactionCategorizationSource,
 } from '../../categorization/bank-transaction-categorization.types';
@@ -103,6 +107,11 @@ export class BankTransactionFilterQueryDto {
 	@IsArray()
 	@IsEnum(BANK_TRANSACTION_CATEGORIZATION_SOURCES, {each: true})
 	categorySources?: BankTransactionCategorizationSource[];
+
+	@IsOptional()
+	@IsArray()
+	@IsEnum(BANK_TRANSACTION_FINANCIAL_EVENT_TYPES, {each: true})
+	financialEventTypes?: BankTransactionFinancialEventType[];
 }
 
 export class BankTransactionQueryDto {
