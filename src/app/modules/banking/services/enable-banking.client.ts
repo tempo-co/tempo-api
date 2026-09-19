@@ -191,8 +191,9 @@ export class EnableBankingClient {
 			throw new EnableBankingClientError('provider_unreachable');
 		}
 
-		const responseText = await response.text();
+		const responseBytes = Buffer.from(await response.arrayBuffer());
 		const retryAfterSeconds = this.parseRetryAfter(response.headers.get('retry-after'));
+		const responseText = this.decodeBodyText(responseBytes, response.headers.get('content-type'));
 		let responseBody: unknown;
 
 		if (responseText) {
@@ -431,6 +432,30 @@ export class EnableBankingClient {
 			region: postalAddress?.country_sub_division,
 			country: postalAddress?.country,
 		});
+	}
+
+	private decodeBodyText(bytes: Buffer, contentType: string | null): string {
+		try {
+			// Some ASPSP feeds declare a legacy charset while emitting UTF-8 bytes; valid UTF-8 always wins.
+			return new TextDecoder('utf-8', {fatal: true}).decode(bytes);
+		} catch {
+			// Not valid UTF-8: honor the declared charset, otherwise assume the common Latin-1 superset.
+		}
+
+		const declaredCharset = contentType
+			?.toLowerCase()
+			.match(/charset=([^\s;]+)/)?.[1]
+			?.replace(/"/g, '');
+
+		if (declaredCharset && !/^utf-?8$/i.test(declaredCharset)) {
+			try {
+				return new TextDecoder(declaredCharset).decode(bytes);
+			} catch {
+				// Unknown declared charset: continue with the default legacy charset.
+			}
+		}
+
+		return new TextDecoder('windows-1252').decode(bytes);
 	}
 
 	private parseRemittanceInformation(value: unknown): string | undefined {
