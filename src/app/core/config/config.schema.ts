@@ -60,6 +60,7 @@ export const configSchema = z
 		ENABLE_BANKING_PRIVATE_KEY_PATH: z.string().min(1).optional(),
 		ENABLE_BANKING_REDIRECT_URL: z.string().url(),
 		BANKING_SESSION_ENCRYPTION_KEY_B64: z.string().min(1),
+		BANK_TRANSACTION_OWNER_IDENTITY_TOKEN: z.string().trim().min(3).max(128).optional(),
 
 		// --- Banking synchronization ---
 		BANKING_SYNC_INTERVAL: durationSchema.default('6h'),

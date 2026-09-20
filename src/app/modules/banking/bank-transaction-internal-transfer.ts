@@ -4,6 +4,7 @@ export const BANK_TRANSACTION_INTERNAL_TRANSFER_MATCH_EVIDENCE = {
 	COUNTERPARTY_ACCOUNT: 'COUNTERPARTY_ACCOUNT',
 	SAME_CONNECTION_TRANSFER: 'SAME_CONNECTION_TRANSFER',
 	OWNER_IDENTITY_PROVIDER_MARKER: 'OWNER_IDENTITY_PROVIDER_MARKER',
+	OWNER_IDENTITY_TOKEN: 'OWNER_IDENTITY_TOKEN',
 } as const;
 
 type BankTransactionInternalTransferMatchEvidence =
@@ -13,6 +14,7 @@ export type BankTransactionInternalTransferCandidate = {
 	id: string;
 	ownerId: string;
 	ownerName: string | null;
+	ownerIdentityToken: string | null;
 	bankConnectionId: string;
 	bankAccountId: string;
 	accountIdentifier: BankAccountIdentifier | null;
@@ -146,7 +148,32 @@ function getEvidence(
 		return BANK_TRANSACTION_INTERNAL_TRANSFER_MATCH_EVIDENCE.OWNER_IDENTITY_PROVIDER_MARKER;
 	}
 
+	if (hasOwnerIdentityToken(left, right)) {
+		return BANK_TRANSACTION_INTERNAL_TRANSFER_MATCH_EVIDENCE.OWNER_IDENTITY_TOKEN;
+	}
+
 	return null;
+}
+
+function hasOwnerIdentityToken(
+	left: BankTransactionInternalTransferCandidate,
+	right: BankTransactionInternalTransferCandidate,
+): boolean {
+	if (left.bankConnectionId === right.bankConnectionId) return false;
+	if (!isOwnerIdentityTokenTransferLike(left) || !isOwnerIdentityTokenTransferLike(right)) return false;
+
+	const leftToken = normalizeEvidenceText(left.ownerIdentityToken);
+	const rightToken = normalizeEvidenceText(right.ownerIdentityToken);
+	if (!leftToken || leftToken.length < 3 || leftToken !== rightToken) return false;
+
+	return (
+		containsEvidencePhrase([left.description], leftToken) && containsEvidencePhrase([right.description], rightToken)
+	);
+}
+
+function isOwnerIdentityTokenTransferLike(transaction: BankTransactionInternalTransferCandidate): boolean {
+	const transactionType = transaction.transactionType?.trim().toUpperCase();
+	return transactionType === TRANSFER_TYPE || transactionType === 'OTHER';
 }
 
 function isTransferLike(transaction: BankTransactionInternalTransferCandidate): boolean {

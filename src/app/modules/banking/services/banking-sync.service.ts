@@ -540,7 +540,13 @@ export class BankingSyncService {
 			}
 
 			if (status === SUCCEEDED) {
-				persistedTransactionIds.push(...(await reconcileBankTransactionInternalTransfers(manager, accountId)));
+				persistedTransactionIds.push(
+					...(await reconcileBankTransactionInternalTransfers(
+						manager,
+						accountId,
+						this.configurationService.get('BANK_TRANSACTION_OWNER_IDENTITY_TOKEN') ?? null,
+					)),
+				);
 			}
 
 			await runRepository.update(

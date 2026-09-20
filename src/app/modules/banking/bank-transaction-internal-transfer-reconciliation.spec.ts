@@ -114,6 +114,45 @@ describe('reconcileBankTransactionInternalTransfers', () => {
 		expect(repository.save).toHaveBeenCalledWith([debit, credit]);
 	});
 
+	it('uses the server-side owner identity token for provider descriptions', async () => {
+		const debit = transaction({
+			id: 'debit',
+			amount: '-50.00000000',
+			creditDebitIndicator: 'DBIT',
+			transactionType: 'OTHER',
+			description: 'synthetic-surname sent',
+			bankAccount: {
+				id: 'account-a',
+				bankConnection: {id: 'connection-a', aspspName: 'Synthetic Bank'},
+			},
+		});
+		const credit = transaction({
+			id: 'credit',
+			amount: '50.00000000',
+			transactionType: 'OTHER',
+			description: 'synthetic-surname received',
+			bankAccount: {
+				id: 'account-b',
+				bankConnection: {id: 'connection-b', aspspName: 'Other Bank'},
+			},
+		});
+		const {manager, repository} = createManager([debit, credit]);
+
+		await expect(
+			reconcileBankTransactionInternalTransfers(manager, 'owner-id', 'synthetic-surname'),
+		).resolves.toEqual(['debit', 'credit']);
+		expect(debit).toMatchObject({
+			financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.INTERNAL_TRANSFER,
+			financialEventSource: BANK_TRANSACTION_FINANCIAL_EVENT_SOURCES.MATCHER,
+			financialEventRuleVersion: BANK_TRANSACTION_INTERNAL_TRANSFER_RULE_VERSION,
+		});
+		expect(credit).toMatchObject({
+			financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.INTERNAL_TRANSFER,
+			financialEventSource: BANK_TRANSACTION_FINANCIAL_EVENT_SOURCES.MATCHER,
+			financialEventRuleVersion: BANK_TRANSACTION_INTERNAL_TRANSFER_RULE_VERSION,
+		});
+		expect(repository.save).toHaveBeenCalledWith([debit, credit]);
+	});
 	it('does not write an already reconciled pair again', async () => {
 		const event = {
 			financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.INTERNAL_TRANSFER,

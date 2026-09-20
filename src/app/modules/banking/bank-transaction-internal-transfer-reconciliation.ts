@@ -18,6 +18,7 @@ import {BANK_TRANSACTION_CATEGORIZATION_RESET_VALUES} from './categorization/ban
 export async function reconcileBankTransactionInternalTransfers(
 	manager: EntityManager,
 	ownerId: string,
+	ownerIdentityToken: string | null = null,
 ): Promise<string[]> {
 	const owner = await manager.getRepository(Account).findOne({
 		select: {name: true},
@@ -42,6 +43,7 @@ export async function reconcileBankTransactionInternalTransfers(
 			id: transaction.id,
 			ownerId,
 			ownerName,
+			ownerIdentityToken,
 			bankConnectionId: transaction.bankAccount.bankConnection.id,
 			bankAccountId: transaction.bankAccount.id,
 			accountIdentifier: transaction.bankAccount.accountIdentifier ?? null,

@@ -2,9 +2,10 @@ import {matchBankTransactionInternalTransfers} from './bank-transaction-internal
 
 const ownAccount = (value: string) => ({scheme: 'IBAN' as const, value});
 
-function transaction(
-	overrides: Partial<Parameters<typeof matchBankTransactionInternalTransfers>[0][number]> = {},
-): Parameters<typeof matchBankTransactionInternalTransfers>[0][number] {
+type Candidate = Parameters<typeof matchBankTransactionInternalTransfers>[0][number];
+type TransactionOverrides = Partial<Candidate> & {ownerIdentityToken?: string | null};
+
+function transaction(overrides: TransactionOverrides = {}): Candidate {
 	return {
 		id: 'transaction-id',
 		ownerId: 'owner-id',
@@ -20,6 +21,7 @@ function transaction(
 		bookingDate: '2026-09-10',
 		financialEventType: null,
 		ownerName: null,
+		ownerIdentityToken: null,
 		aspspName: null,
 		description: null,
 		counterpartyName: null,
@@ -158,6 +160,85 @@ describe('bank transaction internal transfer matching', () => {
 				evidence: 'OWNER_IDENTITY_PROVIDER_MARKER',
 			},
 		]);
+	});
+
+	it('matches two provider descriptions with a configured owner identity token', () => {
+		const debit = transaction({
+			id: 'debit',
+			bankConnectionId: 'connection-a',
+			bankAccountId: 'account-a',
+			ownerIdentityToken: 'synthetic-surname',
+			description: 'Transfer for Synthetic Surname',
+			transactionType: 'OTHER',
+			amount: '-50.00000000',
+			creditDebitIndicator: 'DBIT',
+		});
+		const credit = transaction({
+			id: 'credit',
+			bankConnectionId: 'connection-b',
+			bankAccountId: 'account-b',
+			ownerIdentityToken: 'synthetic-surname',
+			description: 'Synthetic Surname received',
+			transactionType: 'OTHER',
+			amount: '50.00000000',
+			creditDebitIndicator: 'CRDT',
+		});
+
+		expect(matchBankTransactionInternalTransfers([debit, credit])).toEqual([
+			{
+				transactionIds: ['debit', 'credit'],
+				evidence: 'OWNER_IDENTITY_TOKEN',
+			},
+		]);
+	});
+
+	it('does not match an owner identity token embedded in a longer word', () => {
+		const debit = transaction({
+			id: 'debit',
+			bankConnectionId: 'connection-a',
+			bankAccountId: 'account-a',
+			ownerIdentityToken: 'synthetic-surname',
+			description: 'synthetic-surnamex sent',
+			transactionType: 'OTHER',
+			amount: '-50.00000000',
+			creditDebitIndicator: 'DBIT',
+		});
+		const credit = transaction({
+			id: 'credit',
+			bankConnectionId: 'connection-b',
+			bankAccountId: 'account-b',
+			ownerIdentityToken: 'synthetic-surname',
+			description: 'synthetic-surnamex received',
+			transactionType: 'OTHER',
+			amount: '50.00000000',
+			creditDebitIndicator: 'CRDT',
+		});
+
+		expect(matchBankTransactionInternalTransfers([debit, credit])).toEqual([]);
+	});
+	it('does not use an owner identity token for card payments', () => {
+		const debit = transaction({
+			id: 'debit',
+			bankConnectionId: 'connection-a',
+			bankAccountId: 'account-a',
+			ownerIdentityToken: 'synthetic-surname',
+			description: 'Synthetic Surname card payment',
+			transactionType: 'CARD_PAYMENT',
+			amount: '-50.00000000',
+			creditDebitIndicator: 'DBIT',
+		});
+		const credit = transaction({
+			id: 'credit',
+			bankConnectionId: 'connection-b',
+			bankAccountId: 'account-b',
+			ownerIdentityToken: 'synthetic-surname',
+			description: 'Synthetic Surname card payment',
+			transactionType: 'CARD_PAYMENT',
+			amount: '50.00000000',
+			creditDebitIndicator: 'CRDT',
+		});
+
+		expect(matchBankTransactionInternalTransfers([debit, credit])).toEqual([]);
 	});
 
 	it('does not use owner identity without a cross-provider marker', () => {
