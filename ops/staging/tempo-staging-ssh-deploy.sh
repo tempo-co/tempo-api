@@ -124,8 +124,15 @@ check_count=$(jq '[.[] | .check_runs[]] | length' <<< "$checks_json")
 status_count=$(jq '[.[] | .statuses[]] | length' <<< "$statuses_json")
 failed_checks=$(jq '[.[] | .check_runs[] | select(.status != "completed" or (.conclusion | IN("success", "neutral", "skipped") | not))] | length' <<< "$checks_json")
 failed_statuses=$(jq '[.[] | .statuses[] | select(.state != "success")] | length' <<< "$statuses_json")
+case "$repository" in
+  tempo-co/tempo-api) required_checks='["Lint & Format", "Build", "Unit Tests", "E2E Tests"]' ;;
+  tempo-co/tempo-web) required_checks='["Lint & Format", "Build", "E2E Tests"]' ;;
+  *) fail 'repository is not an allowed staging repository' ;;
+esac
+missing_checks=$(jq -r --argjson required "$required_checks" '[ $required[] as $name | select(([.[] | .check_runs[] | select(.name == $name and .status == "completed" and .conclusion == "success")] | length) == 0) | $name ] | join(",")' <<< "$checks_json")
 (( check_count + status_count > 0 )) || fail 'PR has no completed checks or statuses'
 (( failed_checks == 0 && failed_statuses == 0 )) || fail 'PR checks are not all successful'
+[[ -z "$missing_checks" ]] || fail "required PR checks are missing or unsuccessful: $missing_checks"
 
 update_image() {
   local key="$1"

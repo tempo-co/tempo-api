@@ -36,6 +36,18 @@ const baseConfig = {
 	THROTTLE_LIMIT: '100',
 };
 
+describe('boolean environment configuration', () => {
+	it('parses literal false strings as false', () => {
+		const parsed = configSchema.parse({
+			...baseConfig,
+			EMAIL_SECURE: 'false',
+		});
+
+		expect(parsed.DB_SYNCHRONIZE).toBe(false);
+		expect(parsed.EMAIL_SECURE).toBe(false);
+	});
+});
+
 describe('categorization web-search configuration', () => {
 	it('defaults the fallback off', () => {
 		const parsed = configSchema.parse(baseConfig);

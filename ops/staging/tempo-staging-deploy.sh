@@ -243,6 +243,13 @@ up() {
   wait_for_healthy web
 }
 
+reload_web_proxy() {
+  local web_container
+  web_container=$(compose ps -q web 2>/dev/null || true)
+  [[ -n "$web_container" ]] || return 0
+  compose exec -T web nginx -s reload
+}
+
 deploy_component() {
   local service="$1"
   [[ "$service" == api || "$service" == web ]] || fail 'component must be api or web'
@@ -252,6 +259,9 @@ deploy_component() {
   compose pull "$service"
   compose up -d --no-deps "$service"
   wait_for_healthy "$service"
+  if [[ "$service" == api ]]; then
+    reload_web_proxy
+  fi
 }
 
 case "${1:-validate}" in

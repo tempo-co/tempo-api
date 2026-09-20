@@ -148,13 +148,34 @@ ensure_dependencies() {
 }
 
 psql_admin() {
-  compose exec -T -e "PGPASSWORD=$staging_db_password" postgres psql -v ON_ERROR_STOP=1 -U "$staging_db_user" -d postgres "$@"
+  printf '%s\n' "$staging_db_password" | compose exec -T postgres sh -c '
+    set -eu
+    umask 077
+    passfile=$(mktemp)
+    cleanup() { rm -f "$passfile"; }
+    trap cleanup EXIT
+    cat >"$passfile"
+    user="$1"
+    shift
+    PGPASSFILE="$passfile" psql -v ON_ERROR_STOP=1 -U "$user" -d postgres "$@"
+  ' -- "$staging_db_user" "$@"
 }
 
 psql_db() {
   local database="$1"
   shift
-  compose exec -T -e "PGPASSWORD=$staging_db_password" postgres psql -v ON_ERROR_STOP=1 -U "$staging_db_user" -d "$database" "$@"
+  printf '%s\n' "$staging_db_password" | compose exec -T postgres sh -c '
+    set -eu
+    umask 077
+    passfile=$(mktemp)
+    cleanup() { rm -f "$passfile"; }
+    trap cleanup EXIT
+    cat >"$passfile"
+    user="$1"
+    database="$2"
+    shift 2
+    PGPASSFILE="$passfile" psql -v ON_ERROR_STOP=1 -U "$user" -d "$database" "$@"
+  ' -- "$staging_db_user" "$database" "$@"
 }
 
 acquire_mutation_lock() {
@@ -218,12 +239,17 @@ rollback_database() {
   local refresh_database="$1"
   local previous_database="$2"
   local failed_database="${refresh_database}_failed"
+  local rollback_failed=0
+  local database_state
 
-  compose stop api web >/dev/null 2>&1 || true
-  psql_admin -c "ALTER DATABASE \"$staging_db_name\" RENAME TO \"$failed_database\"; ALTER DATABASE \"$previous_database\" RENAME TO \"$staging_db_name\";" >/dev/null 2>&1 || true
+  compose stop api web >/dev/null 2>&1 || rollback_failed=1
+  psql_admin -c "ALTER DATABASE \"$staging_db_name\" RENAME TO \"$failed_database\"; ALTER DATABASE \"$previous_database\" RENAME TO \"$staging_db_name\";" >/dev/null 2>&1 || rollback_failed=1
   cleanup_databases=("$failed_database")
-  compose exec -T redis redis-cli FLUSHALL >/dev/null 2>&1 || true
-  TEMPO_STAGING_ENV_FILE="$env_file" TEMPO_STAGING_STATE_DIR="$state_dir" TEMPO_STAGING_LOCK_HELD=1 "$deploy_script" up >/dev/null 2>&1 || true
+  compose exec -T redis redis-cli FLUSHALL >/dev/null 2>&1 || rollback_failed=1
+  TEMPO_STAGING_ENV_FILE="$env_file" TEMPO_STAGING_STATE_DIR="$state_dir" TEMPO_STAGING_LOCK_HELD=1 "$deploy_script" up >/dev/null 2>&1 || rollback_failed=1
+  database_state=$(psql_admin -At -c "SELECT (SELECT COUNT(*) FROM pg_database WHERE datname = '$staging_db_name') = 1 AND (SELECT COUNT(*) FROM pg_database WHERE datname = '$previous_database') = 0 AND (SELECT COUNT(*) FROM pg_database WHERE datname = '$failed_database') = 1;" 2>/dev/null || true)
+  [[ "$database_state" == t ]] || rollback_failed=1
+  (( rollback_failed == 0 ))
 }
 
 switch_database() {
@@ -231,16 +257,19 @@ switch_database() {
   local previous_database="${staging_db_name}_previous_$(date -u +%Y%m%d%H%M%S)"
   [[ "${#previous_database}" -le 63 ]] || fail 'previous database name is too long'
   cleanup_databases=("$refresh_database" "${refresh_database}_failed")
-  compose stop api web >/dev/null 2>&1 || true
+  compose stop api web >/dev/null 2>&1
   psql_admin -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$staging_db_name' AND pid <> pg_backend_pid();" >/dev/null
   psql_admin -c "ALTER DATABASE \"$staging_db_name\" RENAME TO \"$previous_database\"; ALTER DATABASE \"$refresh_database\" RENAME TO \"$staging_db_name\";" >/dev/null
 
   if ! (psql_db "$staging_db_name" -At -c 'SELECT 1;' >/dev/null && compose exec -T redis redis-cli FLUSHALL >/dev/null && TEMPO_STAGING_ENV_FILE="$env_file" TEMPO_STAGING_STATE_DIR="$state_dir" TEMPO_STAGING_LOCK_HELD=1 "$deploy_script" up); then
-    rollback_database "$refresh_database" "$previous_database"
-    fail 'staging health failed; previous database was restored where possible'
+    if rollback_database "$refresh_database" "$previous_database"; then
+      fail 'staging health failed; previous database restored and rollback verified'
+    fi
+    fail 'staging health failed; rollback verification failed and manual intervention is required'
   fi
 
-  psql_admin -c "DROP DATABASE \"$previous_database\";" >/dev/null || printf 'tempo staging refresh: warning: old staging database was not removed: %s\n' "$previous_database" >&2
+  cleanup_databases=("$previous_database")
+  drop_database "$previous_database" || fail "staging refresh succeeded but old database could not be removed: $previous_database"
   cleanup_databases=()
 }
 

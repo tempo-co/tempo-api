@@ -29,7 +29,7 @@ export const configSchema = z
 		DB_USERNAME: z.string().min(1),
 		DB_PASSWORD: z.string().min(1),
 		DB_NAME: z.string().min(1),
-		DB_SYNCHRONIZE: z.coerce.boolean(),
+		DB_SYNCHRONIZE: strictBooleanEnvSchema,
 		DB_PGADMIN_PORT: portSchema,
 
 		// --- Session ---
@@ -70,7 +70,7 @@ export const configSchema = z
 		// --- Email ---
 		EMAIL_HOST: z.string().min(1),
 		EMAIL_PORT: portSchema,
-		EMAIL_SECURE: z.coerce.boolean().default(false),
+		EMAIL_SECURE: strictBooleanEnvSchema.default(false),
 		EMAIL_UI_PORT: portSchema,
 		EMAIL_UI_URL: z.string().url(),
 		EMAIL_VERIFICATION_EXPIRATION: durationSchema,

@@ -51,11 +51,22 @@ jobs:
                   status_count="$(jq '[.[] | .statuses[]] | length' <<<"$statuses_json")"
                   failed_checks="$(jq '[.[] | .check_runs[] | select(.status != "completed" or (.conclusion | IN("success", "neutral", "skipped") | not))] | length' <<<"$checks_json")"
                   failed_statuses="$(jq '[.[] | .statuses[] | select(.state != "success")] | length' <<<"$statuses_json")"
+                  missing_checks="$(jq -r --argjson required '["Lint & Format", "Build", "Unit Tests", "E2E Tests"]' '[ $required[] as $name | select(([.[] | .check_runs[] | select(.name == $name and .status == "completed" and .conclusion == "success")] | length) == 0) | $name ] | join(",")' <<<"$checks_json")"
 
                   (( check_count + status_count > 0 ))
                   (( failed_checks == 0 ))
                   (( failed_statuses == 0 ))
+                  [[ -z "$missing_checks" ]]
                   printf 'head_sha=%s\n' "$head_sha" >> "$GITHUB_OUTPUT"
+            - name: Checkout staging contracts
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+            - name: Run staging contract tests
+              run: |
+                  bash ops/tests/tempo-staging-deploy-test.sh
+                  bash ops/tests/tempo-staging-host-install-test.sh
+                  bash ops/tests/tempo-staging-ssh-deploy-test.sh
+                  bash ops/tests/tempo-staging-refresh-test.sh
+                  bash ops/tests/tempo-staging-workflow-test.sh
 
     build:
         name: Build and publish API image

@@ -38,7 +38,7 @@ endpoint = next((arg for arg in sys.argv[1:] if arg.startswith("repos/")), "")
 if endpoint.endswith('/pulls/42'):
     print(json.dumps({"head": {"repo": {"full_name": "tempo-co/tempo-api"}, "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}, "base": {"ref": "main"}, "state": "open", "draft": False}))
 elif endpoint.endswith('/check-runs?per_page=100'):
-    print(json.dumps([{"total_count": 1, "check_runs": [{"status": "completed", "conclusion": "success"}]}]))
+    print(json.dumps([{"check_runs": [{"name": "Lint & Format", "status": "completed", "conclusion": "success"}, {"name": "Build", "status": "completed", "conclusion": "success"}, {"name": "Unit Tests", "status": "completed", "conclusion": "success"}, {"name": "E2E Tests", "status": "completed", "conclusion": "success"}]}]))
 elif endpoint.endswith('/status?per_page=100'):
     print(json.dumps([{"total_count": 1, "statuses": [{"state": "success"}]}]))
 else:

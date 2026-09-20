@@ -37,6 +37,7 @@ TEMPO_STAGING_ENV_FILE="$staging_env" docker compose -p tempo-staging-test -f "$
 python3 - "$config_json" <<'PY'
 import json
 import sys
+from pathlib import Path
 
 with open(sys.argv[1], encoding='utf-8') as handle:
     config = json.load(handle)
@@ -52,6 +53,8 @@ assert services['api']['environment']['BANKING_INTEGRATION_ENABLED'] in (False, 
 assert services['api']['environment']['AI_CATEGORIZATION_ENABLED'] in (False, 'false')
 assert services['api']['environment']['AI_CATEGORIZATION_WEB_SEARCH_ENABLED'] in (False, 'false')
 assert services['api']['environment']['REDIS_URL'] == 'redis://redis:6379'
+assert services['api']['environment']['EMAIL_SECURE'] in (False, 'false')
+assert services['api']['environment']['DB_SYNCHRONIZE'] in (False, 'false')
 assert 'env_file' not in services['api']
 assert 'OPENAI_API_KEY' not in services['api']['environment']
 
@@ -72,6 +75,7 @@ for service_name, service in services.items():
 
 assert config['volumes']['tempo_staging_postgres_data']['name'] == 'tempo-staging-postgres-data'
 assert config['networks']['backend']['internal'] is True
+assert 'nginx -s reload' in Path('ops/staging/tempo-staging-deploy.sh').read_text(encoding='utf-8')
 PY
 
 if TEMPO_STAGING_ENV_FILE="$staging_env" TEMPO_API_IMAGE=ghcr.io/tempo-co/tempo-api:latest bash "$repo_root/ops/staging/tempo-staging-deploy.sh" validate; then
