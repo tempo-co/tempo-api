@@ -42,6 +42,9 @@ mode_value=$((8#$mode))
 public_key=$(<"$public_key_file")
 [[ "$public_key" =~ ^ssh-ed25519[[:space:]] ]] || fail 'only ssh-ed25519 public keys are accepted'
 [[ "$public_key" != *$'\n'* ]] || fail 'public-key file must contain one line'
+read -r key_type key_blob _ <<< "$public_key"
+[[ "$key_type" == ssh-ed25519 && "$key_blob" =~ ^[A-Za-z0-9+/]+={0,2}$ ]] || fail 'public-key file has an invalid key identity'
+key_identity="$key_type $key_blob"
 
 mkdir -p "$libexec_dir" "$config_dir" "$state_dir" "$ssh_dir"
 chmod 700 "$config_dir" "$state_dir" "$ssh_dir"
@@ -57,13 +60,34 @@ chmod 600 "$env_file"
 if [[ ! -e "$authorized_keys" ]]; then
   install -m 600 /dev/null "$authorized_keys"
 fi
-forced_command="command=\"$libexec_dir/tempo-staging-ssh-deploy.sh\",no-agent-forwarding,no-port-forwarding,no-pty,no-X11-forwarding,no-user-rc $public_key"
-if grep -Fq -- "$public_key" "$authorized_keys"; then
-  grep -Fqx -- "$forced_command" "$authorized_keys" || fail 'public key already exists without the required forced-command restriction'
-else
-  printf '%s\n' "$forced_command" >> "$authorized_keys"
-fi
-chmod 600 "$authorized_keys"
+forced_command="command=\"$libexec_dir/tempo-staging-ssh-deploy.sh\",no-agent-forwarding,no-port-forwarding,no-pty,no-X11-forwarding,no-user-rc $key_identity"
+authorized_tmp=$(mktemp "$ssh_dir/authorized_keys.XXXXXX")
+trap 'rm -f "$authorized_tmp"' EXIT
+awk -v key_type="$key_type" -v key_blob="$key_blob" -v forced="$forced_command" '
+  {
+    matching = 0
+    for (field_index = 1; field_index < NF; field_index++) {
+      if ($field_index == key_type && $(field_index + 1) == key_blob) {
+        matching = 1
+        break
+      }
+    }
+    if (matching) {
+      if (!seen) {
+        print forced
+        seen = 1
+      }
+      next
+    }
+    print
+  }
+  END {
+    if (!seen) print forced
+  }
+' "$authorized_keys" > "$authorized_tmp"
+install -m 600 "$authorized_tmp" "$authorized_keys"
+rm -f "$authorized_tmp"
+trap - EXIT
 
 printf '%s\n' 'Tempo staging host integration: PASS'
 printf 'Deploy user: %s\n' "$(id -un)"
