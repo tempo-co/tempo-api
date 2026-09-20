@@ -18,6 +18,7 @@ required = [
     'statuses: read',
     'head_repo',
     'head_sha',
+    'persist-credentials: false',
     'Run staging contract tests',
     'missing_checks=',
     'bash ops/tests/tempo-staging-refresh-test.sh',

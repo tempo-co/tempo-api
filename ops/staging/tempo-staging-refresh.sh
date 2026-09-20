@@ -11,8 +11,10 @@ readonly expected_docker_host="unix://$runtime_dir/tempo-staging/docker.sock"
 readonly docker_host="${TEMPO_STAGING_DOCKER_HOST:-$expected_docker_host}"
 readonly project_name='tempo-staging'
 readonly state_dir="${TEMPO_STAGING_STATE_DIR:-$HOME/.local/state/tempo-staging}"
+readonly pgpass_path='/tmp/tempo-staging.pgpass'
 
 cleanup_databases=()
+pgpass_initialized=0
 
 fail() {
   printf 'tempo staging refresh: %s\n' "$1" >&2
@@ -51,7 +53,7 @@ staging_db_user=$(read_env_value STAGING_DB_USERNAME) || fail 'STAGING_DB_USERNA
 staging_db_password=$(read_env_value STAGING_DB_PASSWORD) || fail 'STAGING_DB_PASSWORD is missing'
 staging_db_name=$(read_env_value STAGING_DB_NAME) || fail 'STAGING_DB_NAME is missing'
 [[ "$staging_db_user" =~ ^[a-z_][a-z0-9_]{0,62}$ ]] || fail 'STAGING_DB_USERNAME is not a safe PostgreSQL identifier'
-[[ "$staging_db_name" =~ ^[a-z_][a-z0-9_]{0,45}$ ]] || fail 'STAGING_DB_NAME is not a safe PostgreSQL identifier'
+[[ "$staging_db_name" =~ ^[a-z_][a-z0-9_]{0,38}$ ]] || fail 'STAGING_DB_NAME is not a safe PostgreSQL identifier'
 
 for forbidden in ENABLE_BANKING_PRIVATE_KEY_B64 ENABLE_BANKING_PRIVATE_KEY_PATH TEMPO_PRODUCTION_ENV_FILE TEMPO_PRODUCTION_COMPOSE_FILE OPENAI_API_KEY; do
   if python3 - "$env_file" "$forbidden" <<'PY'
@@ -147,35 +149,42 @@ ensure_dependencies() {
   wait_for_healthy mailpit
 }
 
-psql_admin() {
+ensure_pgpass() {
+  (( pgpass_initialized == 1 )) && return 0
   printf '%s\n' "$staging_db_password" | compose exec -T postgres sh -c '
     set -eu
     umask 077
-    passfile=$(mktemp)
-    cleanup() { rm -f "$passfile"; }
-    trap cleanup EXIT
-    cat >"$passfile"
-    user="$1"
-    shift
+    password=$(cat)
+    escaped=$(printf '%s' "$password" | sed "s/[\\\\:]/\\\\&/g")
+    printf "*:*:*:%s:%s\n" "$1" "$escaped" > "$2"
+    chmod 600 "$2"
+  ' -- "$staging_db_user" "$pgpass_path"
+  pgpass_initialized=1
+}
+
+psql_admin() {
+  ensure_pgpass
+  compose exec -T postgres sh -c '
+    set -eu
+    passfile="$1"
+    user="$2"
+    shift 2
     PGPASSFILE="$passfile" psql -v ON_ERROR_STOP=1 -U "$user" -d postgres "$@"
-  ' -- "$staging_db_user" "$@"
+  ' -- "$pgpass_path" "$staging_db_user" "$@"
 }
 
 psql_db() {
   local database="$1"
   shift
-  printf '%s\n' "$staging_db_password" | compose exec -T postgres sh -c '
+  ensure_pgpass
+  compose exec -T postgres sh -c '
     set -eu
-    umask 077
-    passfile=$(mktemp)
-    cleanup() { rm -f "$passfile"; }
-    trap cleanup EXIT
-    cat >"$passfile"
-    user="$1"
-    database="$2"
-    shift 2
+    passfile="$1"
+    user="$2"
+    database="$3"
+    shift 3
     PGPASSFILE="$passfile" psql -v ON_ERROR_STOP=1 -U "$user" -d "$database" "$@"
-  ' -- "$staging_db_user" "$database" "$@"
+  ' -- "$pgpass_path" "$staging_db_user" "$database" "$@"
 }
 
 acquire_mutation_lock() {
@@ -192,6 +201,9 @@ cleanup_pending_databases() {
     [[ -n "$database" ]] || continue
     psql_admin -c "DROP DATABASE IF EXISTS \"$database\";" >/dev/null 2>&1 || true
   done
+  if (( pgpass_initialized == 1 )); then
+    compose exec -T postgres sh -c 'rm -f "$1"' -- "$pgpass_path" >/dev/null 2>&1 || true
+  fi
 }
 
 trap cleanup_pending_databases EXIT

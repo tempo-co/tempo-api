@@ -83,6 +83,7 @@ jobs:
               with:
                   ref: ${{ needs.verify-pr.outputs.head_sha }}
                   fetch-depth: 1
+                  persist-credentials: false
 
             - name: Log in to GitHub Container registry
               uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
