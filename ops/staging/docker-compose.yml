@@ -96,6 +96,8 @@ services:
             SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET must be set}
             SESSION_EXPIRATION: 30d
             SESSION_REDIS_KEY: tempo-staging-session
+            SESSION_COOKIE_NAME: tempo_staging_session
+            SESSION_COOKIE_PATH: /staging
             AI_CATEGORIZATION_ENABLED: 'false'
             AI_CATEGORIZATION_PROVIDER: openai
             AI_CATEGORIZATION_MODEL: gpt-5.6-luna

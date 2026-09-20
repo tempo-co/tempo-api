@@ -55,6 +55,8 @@ assert services['api']['environment']['AI_CATEGORIZATION_WEB_SEARCH_ENABLED'] in
 assert services['api']['environment']['REDIS_URL'] == 'redis://redis:6379'
 assert services['api']['environment']['EMAIL_SECURE'] in (False, 'false')
 assert services['api']['environment']['DB_SYNCHRONIZE'] in (False, 'false')
+assert services['api']['environment']['SESSION_COOKIE_NAME'] == 'tempo_staging_session'
+assert services['api']['environment']['SESSION_COOKIE_PATH'] == '/staging'
 assert 'env_file' not in services['api']
 assert 'OPENAI_API_KEY' not in services['api']['environment']
 

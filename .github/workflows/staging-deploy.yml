@@ -45,15 +45,24 @@ jobs:
                   [[ "$draft" == false ]]
                   [[ "$head_sha" =~ ^[0-9a-f]{40}$ ]]
 
+                  trusted_workflow_id=102921081
+                  main_ci_sha="$(gh api "repos/$repo/contents/.github/workflows/ci.yml?ref=main" --jq '.sha')"
+                  head_ci_sha="$(gh api "repos/$repo/contents/.github/workflows/ci.yml?ref=$head_sha" --jq '.sha')"
+                  [[ "$head_ci_sha" == "$main_ci_sha" ]]
+                  runs_json="$(gh api --paginate --slurp "repos/$repo/actions/runs?head_sha=$head_sha&per_page=100")"
+                  trusted_suite_id="$(jq -r --argjson workflow_id "$trusted_workflow_id" --arg head_sha "$head_sha" '[.[] | .workflow_runs[] | select(.workflow_id == $workflow_id and .head_sha == $head_sha and .path == ".github/workflows/ci.yml" and .status == "completed" and .conclusion == "success" and .check_suite_id != null) | .check_suite_id] | max // empty' <<<"$runs_json")"
+                  [[ "$trusted_suite_id" =~ ^[0-9]+$ ]]
+
                   checks_json="$(gh api --paginate --slurp "repos/$repo/commits/$head_sha/check-runs?per_page=100")"
                   statuses_json="$(gh api --paginate --slurp "repos/$repo/commits/$head_sha/status?per_page=100")"
-                  check_count="$(jq '[.[] | .check_runs[]] | length' <<<"$checks_json")"
+                  check_count="$(jq --argjson suite_id "$trusted_suite_id" '[.[] | .check_runs[] | select(.check_suite.id == $suite_id)] | length' <<<"$checks_json")"
                   status_count="$(jq '[.[] | .statuses[]] | length' <<<"$statuses_json")"
-                  failed_checks="$(jq '[.[] | .check_runs[] | select(.status != "completed" or (.conclusion | IN("success", "neutral", "skipped") | not))] | length' <<<"$checks_json")"
+                  failed_checks="$(jq --argjson suite_id "$trusted_suite_id" '[.[] | .check_runs[] | select(.check_suite.id == $suite_id and (.status != "completed" or (.conclusion | IN("success", "neutral", "skipped") | not)))] | length' <<<"$checks_json")"
                   failed_statuses="$(jq '[.[] | .statuses[] | select(.state != "success")] | length' <<<"$statuses_json")"
-                  missing_checks="$(jq -r --argjson required '["Lint & Format", "Build", "Unit Tests", "E2E Tests"]' '[ $required[] as $name | select(([.[] | .check_runs[] | select(.name == $name and .status == "completed" and .conclusion == "success")] | length) == 0) | $name ] | join(",")' <<<"$checks_json")"
+                  missing_checks="$(jq -r --argjson suite_id "$trusted_suite_id" --argjson required '["Lint & Format", "Build", "Unit Tests", "E2E Tests"]' '[ $required[] as $name | select(([.[] | .check_runs[] | select(.check_suite.id == $suite_id and .name == $name and .status == "completed" and .conclusion == "success")] | length) == 0) | $name ] | join(",")' <<<"$checks_json")"
 
-                  (( check_count + status_count > 0 ))
+                  (( check_count > 0 ))
+                  (( status_count > 0 ))
                   (( failed_checks == 0 ))
                   (( failed_statuses == 0 ))
                   [[ -z "$missing_checks" ]]

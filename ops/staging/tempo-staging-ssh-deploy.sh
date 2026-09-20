@@ -48,12 +48,14 @@ case "$component" in
     image_prefix='ghcr.io/tempo-co/tempo-api@sha256:'
     image_key='TEMPO_API_IMAGE'
     image_tag_prefix='ghcr.io/tempo-co/tempo-api:staging-pr-'
+    trusted_workflow_id=102921081
     ;;
   web)
     expected_repository='tempo-co/tempo-web'
     image_prefix='ghcr.io/tempo-co/tempo-web@sha256:'
     image_key='TEMPO_WEB_IMAGE'
     image_tag_prefix='ghcr.io/tempo-co/tempo-web:staging-pr-'
+    trusted_workflow_id=106563842
     ;;
   *) fail 'component must be api or web' ;;
 esac
@@ -120,17 +122,24 @@ draft=$(jq -r '.draft' <<< "$pr_json")
 
 checks_json=$("$gh_cli" api --paginate --slurp "repos/$repository/commits/$head_sha/check-runs?per_page=100") || fail 'commit check lookup failed'
 statuses_json=$("$gh_cli" api --paginate --slurp "repos/$repository/commits/$head_sha/status?per_page=100") || fail 'commit status lookup failed'
-check_count=$(jq '[.[] | .check_runs[]] | length' <<< "$checks_json")
+main_ci_sha=$("$gh_cli" api "repos/$repository/contents/.github/workflows/ci.yml?ref=main" --jq '.sha') || fail 'main CI workflow lookup failed'
+head_ci_sha=$("$gh_cli" api "repos/$repository/contents/.github/workflows/ci.yml?ref=$head_sha" --jq '.sha') || fail 'PR CI workflow lookup failed'
+[[ "$head_ci_sha" == "$main_ci_sha" ]] || fail 'PR CI workflow differs from trusted main workflow'
+runs_json=$("$gh_cli" api --paginate --slurp "repos/$repository/actions/runs?head_sha=$head_sha&per_page=100") || fail 'workflow run lookup failed'
+trusted_suite_id=$(jq -r --argjson workflow_id "$trusted_workflow_id" --arg head_sha "$head_sha" '[.[] | .workflow_runs[] | select(.workflow_id == $workflow_id and .head_sha == $head_sha and .path == ".github/workflows/ci.yml" and .status == "completed" and .conclusion == "success" and .check_suite_id != null) | .check_suite_id] | max // empty' <<< "$runs_json")
+[[ "$trusted_suite_id" =~ ^[0-9]+$ ]] || fail 'trusted CI workflow has not completed successfully for this PR head'
+
+check_count=$(jq --argjson suite_id "$trusted_suite_id" '[.[] | .check_runs[] | select(.check_suite.id == $suite_id)] | length' <<< "$checks_json")
 status_count=$(jq '[.[] | .statuses[]] | length' <<< "$statuses_json")
-failed_checks=$(jq '[.[] | .check_runs[] | select(.status != "completed" or (.conclusion | IN("success", "neutral", "skipped") | not))] | length' <<< "$checks_json")
+failed_checks=$(jq --argjson suite_id "$trusted_suite_id" '[.[] | .check_runs[] | select(.check_suite.id == $suite_id and (.status != "completed" or (.conclusion | IN("success", "neutral", "skipped") | not)))] | length' <<< "$checks_json")
 failed_statuses=$(jq '[.[] | .statuses[] | select(.state != "success")] | length' <<< "$statuses_json")
 case "$repository" in
   tempo-co/tempo-api) required_checks='["Lint & Format", "Build", "Unit Tests", "E2E Tests"]' ;;
   tempo-co/tempo-web) required_checks='["Lint & Format", "Build", "E2E Tests"]' ;;
   *) fail 'repository is not an allowed staging repository' ;;
 esac
-missing_checks=$(jq -r --argjson required "$required_checks" '[ $required[] as $name | select(([.[] | .check_runs[] | select(.name == $name and .status == "completed" and .conclusion == "success")] | length) == 0) | $name ] | join(",")' <<< "$checks_json")
-(( check_count + status_count > 0 )) || fail 'PR has no completed checks or statuses'
+missing_checks=$(jq -r --argjson suite_id "$trusted_suite_id" --argjson required "$required_checks" '[ $required[] as $name | select(([.[] | .check_runs[] | select(.check_suite.id == $suite_id and .name == $name and .status == "completed" and .conclusion == "success")] | length) == 0) | $name ] | join(",")' <<< "$checks_json")
+(( check_count > 0 && status_count > 0 )) || fail 'PR has no completed checks or statuses'
 (( failed_checks == 0 && failed_statuses == 0 )) || fail 'PR checks are not all successful'
 [[ -z "$missing_checks" ]] || fail "required PR checks are missing or unsuccessful: $missing_checks"
 

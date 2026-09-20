@@ -36,6 +36,11 @@ export const configSchema = z
 		SESSION_SECRET: z.string().min(1),
 		SESSION_EXPIRATION: durationSchema,
 		SESSION_REDIS_KEY: z.string().min(1),
+		SESSION_COOKIE_NAME: z.string().min(1).default('session'),
+		SESSION_COOKIE_PATH: z
+			.string()
+			.regex(/^\/[^\s]*$/)
+			.default('/'),
 
 		// --- Redis ---
 		REDIS_URL: z.string().url(),

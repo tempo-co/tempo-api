@@ -72,6 +72,10 @@ for ambient in TEMPO_API_IMAGE TEMPO_WEB_IMAGE STAGING_PUBLIC_URL STAGING_WEB_HO
   [[ -v "$ambient" ]] && fail "$ambient must be supplied only by the staging environment file"
 done
 
+staging_db_name=$(read_env_value STAGING_DB_NAME) || fail 'STAGING_DB_NAME is missing'
+[[ "$staging_db_name" =~ ^[a-z_][a-z0-9_]{0,38}$ ]] || fail 'STAGING_DB_NAME is not a safe PostgreSQL identifier'
+[[ "$staging_db_name" != postgres && "$staging_db_name" != template0 && "$staging_db_name" != template1 ]] || fail 'STAGING_DB_NAME is reserved by PostgreSQL'
+
 api_image=$(read_env_value TEMPO_API_IMAGE) || fail 'TEMPO_API_IMAGE is missing'
 web_image=$(read_env_value TEMPO_WEB_IMAGE) || fail 'TEMPO_WEB_IMAGE is missing'
 public_url=$(read_env_value STAGING_PUBLIC_URL) || fail 'STAGING_PUBLIC_URL is missing'

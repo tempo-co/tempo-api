@@ -37,8 +37,12 @@ import sys
 endpoint = next((arg for arg in sys.argv[1:] if arg.startswith("repos/")), "")
 if endpoint.endswith('/pulls/42'):
     print(json.dumps({"head": {"repo": {"full_name": "tempo-co/tempo-api"}, "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}, "base": {"ref": "main"}, "state": "open", "draft": False}))
+elif endpoint.startswith('repos/tempo-co/tempo-api/contents/.github/workflows/ci.yml?ref='):
+    print(json.dumps({"sha": "trusted-ci-sha"}))
+elif endpoint.startswith('repos/tempo-co/tempo-api/actions/runs?head_sha='):
+    print(json.dumps([{"workflow_runs": [{"workflow_id": 102921081, "path": ".github/workflows/ci.yml", "head_sha": "a" * 40, "status": "completed", "conclusion": "success", "check_suite_id": 123}]}]))
 elif endpoint.endswith('/check-runs?per_page=100'):
-    print(json.dumps([{"check_runs": [{"name": "Lint & Format", "status": "completed", "conclusion": "success"}, {"name": "Build", "status": "completed", "conclusion": "success"}, {"name": "Unit Tests", "status": "completed", "conclusion": "success"}, {"name": "E2E Tests", "status": "completed", "conclusion": "success"}]}]))
+    print(json.dumps([{"check_runs": [{"check_suite": {"id": 123}, "name": "Lint & Format", "status": "completed", "conclusion": "success"}, {"check_suite": {"id": 123}, "name": "Build", "status": "completed", "conclusion": "success"}, {"check_suite": {"id": 123}, "name": "Unit Tests", "status": "completed", "conclusion": "success"}, {"check_suite": {"id": 123}, "name": "E2E Tests", "status": "completed", "conclusion": "success"}]}]))
 elif endpoint.endswith('/status?per_page=100'):
     print(json.dumps([{"total_count": 1, "statuses": [{"state": "success"}]}]))
 else:

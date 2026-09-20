@@ -274,7 +274,7 @@ switch_database() {
   compose stop api web >/dev/null 2>&1
   psql_admin -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$staging_db_name' AND pid <> pg_backend_pid();" >/dev/null
   psql_admin -c "ALTER DATABASE \"$staging_db_name\" RENAME TO \"$previous_database\";" >/dev/null
-  cleanup_databases=("$refresh_database" "${refresh_database}_failed" "$previous_database")
+  cleanup_databases=("$refresh_database" "${refresh_database}_failed")
   if ! psql_admin -c "ALTER DATABASE \"$refresh_database\" RENAME TO \"$staging_db_name\";" >/dev/null; then
     if psql_admin -c "ALTER DATABASE \"$previous_database\" RENAME TO \"$staging_db_name\";" >/dev/null; then
       cleanup_databases=("$refresh_database")
@@ -289,7 +289,6 @@ switch_database() {
     fail 'staging health failed; rollback verification failed and manual intervention is required'
   fi
 
-  cleanup_databases=("$previous_database")
   drop_database "$previous_database" || fail "staging refresh succeeded but old database could not be removed: $previous_database"
   cleanup_databases=()
 }

@@ -48,6 +48,26 @@ describe('boolean environment configuration', () => {
 	});
 });
 
+describe('session cookie configuration', () => {
+	it('defaults to the production cookie contract', () => {
+		const parsed = configSchema.parse(baseConfig);
+
+		expect(parsed.SESSION_COOKIE_NAME).toBe('session');
+		expect(parsed.SESSION_COOKIE_PATH).toBe('/');
+	});
+
+	it('accepts an isolated mounted-path cookie contract', () => {
+		const parsed = configSchema.parse({
+			...baseConfig,
+			SESSION_COOKIE_NAME: 'tempo_staging_session',
+			SESSION_COOKIE_PATH: '/staging',
+		});
+
+		expect(parsed.SESSION_COOKIE_NAME).toBe('tempo_staging_session');
+		expect(parsed.SESSION_COOKIE_PATH).toBe('/staging');
+	});
+});
+
 describe('categorization web-search configuration', () => {
 	it('defaults the fallback off', () => {
 		const parsed = configSchema.parse(baseConfig);
