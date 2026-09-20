@@ -19,10 +19,11 @@ for fragment in [
     'config_dir="$HOME/.config/tempo-staging"',
     'env_file="$config_dir/staging.env"',
     'tempo-staging-refresh.sh',
-    'key_identity=',
+    'key_fingerprint=',
     'authorized_tmp=',
-    'matching = 0',
-    'chmod 600',
+    'authorized_backup=',
+    'mv -f -- "$authorized_tmp" "$authorized_keys"',
+    'ssh-keygen -lf -',
 ]:
     assert fragment in installer, fragment
 for forbidden in ('production.compose.yml', 'production.env', 'tempo_production_postgres_data'):
@@ -37,20 +38,35 @@ PY
 
 tmp_dir=$(mktemp -d)
 trap 'rm -rf "$tmp_dir"' EXIT
-mkdir -p "$tmp_dir/home/.config/tempo-staging"
+mkdir -p "$tmp_dir/home/.config/tempo-staging" "$tmp_dir/home/.ssh"
 printf '%s\n' 'TEMPO_API_IMAGE=ghcr.io/tempo-co/tempo-api@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' > "$tmp_dir/home/.config/tempo-staging/staging.env"
-printf '%s\n' 'ssh-ed25519 AAAATEST requested-comment' > "$tmp_dir/deploy.pub"
-printf '%s\n' 'ssh-ed25519 AAAATEST old-unrestricted-comment' > "$tmp_dir/home/.ssh.seed"
-mkdir -p "$tmp_dir/home/.ssh"
-mv "$tmp_dir/home/.ssh.seed" "$tmp_dir/home/.ssh/authorized_keys"
-chmod 600 "$tmp_dir/home/.config/tempo-staging/staging.env" "$tmp_dir/deploy.pub" "$tmp_dir/home/.ssh/authorized_keys"
-HOME="$tmp_dir/home" bash "$installer" --ssh-public-key-file "$tmp_dir/deploy.pub" >/dev/null
-python3 - "$tmp_dir/home/.ssh/authorized_keys" <<'PY'
+ssh-keygen -q -t ed25519 -N '' -f "$tmp_dir/deploy_key"
+key_type=$(awk '{print $1}' "$tmp_dir/deploy_key.pub")
+key_blob=$(awk '{print $2}' "$tmp_dir/deploy_key.pub")
+printf '%s %s old-unrestricted-comment\n' "$key_type" "$key_blob" > "$tmp_dir/home/.ssh/authorized_keys"
+chmod 600 "$tmp_dir/home/.config/tempo-staging/staging.env" "$tmp_dir/deploy_key.pub" "$tmp_dir/home/.ssh/authorized_keys"
+HOME="$tmp_dir/home" bash "$installer" --ssh-public-key-file "$tmp_dir/deploy_key.pub" >/dev/null
+python3 - "$tmp_dir/home/.ssh/authorized_keys" "$key_type" "$key_blob" <<'PY'
 import sys
-lines = [line for line in open(sys.argv[1], encoding='utf-8').read().splitlines() if line]
+path, key_type, key_blob = sys.argv[1:]
+lines = [line for line in open(path, encoding='utf-8').read().splitlines() if line]
 assert len(lines) == 1
 assert lines[0].startswith('command="')
-assert 'AAAATEST' in lines[0]
+assert f'{key_type} {key_blob}' in lines[0]
 assert 'old-unrestricted-comment' not in lines[0]
 print('tempo staging host installer duplicate-key regression: PASS')
 PY
+
+printf 'from="127.0.0.1" %s %s restricted-from\n' "$key_type" "$key_blob" > "$tmp_dir/home/.ssh/authorized_keys"
+HOME="$tmp_dir/home" bash "$installer" --ssh-public-key-file "$tmp_dir/deploy_key.pub" >/dev/null
+if ! grep -Fq 'from="127.0.0.1"' "$tmp_dir/home/.ssh/authorized_keys"; then
+    echo 'authorized_keys from restriction was not preserved' >&2
+    exit 1
+fi
+
+printf '%s\n' 'ssh-ed25519 AAAATEST malformed' > "$tmp_dir/bad.pub"
+if HOME="$tmp_dir/home" bash "$installer" --ssh-public-key-file "$tmp_dir/bad.pub" >/dev/null 2>&1; then
+    echo 'malformed Ed25519 key unexpectedly accepted' >&2
+    exit 1
+fi
+printf '%s\n' 'tempo staging host installer malformed-key regression: PASS'

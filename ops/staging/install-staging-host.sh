@@ -44,6 +44,8 @@ public_key=$(<"$public_key_file")
 [[ "$public_key" != *$'\n'* ]] || fail 'public-key file must contain one line'
 read -r key_type key_blob _ <<< "$public_key"
 [[ "$key_type" == ssh-ed25519 && "$key_blob" =~ ^[A-Za-z0-9+/]+={0,2}$ ]] || fail 'public-key file has an invalid key identity'
+key_fingerprint=$(printf '%s\n' "$public_key" | ssh-keygen -lf - 2>/dev/null | awk '$NF == "(ED25519)" {print $2; exit}')
+[[ -n "$key_fingerprint" ]] || fail 'public-key file is not a valid Ed25519 public key'
 key_identity="$key_type $key_blob"
 
 mkdir -p "$libexec_dir" "$config_dir" "$state_dir" "$ssh_dir"
@@ -57,36 +59,59 @@ install -m 0644 "$source_dir/docker-compose.yml" "$libexec_dir/docker-compose.ym
 install -m 0644 "$source_dir/tempo-staging-docker.service" "$libexec_dir/tempo-staging-docker.service"
 chmod 600 "$env_file"
 
+[[ ! -L "$authorized_keys" ]] || fail 'authorized_keys must not be a symlink'
 if [[ ! -e "$authorized_keys" ]]; then
   install -m 600 /dev/null "$authorized_keys"
 fi
-forced_command="command=\"$libexec_dir/tempo-staging-ssh-deploy.sh\",no-agent-forwarding,no-port-forwarding,no-pty,no-X11-forwarding,no-user-rc $key_identity"
+
 authorized_tmp=$(mktemp "$ssh_dir/authorized_keys.XXXXXX")
-trap 'rm -f "$authorized_tmp"' EXIT
-awk -v key_type="$key_type" -v key_blob="$key_blob" -v forced="$forced_command" '
-  {
-    matching = 0
-    for (field_index = 1; field_index < NF; field_index++) {
-      if ($field_index == key_type && $(field_index + 1) == key_blob) {
-        matching = 1
+authorized_backup=''
+authorized_install_complete=0
+cleanup_authorized_keys() {
+  if (( authorized_install_complete == 0 )) && [[ -n "$authorized_backup" && -f "$authorized_backup" ]]; then
+    mv -f -- "$authorized_backup" "$authorized_keys" || true
+  fi
+  rm -f -- "$authorized_tmp" "$authorized_backup"
+}
+trap cleanup_authorized_keys EXIT
+if [[ -e "$authorized_keys" ]]; then
+  authorized_backup=$(mktemp "$ssh_dir/authorized_keys.backup.XXXXXX")
+  cp -p -- "$authorized_keys" "$authorized_backup"
+fi
+
+matching_from=''
+while IFS= read -r authorized_line || [[ -n "$authorized_line" ]]; do
+  line_fingerprint=$(printf '%s\n' "$authorized_line" | ssh-keygen -lf - 2>/dev/null | awk '$NF == "(ED25519)" {print $2; exit}' || true)
+  if [[ "$line_fingerprint" == "$key_fingerprint" ]]; then
+    read -r -a fields <<< "$authorized_line"
+    key_field_index=-1
+    for ((field_index = 0; field_index + 1 < ${#fields[@]}; field_index++)); do
+      if [[ "${fields[field_index]}" == "$key_type" && "${fields[field_index + 1]}" == "$key_blob" ]]; then
+        key_field_index=$field_index
         break
-      }
-    }
-    if (matching) {
-      if (!seen) {
-        print forced
-        seen = 1
-      }
-      next
-    }
-    print
-  }
-  END {
-    if (!seen) print forced
-  }
-' "$authorized_keys" > "$authorized_tmp"
-install -m 600 "$authorized_tmp" "$authorized_keys"
-rm -f "$authorized_tmp"
+      fi
+    done
+    (( key_field_index >= 0 )) || fail 'matching authorized key could not be parsed'
+    for ((field_index = 0; field_index < key_field_index; field_index++)); do
+      if [[ "${fields[field_index]}" == from=* ]]; then
+        if [[ -n "$matching_from" && "$matching_from" != "${fields[field_index]}" ]]; then
+          fail 'matching authorized keys have conflicting from restrictions'
+        fi
+        matching_from="${fields[field_index]}"
+      fi
+    done
+    continue
+  fi
+  printf '%s\n' "$authorized_line" >> "$authorized_tmp"
+done < "$authorized_keys"
+
+forced_options="command=\"$libexec_dir/tempo-staging-ssh-deploy.sh\",no-agent-forwarding,no-port-forwarding,no-pty,no-X11-forwarding,no-user-rc"
+[[ -n "$matching_from" ]] && forced_options="$matching_from,$forced_options"
+printf '%s\n' "$forced_options $key_identity" >> "$authorized_tmp"
+chmod 600 "$authorized_tmp"
+mv -f -- "$authorized_tmp" "$authorized_keys"
+authorized_install_complete=1
+rm -f -- "$authorized_backup"
 trap - EXIT
 
 printf '%s\n' 'Tempo staging host integration: PASS'
