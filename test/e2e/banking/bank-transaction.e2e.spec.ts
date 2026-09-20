@@ -216,8 +216,168 @@ describe('BankTransactionController', () => {
 
 		await request(httpServer).get('/bank-transactions').expect(401);
 		await request(httpServer).get(transactionPath).expect(401);
+		await request(httpServer)
+			.get('/bank-transactions/cash-flow')
+			.query({granularity: 'week', from: '2026-08-03', to: '2026-08-30'})
+			.expect(401);
 		await unverifiedAgent.get('/bank-transactions').expect(403);
 		await unverifiedAgent.get(transactionPath).expect(403);
+		await unverifiedAgent
+			.get('/bank-transactions/cash-flow')
+			.query({granularity: 'week', from: '2026-08-03', to: '2026-08-30'})
+			.expect(403);
+	});
+
+	it('aggregates owner-scoped cash flow without mixing currencies or internal activity', async () => {
+		const additionalTransactions = await bankTransactionRepository.save([
+			bankTransactionRepository.create({
+				bankAccountId: fixtureBankAccount.id,
+				providerTransactionId: 'provider-cash-flow-internal',
+				entryReference: 'provider-entry-cash-flow-internal',
+				dedupeKey: randomUUID(),
+				bookingDate: '2026-08-21',
+				valueDate: '2026-08-21',
+				amount: '-40.00',
+				currency: 'EUR',
+				creditDebitIndicator: 'DBIT',
+				transactionStatus: 'BOOK',
+				description: 'Internal reserve move',
+				displayDescription: 'Internal reserve move',
+				financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
+				financialEventSource: BANK_TRANSACTION_FINANCIAL_EVENT_SOURCES.RULE,
+				financialEventRuleVersion: BANK_TRANSACTION_FINANCIAL_EVENT_RULE_VERSION,
+			}),
+			bankTransactionRepository.create({
+				bankAccountId: fixtureBankAccount.id,
+				providerTransactionId: 'provider-cash-flow-unknown',
+				entryReference: 'provider-entry-cash-flow-unknown',
+				dedupeKey: randomUUID(),
+				bookingDate: '2026-08-22',
+				valueDate: '2026-08-22',
+				amount: '-5.00',
+				currency: 'EUR',
+				creditDebitIndicator: null,
+				transactionStatus: 'BOOK',
+				description: 'Unclassified movement',
+				displayDescription: 'Unclassified movement',
+			}),
+			bankTransactionRepository.create({
+				bankAccountId: fixtureBankAccount.id,
+				providerTransactionId: 'provider-cash-flow-missing-date',
+				entryReference: 'provider-entry-cash-flow-missing-date',
+				dedupeKey: randomUUID(),
+				bookingDate: null,
+				valueDate: null,
+				amount: '7.00',
+				currency: 'EUR',
+				creditDebitIndicator: 'CRDT',
+				transactionStatus: 'BOOK',
+				description: 'Undated movement',
+				displayDescription: 'Undated movement',
+			}),
+			bankTransactionRepository.create({
+				bankAccountId: fixtureBankAccount.id,
+				providerTransactionId: 'provider-cash-flow-usd',
+				entryReference: 'provider-entry-cash-flow-usd',
+				dedupeKey: randomUUID(),
+				bookingDate: '2026-08-12',
+				valueDate: '2026-08-12',
+				amount: '12.00',
+				currency: 'USD',
+				creditDebitIndicator: 'CRDT',
+				transactionStatus: 'BOOK',
+				description: 'Synthetic dollar income',
+				displayDescription: 'Synthetic dollar income',
+			}),
+		]);
+
+		try {
+			const response = await verifiedAgent
+				.get('/bank-transactions/cash-flow')
+				.query({granularity: 'week', from: '2026-08-03', to: '2026-08-30'})
+				.expect(200);
+
+			expect(response.body).toMatchObject({
+				granularity: 'WEEK',
+				from: '2026-08-03',
+				to: '2026-08-30',
+				dataQuality: {missingBookingDateCount: 1},
+			});
+			expect(response.body.series).toHaveLength(2);
+
+			const euroSeries = response.body.series.find((series: {currency: string}) => series.currency === 'EUR');
+			expect(euroSeries).toMatchObject({
+				currency: 'EUR',
+				totals: {
+					income: '120',
+					expenses: '34.5',
+					net: '85.5',
+					transactionCount: 6,
+					includedTransactionCount: 4,
+					internalCount: 1,
+					unknownCount: 1,
+				},
+			});
+			expect(euroSeries.buckets).toHaveLength(4);
+			expect(euroSeries.buckets[0]).toMatchObject({
+				startDate: '2026-08-03',
+				endDate: '2026-08-09',
+				income: '0',
+				expenses: '0',
+				transactionCount: 0,
+			});
+			expect(euroSeries.buckets[2]).toMatchObject({
+				startDate: '2026-08-17',
+				endDate: '2026-08-23',
+				income: '100',
+				expenses: '0',
+				transactionCount: 3,
+				includedTransactionCount: 1,
+				internalCount: 1,
+				unknownCount: 1,
+			});
+
+			const dollarSeries = response.body.series.find((series: {currency: string}) => series.currency === 'USD');
+			expect(dollarSeries).toMatchObject({
+				currency: 'USD',
+				totals: {income: '12', expenses: '0', net: '12', transactionCount: 1},
+			});
+
+			const currencyFilteredTransactions = await verifiedAgent
+				.get('/bank-transactions')
+				.query({'filter[currency]': 'USD'})
+				.expect(200);
+			expect(currencyFilteredTransactions.body.total).toBe(1);
+			expect(currencyFilteredTransactions.body.transactions[0].currency).toBe('USD');
+
+			const otherAccountResponse = await otherVerifiedAgent
+				.get('/bank-transactions/cash-flow')
+				.query({granularity: 'month', from: '2026-08-01', to: '2026-08-31'})
+				.expect(200);
+			expect(otherAccountResponse.body.series).toEqual([]);
+		} finally {
+			await bankTransactionRepository
+				.createQueryBuilder()
+				.delete()
+				.where('id IN (:...ids)', {ids: additionalTransactions.map(({id}) => id)})
+				.execute();
+		}
+	});
+
+	it('rejects invalid or unbounded cash-flow ranges', async () => {
+		await verifiedAgent.get('/bank-transactions/cash-flow').expect(400);
+		await verifiedAgent
+			.get('/bank-transactions/cash-flow')
+			.query({granularity: 'month', from: '2026-09-01', to: '2026-08-01'})
+			.expect(400);
+		await verifiedAgent
+			.get('/bank-transactions/cash-flow')
+			.query({granularity: 'month', from: '2025-01-01', to: '2026-01-01'})
+			.expect(400);
+		await verifiedAgent
+			.get('/bank-transactions/cash-flow')
+			.query({granularity: 'month', from: '2026-02-31', to: '2026-03-01'})
+			.expect(400);
 	});
 
 	it('lists owner-scoped transactions with safe source metadata', async () => {

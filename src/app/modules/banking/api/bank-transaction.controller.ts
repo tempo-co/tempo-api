@@ -5,6 +5,7 @@ import {Account} from '@modules/account/account.entity';
 import {CurrentAccount} from '@modules/auth/decorators/current-user.decorator';
 
 import {BankTransactionService} from '../services/bank-transaction.service';
+import {BankCashFlowQueryDto} from './dtos/bank-cash-flow-query.dto';
 import {BankTransactionCategoryUpdateDto} from './dtos/bank-transaction-category-update.dto';
 import {BankTransactionQueryDto} from './dtos/bank-transaction-query.dto';
 
@@ -12,6 +13,11 @@ import {BankTransactionQueryDto} from './dtos/bank-transaction-query.dto';
 @Controller('bank-transactions')
 export class BankTransactionController {
 	constructor(private readonly bankTransactionService: BankTransactionService) {}
+
+	@Get('cash-flow')
+	findCashFlow(@CurrentAccount() account: Account, @Query() query: BankCashFlowQueryDto) {
+		return this.bankTransactionService.findCashFlow(account.id, query);
+	}
 
 	@Get()
 	findAll(@CurrentAccount() account: Account, @Query() query: BankTransactionQueryDto) {
