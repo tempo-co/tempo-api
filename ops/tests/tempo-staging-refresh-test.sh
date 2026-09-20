@@ -39,9 +39,10 @@ fi
 python3 - "$repo_root/ops/staging/tempo-staging-refresh.sh" <<'PY'
 import sys
 text = open(sys.argv[1], encoding='utf-8').read()
-for fragment in ('provider_session_id', 'authorization_state_hash', 'FLUSHALL', '--confirm-production-backup-refresh', 'node ./dist/scripts/schema.js', 'PGPASSFILE', 'rollback_database', 'database_state', '{0,38}'):
+for fragment in ('providerSessionId', 'authorizationStateHash', 'consentValidUntil', 'lastSyncedAt', 'FLUSHALL', '--confirm-production-backup-refresh', 'node ./dist/scripts/schema.js', 'PGPASSFILE', 'rollback_database', 'database_state', '{0,38}'):
     assert fragment in text, fragment
-for forbidden in ('production.compose.yml', 'tempo_production_postgres_data', 'down -v', 'PGPASSWORD='):
+assert '; ALTER DATABASE' not in text
+for forbidden in ('production.compose.yml', 'tempo_production_postgres_data', 'down -v', 'PGPASSWORD=', 'provider_session_id', 'authorization_state_hash'):
     assert forbidden not in text, forbidden
 print('tempo staging refresh contract: PASS')
 PY

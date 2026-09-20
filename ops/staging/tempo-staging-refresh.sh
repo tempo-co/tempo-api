@@ -54,6 +54,7 @@ staging_db_password=$(read_env_value STAGING_DB_PASSWORD) || fail 'STAGING_DB_PA
 staging_db_name=$(read_env_value STAGING_DB_NAME) || fail 'STAGING_DB_NAME is missing'
 [[ "$staging_db_user" =~ ^[a-z_][a-z0-9_]{0,62}$ ]] || fail 'STAGING_DB_USERNAME is not a safe PostgreSQL identifier'
 [[ "$staging_db_name" =~ ^[a-z_][a-z0-9_]{0,38}$ ]] || fail 'STAGING_DB_NAME is not a safe PostgreSQL identifier'
+[[ "$staging_db_name" != postgres && "$staging_db_name" != template0 && "$staging_db_name" != template1 ]] || fail 'STAGING_DB_NAME is a reserved PostgreSQL database'
 
 for forbidden in ENABLE_BANKING_PRIVATE_KEY_B64 ENABLE_BANKING_PRIVATE_KEY_PATH TEMPO_PRODUCTION_ENV_FILE TEMPO_PRODUCTION_COMPOSE_FILE OPENAI_API_KEY; do
   if python3 - "$env_file" "$forbidden" <<'PY'
@@ -227,9 +228,9 @@ prepare_refresh_database() {
   create_database "$refresh_database"
   gzip -dc "$backup" | psql_db "$refresh_database"
   compose run --rm --no-deps -T -e "DB_NAME=$refresh_database" api node ./dist/scripts/schema.js
-  psql_db "$refresh_database" -c "UPDATE bank_connections SET provider_session_id = NULL, authorization_state_hash = NULL, status = 'FAILED', consent_valid_until = NULL, last_sync_error = NULL, next_sync_at = NULL, sync_started_at = NULL, sync_status = 'IDLE', sync_failure_count = 0, updated_at = NOW();" >/dev/null
+  psql_db "$refresh_database" -c "UPDATE bank_connections SET \"providerSessionId\" = NULL, \"authorizationStateHash\" = NULL, status = 'FAILED', \"consentValidUntil\" = NULL, \"lastSyncedAt\" = NULL, \"lastSyncError\" = NULL, \"nextSyncAt\" = NULL, \"syncStartedAt\" = NULL, \"syncStatus\" = 'IDLE', \"syncFailureCount\" = 0, \"updatedAt\" = NOW();" >/dev/null
   local unsafe_provider_state
-  unsafe_provider_state=$(psql_db "$refresh_database" -At -c "SELECT COUNT(*) FROM bank_connections WHERE provider_session_id IS NOT NULL OR authorization_state_hash IS NOT NULL OR status IN ('AUTHORIZED', 'EXPIRED', 'RUNNING');")
+  unsafe_provider_state=$(psql_db "$refresh_database" -At -c "SELECT COUNT(*) FROM bank_connections WHERE \"providerSessionId\" IS NOT NULL OR \"authorizationStateHash\" IS NOT NULL OR status IN ('AUTHORIZED', 'EXPIRED', 'RUNNING');")
   [[ "$unsafe_provider_state" == 0 ]] || fail 'sanitized refresh database still contains provider state'
   local account_count
   account_count=$(psql_db "$refresh_database" -At -c 'SELECT COUNT(*) FROM accounts;')
@@ -255,8 +256,9 @@ rollback_database() {
   local database_state
 
   compose stop api web >/dev/null 2>&1 || rollback_failed=1
-  psql_admin -c "ALTER DATABASE \"$staging_db_name\" RENAME TO \"$failed_database\"; ALTER DATABASE \"$previous_database\" RENAME TO \"$staging_db_name\";" >/dev/null 2>&1 || rollback_failed=1
+  psql_admin -c "ALTER DATABASE \"$staging_db_name\" RENAME TO \"$failed_database\";" >/dev/null 2>&1 || rollback_failed=1
   cleanup_databases=("$failed_database")
+  psql_admin -c "ALTER DATABASE \"$previous_database\" RENAME TO \"$staging_db_name\";" >/dev/null 2>&1 || rollback_failed=1
   compose exec -T redis redis-cli FLUSHALL >/dev/null 2>&1 || rollback_failed=1
   TEMPO_STAGING_ENV_FILE="$env_file" TEMPO_STAGING_STATE_DIR="$state_dir" TEMPO_STAGING_LOCK_HELD=1 "$deploy_script" up >/dev/null 2>&1 || rollback_failed=1
   database_state=$(psql_admin -At -c "SELECT (SELECT COUNT(*) FROM pg_database WHERE datname = '$staging_db_name') = 1 AND (SELECT COUNT(*) FROM pg_database WHERE datname = '$previous_database') = 0 AND (SELECT COUNT(*) FROM pg_database WHERE datname = '$failed_database') = 1;" 2>/dev/null || true)
@@ -271,7 +273,14 @@ switch_database() {
   cleanup_databases=("$refresh_database" "${refresh_database}_failed")
   compose stop api web >/dev/null 2>&1
   psql_admin -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$staging_db_name' AND pid <> pg_backend_pid();" >/dev/null
-  psql_admin -c "ALTER DATABASE \"$staging_db_name\" RENAME TO \"$previous_database\"; ALTER DATABASE \"$refresh_database\" RENAME TO \"$staging_db_name\";" >/dev/null
+  psql_admin -c "ALTER DATABASE \"$staging_db_name\" RENAME TO \"$previous_database\";" >/dev/null
+  cleanup_databases=("$refresh_database" "${refresh_database}_failed" "$previous_database")
+  if ! psql_admin -c "ALTER DATABASE \"$refresh_database\" RENAME TO \"$staging_db_name\";" >/dev/null; then
+    if psql_admin -c "ALTER DATABASE \"$previous_database\" RENAME TO \"$staging_db_name\";" >/dev/null; then
+      cleanup_databases=("$refresh_database")
+    fi
+    fail 'staging database swap failed before activation'
+  fi
 
   if ! (psql_db "$staging_db_name" -At -c 'SELECT 1;' >/dev/null && compose exec -T redis redis-cli FLUSHALL >/dev/null && TEMPO_STAGING_ENV_FILE="$env_file" TEMPO_STAGING_STATE_DIR="$state_dir" TEMPO_STAGING_LOCK_HELD=1 "$deploy_script" up); then
     if rollback_database "$refresh_database" "$previous_database"; then
