@@ -43,6 +43,7 @@ const AMOUNT_SCALE_FACTOR = 10n ** BigInt(AMOUNT_SCALE);
 const INTERNAL_TRANSFER_TYPE = 'INTERNAL_TRANSFER';
 const BOOKED_STATUSES = new Set(['BOOK', 'COMPLETED']);
 const TRANSFER_TYPE = 'TRANSFER';
+const CARD_PAYMENT_TYPE = 'CARD_PAYMENT';
 const SCT_INCOMING_BANK_TRANSACTION_DESCRIPTION = 'SCT INCOMING';
 
 export function matchBankTransactionInternalTransfers(
@@ -91,7 +92,9 @@ export function matchBankTransactionInternalTransfers(
 
 function isEligible(transaction: BankTransactionInternalTransferCandidate): boolean {
 	const indicator = transaction.creditDebitIndicator?.trim().toUpperCase();
+	const transactionType = transaction.transactionType?.trim().toUpperCase();
 	return (
+		transactionType !== CARD_PAYMENT_TYPE &&
 		(transaction.financialEventType === null || transaction.financialEventType === INTERNAL_TRANSFER_TYPE) &&
 		BOOKED_STATUSES.has(transaction.transactionStatus?.trim().toUpperCase() ?? '') &&
 		(indicator === 'DBIT' || indicator === 'CRDT') &&

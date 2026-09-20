@@ -62,6 +62,31 @@ describe('bank transaction internal transfer matching', () => {
 		]);
 	});
 
+	it('does not match reciprocal card payments through account evidence', () => {
+		const debit = transaction({
+			id: 'debit',
+			bankConnectionId: 'connection-a',
+			bankAccountId: 'account-a',
+			accountIdentifier: ownAccount('NL91ABNA0417164300'),
+			counterpartyAccountIdentifier: ownAccount('NL20RABO0123456789'),
+			transactionType: 'CARD_PAYMENT',
+			amount: '-100.00000000',
+			creditDebitIndicator: 'DBIT',
+		});
+		const credit = transaction({
+			id: 'credit',
+			bankConnectionId: 'connection-b',
+			bankAccountId: 'account-b',
+			accountIdentifier: ownAccount('NL20RABO0123456789'),
+			counterpartyAccountIdentifier: ownAccount('NL91ABNA0417164300'),
+			transactionType: 'CARD_PAYMENT',
+			amount: '100.00000000',
+			creditDebitIndicator: 'CRDT',
+		});
+
+		expect(matchBankTransactionInternalTransfers([debit, credit])).toEqual([]);
+	});
+
 	it.each([
 		[
 			'a third-party transfer without matching account evidence',

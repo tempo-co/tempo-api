@@ -51,4 +51,13 @@ describe('categorization web-search configuration', () => {
 
 		expect(parsed.AI_CATEGORIZATION_WEB_SEARCH_ENABLED).toBe(true);
 	});
+
+	it('accepts an explicit owner identity token', () => {
+		const parsed = configSchema.parse({
+			...baseConfig,
+			BANK_TRANSACTION_OWNER_IDENTITY_TOKEN: 'synthetic-surname',
+		});
+
+		expect(parsed.BANK_TRANSACTION_OWNER_IDENTITY_TOKEN).toBe('synthetic-surname');
+	});
 });
