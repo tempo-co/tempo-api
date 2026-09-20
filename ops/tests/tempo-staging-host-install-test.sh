@@ -18,6 +18,8 @@ for fragment in [
     '.local/libexec/tempo-staging',
     'config_dir="$HOME/.config/tempo-staging"',
     'env_file="$config_dir/staging.env"',
+    'tempo-staging-refresh.sh',
+    'public key already exists without the required forced-command restriction',
     'chmod 600',
 ]:
     assert fragment in installer, fragment

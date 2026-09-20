@@ -7,6 +7,8 @@ readonly env_file="${TEMPO_STAGING_ENV_FILE:-$HOME/.config/tempo-staging/staging
 readonly state_dir="${TEMPO_STAGING_STATE_DIR:-$HOME/.local/state/tempo-staging}"
 readonly deploy_script="${TEMPO_STAGING_DEPLOY_SCRIPT:-$HOME/.local/libexec/tempo-staging/tempo-staging-deploy.sh}"
 readonly docker_host="${TEMPO_STAGING_DOCKER_HOST:-unix://$runtime_dir/tempo-staging/docker.sock}"
+readonly expected_docker_host="unix://$runtime_dir/tempo-staging/docker.sock"
+readonly docker_bin="${TEMPO_STAGING_DOCKER_BIN:-docker}"
 
 fail() {
   printf 'tempo staging SSH deploy: %s\n' "$1" >&2
@@ -16,12 +18,13 @@ fail() {
 [[ "$(id -u)" != 0 ]] || fail 'the deploy account must not be root'
 [[ -n "${SSH_ORIGINAL_COMMAND:-}" ]] || fail 'missing SSH original command'
 [[ "$SSH_ORIGINAL_COMMAND" != *$'\n'* ]] || fail 'multiline commands are not accepted'
+[[ "$docker_host" == "$expected_docker_host" ]] || fail "staging Docker host must be $expected_docker_host"
 [[ -f "$env_file" && ! -L "$env_file" ]] || fail 'staging environment file is missing or a symlink'
 [[ -x "$deploy_script" ]] || fail "staging deploy script is missing or not executable: $deploy_script"
 
 mode=$(stat -c '%a' "$env_file")
 mode_value=$((8#$mode))
-(( (mode_value & 0022) == 0 )) || fail 'staging environment file is group/world writable'
+(( (mode_value & 0777) == 0600 )) || fail 'staging environment file must have mode 600'
 [[ ! -L "$state_dir" ]] || fail 'staging state directory must not be a symlink'
 mkdir -p "$state_dir"
 chmod 700 "$state_dir"
@@ -44,11 +47,13 @@ case "$component" in
     expected_repository='tempo-co/tempo-api'
     image_prefix='ghcr.io/tempo-co/tempo-api@sha256:'
     image_key='TEMPO_API_IMAGE'
+    image_tag_prefix='ghcr.io/tempo-co/tempo-api:staging-pr-'
     ;;
   web)
     expected_repository='tempo-co/tempo-web'
     image_prefix='ghcr.io/tempo-co/tempo-web@sha256:'
     image_key='TEMPO_WEB_IMAGE'
+    image_tag_prefix='ghcr.io/tempo-co/tempo-web:staging-pr-'
     ;;
   *) fail 'component must be api or web' ;;
 esac
@@ -59,6 +64,25 @@ esac
 [[ "$image" == "$image_prefix"* ]] || fail 'image must match the component digest repository'
 digest="${image#"$image_prefix"}"
 [[ "$digest" =~ ^[0-9a-f]{64}$ ]] || fail 'image must be an immutable digest reference'
+
+docker_cli() {
+  env -u DOCKER_CONTEXT DOCKER_HOST="$docker_host" "$docker_bin" "$@"
+}
+
+require_daemon() {
+  local socket_path="${docker_host#unix://}"
+  local security_options docker_root
+  [[ -S "$socket_path" ]] || fail "staging Docker socket is missing: $socket_path"
+  security_options=$(docker_cli info --format '{{json .SecurityOptions}}' 2>/dev/null) || fail 'staging Docker daemon is not reachable'
+  docker_root=$(docker_cli info --format '{{.DockerRootDir}}' 2>/dev/null) || fail 'staging Docker root cannot be inspected'
+  [[ "$security_options" == *rootless* ]] || fail 'staging Docker daemon is not rootless'
+  [[ "$docker_root" == "$HOME/.local/share/tempo-staging/docker" ]] || fail 'staging Docker root is outside the staging data root'
+}
+
+require_daemon
+image_tag="${image_tag_prefix}${pr_number}-${head_sha}"
+remote_digest=$(docker_cli buildx imagetools inspect "$image_tag" --format '{{.Manifest.Digest}}' 2>/dev/null) || fail 'staging image tag is not available in the registry'
+[[ "$remote_digest" == "sha256:$digest" ]] || fail 'image digest does not match the verified PR build tag'
 
 read_env_value() {
   python3 - "$env_file" "$1" <<'PY'
@@ -92,12 +116,12 @@ draft=$(jq -r '.draft' <<< "$pr_json")
 [[ "$remote_sha" == "$head_sha" ]] || fail 'PR head SHA changed since workflow verification'
 [[ "$base_ref" == main && "$state" == open && "$draft" == false ]] || fail 'PR is not an open non-draft main PR'
 
-checks_json=$("$gh_cli" api "repos/$repository/commits/$head_sha/check-runs?per_page=100") || fail 'commit check lookup failed'
-statuses_json=$("$gh_cli" api "repos/$repository/commits/$head_sha/status") || fail 'commit status lookup failed'
-check_count=$(jq '.total_count' <<< "$checks_json")
-status_count=$(jq '.total_count' <<< "$statuses_json")
-failed_checks=$(jq '[.check_runs[] | select(.status != "completed" or .conclusion != "success")] | length' <<< "$checks_json")
-failed_statuses=$(jq '[.statuses[] | select(.state != "success")] | length' <<< "$statuses_json")
+checks_json=$("$gh_cli" api --paginate --slurp "repos/$repository/commits/$head_sha/check-runs?per_page=100") || fail 'commit check lookup failed'
+statuses_json=$("$gh_cli" api --paginate --slurp "repos/$repository/commits/$head_sha/status?per_page=100") || fail 'commit status lookup failed'
+check_count=$(jq '[.[] | .check_runs[]] | length' <<< "$checks_json")
+status_count=$(jq '[.[] | .statuses[]] | length' <<< "$statuses_json")
+failed_checks=$(jq '[.[] | .check_runs[] | select(.status != "completed" or (.conclusion | IN("success", "neutral", "skipped") | not))] | length' <<< "$checks_json")
+failed_statuses=$(jq '[.[] | .statuses[] | select(.state != "success")] | length' <<< "$statuses_json")
 (( check_count + status_count > 0 )) || fail 'PR has no completed checks or statuses'
 (( failed_checks == 0 && failed_statuses == 0 )) || fail 'PR checks are not all successful'
 

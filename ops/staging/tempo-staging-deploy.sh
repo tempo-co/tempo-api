@@ -21,7 +21,7 @@ fail() {
 
 mode=$(stat -c '%a' "$env_file")
 mode_value=$((8#$mode))
-(( (mode_value & 0022) == 0 )) || fail 'staging environment file is group/world writable'
+(( (mode_value & 0777) == 0600 )) || fail 'staging environment file must have mode 600'
 
 read_env_value() {
   python3 - "$env_file" "$1" <<'PY'
@@ -46,7 +46,8 @@ for forbidden in \
   ENABLE_BANKING_PRIVATE_KEY_B64 \
   ENABLE_BANKING_PRIVATE_KEY_PATH \
   TEMPO_PRODUCTION_ENV_FILE \
-  TEMPO_PRODUCTION_COMPOSE_FILE; do
+  TEMPO_PRODUCTION_COMPOSE_FILE \
+  OPENAI_API_KEY; do
   if python3 - "$env_file" "$forbidden" <<'PY'
 import sys
 
@@ -75,15 +76,21 @@ web_image=$(read_env_value TEMPO_WEB_IMAGE) || fail 'TEMPO_WEB_IMAGE is missing'
 public_url=$(read_env_value STAGING_PUBLIC_URL) || fail 'STAGING_PUBLIC_URL is missing'
 web_port=$(read_env_value STAGING_WEB_HOST_PORT) || fail 'STAGING_WEB_HOST_PORT is missing'
 
-[[ "$api_image" =~ ^[a-z0-9./_-]+@sha256:[0-9a-f]{64}$ ]] || fail 'TEMPO_API_IMAGE must be an immutable digest reference'
-[[ "$web_image" =~ ^[a-z0-9./_-]+@sha256:[0-9a-f]{64}$ ]] || fail 'TEMPO_WEB_IMAGE must be an immutable digest reference'
+api_image_prefix='ghcr.io/tempo-co/tempo-api@sha256:'
+web_image_prefix='ghcr.io/tempo-co/tempo-web@sha256:'
+[[ "$api_image" == "$api_image_prefix"* ]] || fail 'TEMPO_API_IMAGE must use the official API image repository'
+[[ "$web_image" == "$web_image_prefix"* ]] || fail 'TEMPO_WEB_IMAGE must use the official web image repository'
+api_digest="${api_image#"$api_image_prefix"}"
+web_digest="${web_image#"$web_image_prefix"}"
+[[ "$api_digest" =~ ^[0-9a-f]{64}$ ]] || fail 'TEMPO_API_IMAGE must be an immutable digest reference'
+[[ "$web_digest" =~ ^[0-9a-f]{64}$ ]] || fail 'TEMPO_WEB_IMAGE must be an immutable digest reference'
 [[ "$api_image" != *production* && "$web_image" != *production* ]] || fail 'production image references are not allowed'
 [[ "$public_url" =~ ^https://[^/]+/staging/?$ ]] || fail 'STAGING_PUBLIC_URL must be the tailnet HTTPS /staging URL'
 [[ "$web_port" =~ ^[0-9]+$ ]] || fail 'STAGING_WEB_HOST_PORT must be numeric'
 (( web_port >= 1024 && web_port <= 65535 )) || fail 'STAGING_WEB_HOST_PORT is outside the unprivileged port range'
 
 docker_cli() {
-  DOCKER_HOST="$docker_host" docker "$@"
+  env -u DOCKER_CONTEXT DOCKER_HOST="$docker_host" docker "$@"
 }
 
 compose() {
@@ -94,6 +101,7 @@ compose() {
     -u STAGING_DB_USERNAME \
     -u STAGING_DB_PASSWORD \
     -u STAGING_DB_NAME \
+    -u DOCKER_CONTEXT \
     TEMPO_STAGING_ENV_FILE="$env_file" \
     DOCKER_HOST="$docker_host" \
     docker compose \
@@ -130,8 +138,11 @@ for service_name, expected in {
 }.items():
     if services[service_name].get('image') != expected:
         raise SystemExit(f'{service_name} image does not match the env file')
-    if not re.fullmatch(r'[a-z0-9./_-]+@sha256:[0-9a-f]{64}', services[service_name]['image']):
-        raise SystemExit(f'{service_name} image is not immutable')
+    expected_prefix = f'ghcr.io/tempo-co/tempo-{"api" if service_name == "api" else "web"}@sha256:'
+    if not services[service_name]['image'].startswith(expected_prefix):
+        raise SystemExit(f'{service_name} image is not from the official repository')
+    if not re.fullmatch(r'ghcr.io/tempo-co/tempo-(?:api|web)@sha256:[0-9a-f]{64}', services[service_name]['image']):
+        raise SystemExit(f'{service_name} image is not an immutable official digest')
 
 for service_name in ('postgres', 'redis', 'mailpit', 'api'):
     if services[service_name].get('ports'):
@@ -182,11 +193,12 @@ validate() {
 
 require_daemon() {
   local socket_path="${docker_host#unix://}"
-  local info
+  local security_options docker_root
   [[ -S "$socket_path" ]] || fail "staging Docker socket is missing: $socket_path"
-  info=$(docker_cli info --format '{{json .SecurityOptions}}|{{.DockerRootDir}}' 2>/dev/null) || fail 'staging Docker daemon is not reachable'
-  [[ "$info" == *rootless* ]] || fail 'staging Docker daemon is not rootless'
-  [[ "$info" == *'.local/share/tempo-staging/docker'* ]] || fail 'staging Docker root is outside the staging data root'
+  security_options=$(docker_cli info --format '{{json .SecurityOptions}}' 2>/dev/null) || fail 'staging Docker daemon is not reachable'
+  docker_root=$(docker_cli info --format '{{.DockerRootDir}}' 2>/dev/null) || fail 'staging Docker root cannot be inspected'
+  [[ "$security_options" == *rootless* ]] || fail 'staging Docker daemon is not rootless'
+  [[ "$docker_root" == "$HOME/.local/share/tempo-staging/docker" ]] || fail 'staging Docker root is outside the staging data root'
 }
 
 wait_for_healthy() {

@@ -5,24 +5,42 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 tmp_dir=$(mktemp -d)
 trap 'rm -rf "$tmp_dir"' EXIT
 
-mkdir -p "$tmp_dir/bin" "$tmp_dir/state" "$tmp_dir/config"
-python3 - "$tmp_dir/bin/fake-gh" "$tmp_dir/bin/fake-deploy" <<'PY'
+mkdir -p "$tmp_dir/bin" "$tmp_dir/state" "$tmp_dir/config" "$tmp_dir/runtime/tempo-staging"
+python3 - "$tmp_dir/runtime/tempo-staging/docker.sock" <<'PY' &
+import socket
+import sys
+import time
+server = socket.socket(socket.AF_UNIX)
+server.bind(sys.argv[1])
+server.listen(1)
+try:
+    time.sleep(60)
+finally:
+    server.close()
+PY
+socket_pid=$!
+trap 'kill "$socket_pid" 2>/dev/null || true; rm -rf "$tmp_dir"' EXIT
+for _ in $(seq 1 20); do
+    [[ -S "$tmp_dir/runtime/tempo-staging/docker.sock" ]] && break
+    sleep 0.1
+done
+python3 - "$tmp_dir/bin/fake-gh" "$tmp_dir/bin/fake-deploy" "$tmp_dir/bin/fake-docker" <<'PY'
 import stat
 import sys
 from pathlib import Path
 
-gh_path, deploy_path = map(Path, sys.argv[1:])
+gh_path, deploy_path, docker_path = map(Path, sys.argv[1:])
 gh_path.write_text('''#!/usr/bin/env python3
 import json
 import sys
 
-endpoint = sys.argv[2]
+endpoint = next((arg for arg in sys.argv[1:] if arg.startswith("repos/")), "")
 if endpoint.endswith('/pulls/42'):
     print(json.dumps({"head": {"repo": {"full_name": "tempo-co/tempo-api"}, "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}, "base": {"ref": "main"}, "state": "open", "draft": False}))
 elif endpoint.endswith('/check-runs?per_page=100'):
-    print(json.dumps({"total_count": 1, "check_runs": [{"status": "completed", "conclusion": "success"}]}))
-elif endpoint.endswith('/status'):
-    print(json.dumps({"total_count": 1, "statuses": [{"state": "success"}]}))
+    print(json.dumps([{"total_count": 1, "check_runs": [{"status": "completed", "conclusion": "success"}]}]))
+elif endpoint.endswith('/status?per_page=100'):
+    print(json.dumps([{"total_count": 1, "statuses": [{"state": "success"}]}]))
 else:
     raise SystemExit(f"unexpected endpoint: {endpoint}")
 ''')
@@ -31,7 +49,15 @@ import os
 from pathlib import Path
 Path(os.environ["TEMPO_DEPLOY_LOG"]).write_text(" ".join(os.sys.argv[1:]))
 ''')
-for path in (gh_path, deploy_path):
+docker_path.write_text('''#!/usr/bin/env sh
+case "$1 $2 $3" in
+  "info --format {{json .SecurityOptions}}") printf '["name=rootless"]\\n' ;;
+  "info --format {{.DockerRootDir}}") printf '%s\\n' "$HOME/.local/share/tempo-staging/docker" ;;
+  "buildx imagetools inspect") printf 'sha256:%s\\n' eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee ;;
+  *) exit 1 ;;
+esac
+''')
+for path in (gh_path, deploy_path, docker_path):
     path.chmod(path.stat().st_mode | stat.S_IXUSR)
 PY
 
@@ -44,6 +70,9 @@ chmod 600 "$tmp_dir/config/staging.env"
 export TEMPO_STAGING_ENV_FILE="$tmp_dir/config/staging.env"
 export TEMPO_STAGING_STATE_DIR="$tmp_dir/state"
 export TEMPO_STAGING_GH_CLI="$tmp_dir/bin/fake-gh"
+export TEMPO_STAGING_DOCKER_BIN="$tmp_dir/bin/fake-docker"
+export XDG_RUNTIME_DIR="$tmp_dir/runtime"
+export TEMPO_STAGING_DOCKER_HOST="unix://$tmp_dir/runtime/tempo-staging/docker.sock"
 export TEMPO_STAGING_DEPLOY_SCRIPT="$tmp_dir/bin/fake-deploy"
 export TEMPO_DEPLOY_LOG="$tmp_dir/deploy.log"
 export SSH_ORIGINAL_COMMAND='tempo-staging-ssh-deploy deploy api tempo-co/tempo-api 42 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ghcr.io/tempo-co/tempo-api@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'

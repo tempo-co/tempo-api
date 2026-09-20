@@ -54,7 +54,7 @@ Refresh restores the newest verified `tempo_*.sql.gz` from `$HOME/backups/tempo`
 The API and web repositories each have an independent manual `workflow_dispatch` workflow. Each workflow:
 
 - accepts a PR number only;
-- rejects drafts, closed PRs, fork PRs, non-`main` bases, and any non-success check/status on the exact head SHA;
+- rejects drafts, closed PRs, fork PRs, non-`main` bases, and any failing, pending, cancelled, or timed-out check/status on the exact head SHA (expected skipped checks are allowed);
 - builds only on `ubuntu-latest`;
 - pushes a SHA-tagged GHCR image and deploys by immutable digest;
 - joins the tailnet with the pinned Tailscale action; and

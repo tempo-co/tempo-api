@@ -11,6 +11,8 @@ on:
 permissions:
     contents: read
     checks: read
+    pull-requests: read
+    statuses: read
 
 jobs:
     verify-pr:
@@ -36,18 +38,19 @@ jobs:
                   draft="$(jq -r '.draft' <<<"$pr_json")"
 
                   [[ "$repo" == tempo-co/tempo-api ]]
+                  [[ "$GITHUB_REF" == refs/heads/main ]]
                   [[ "$head_repo" == "$repo" ]]
                   [[ "$base_ref" == main ]]
                   [[ "$state" == open ]]
                   [[ "$draft" == false ]]
                   [[ "$head_sha" =~ ^[0-9a-f]{40}$ ]]
 
-                  checks_json="$(gh api "repos/$repo/commits/$head_sha/check-runs?per_page=100")"
-                  statuses_json="$(gh api "repos/$repo/commits/$head_sha/status")"
-                  check_count="$(jq '.total_count' <<<"$checks_json")"
-                  status_count="$(jq '.total_count' <<<"$statuses_json")"
-                  failed_checks="$(jq '[.check_runs[] | select(.status != "completed" or .conclusion != "success")] | length' <<<"$checks_json")"
-                  failed_statuses="$(jq '[.statuses[] | select(.state != "success")] | length' <<<"$statuses_json")"
+                  checks_json="$(gh api --paginate --slurp "repos/$repo/commits/$head_sha/check-runs?per_page=100")"
+                  statuses_json="$(gh api --paginate --slurp "repos/$repo/commits/$head_sha/status?per_page=100")"
+                  check_count="$(jq '[.[] | .check_runs[]] | length' <<<"$checks_json")"
+                  status_count="$(jq '[.[] | .statuses[]] | length' <<<"$statuses_json")"
+                  failed_checks="$(jq '[.[] | .check_runs[] | select(.status != "completed" or (.conclusion | IN("success", "neutral", "skipped") | not))] | length' <<<"$checks_json")"
+                  failed_statuses="$(jq '[.[] | .statuses[] | select(.state != "success")] | length' <<<"$statuses_json")"
 
                   (( check_count + status_count > 0 ))
                   (( failed_checks == 0 ))

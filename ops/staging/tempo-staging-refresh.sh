@@ -10,6 +10,9 @@ readonly runtime_dir="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 readonly expected_docker_host="unix://$runtime_dir/tempo-staging/docker.sock"
 readonly docker_host="${TEMPO_STAGING_DOCKER_HOST:-$expected_docker_host}"
 readonly project_name='tempo-staging'
+readonly state_dir="${TEMPO_STAGING_STATE_DIR:-$HOME/.local/state/tempo-staging}"
+
+cleanup_databases=()
 
 fail() {
   printf 'tempo staging refresh: %s\n' "$1" >&2
@@ -23,7 +26,7 @@ fail() {
 
 mode=$(stat -c '%a' "$env_file")
 mode_value=$((8#$mode))
-(( (mode_value & 0022) == 0 )) || fail 'staging environment file is group/world writable'
+(( (mode_value & 0777) == 0600 )) || fail 'staging environment file must have mode 600'
 
 read_env_value() {
   python3 - "$env_file" "$1" <<'PY'
@@ -50,7 +53,7 @@ staging_db_name=$(read_env_value STAGING_DB_NAME) || fail 'STAGING_DB_NAME is mi
 [[ "$staging_db_user" =~ ^[a-z_][a-z0-9_]{0,62}$ ]] || fail 'STAGING_DB_USERNAME is not a safe PostgreSQL identifier'
 [[ "$staging_db_name" =~ ^[a-z_][a-z0-9_]{0,45}$ ]] || fail 'STAGING_DB_NAME is not a safe PostgreSQL identifier'
 
-for forbidden in ENABLE_BANKING_PRIVATE_KEY_B64 ENABLE_BANKING_PRIVATE_KEY_PATH TEMPO_PRODUCTION_ENV_FILE TEMPO_PRODUCTION_COMPOSE_FILE; do
+for forbidden in ENABLE_BANKING_PRIVATE_KEY_B64 ENABLE_BANKING_PRIVATE_KEY_PATH TEMPO_PRODUCTION_ENV_FILE TEMPO_PRODUCTION_COMPOSE_FILE OPENAI_API_KEY; do
   if python3 - "$env_file" "$forbidden" <<'PY'
 import sys
 path, forbidden = sys.argv[1:]
@@ -74,6 +77,7 @@ compose() {
     -u STAGING_DB_USERNAME \
     -u STAGING_DB_PASSWORD \
     -u STAGING_DB_NAME \
+    -u DOCKER_CONTEXT \
     TEMPO_STAGING_ENV_FILE="$env_file" \
     DOCKER_HOST="$docker_host" \
     docker compose \
@@ -84,16 +88,17 @@ compose() {
 }
 
 docker_cli() {
-  DOCKER_HOST="$docker_host" docker "$@"
+  env -u DOCKER_CONTEXT DOCKER_HOST="$docker_host" docker "$@"
 }
 
 require_daemon() {
   local socket_path="${docker_host#unix://}"
-  local info
+  local security_options docker_root
   [[ -S "$socket_path" ]] || fail "staging Docker socket is missing: $socket_path"
-  info=$(docker_cli info --format '{{json .SecurityOptions}}|{{.DockerRootDir}}' 2>/dev/null) || fail 'staging Docker daemon is not reachable'
-  [[ "$info" == *rootless* ]] || fail 'staging Docker daemon is not rootless'
-  [[ "$info" == *'.local/share/tempo-staging/docker'* ]] || fail 'staging Docker root is outside the staging data root'
+  security_options=$(docker_cli info --format '{{json .SecurityOptions}}' 2>/dev/null) || fail 'staging Docker daemon is not reachable'
+  docker_root=$(docker_cli info --format '{{.DockerRootDir}}' 2>/dev/null) || fail 'staging Docker root cannot be inspected'
+  [[ "$security_options" == *rootless* ]] || fail 'staging Docker daemon is not rootless'
+  [[ "$docker_root" == "$HOME/.local/share/tempo-staging/docker" ]] || fail 'staging Docker root is outside the staging data root'
 }
 
 latest_backup() {
@@ -150,6 +155,24 @@ psql_db() {
   compose exec -T -e "PGPASSWORD=$staging_db_password" postgres psql -v ON_ERROR_STOP=1 -U "$staging_db_user" -d "$database" "$@"
 }
 
+acquire_mutation_lock() {
+  [[ ! -L "$state_dir" ]] || fail 'staging state directory must not be a symlink'
+  mkdir -p "$state_dir"
+  chmod 700 "$state_dir"
+  exec 9>"$state_dir/deploy.lock"
+  flock -x 9
+}
+
+cleanup_pending_databases() {
+  local database
+  for database in "${cleanup_databases[@]}"; do
+    [[ -n "$database" ]] || continue
+    psql_admin -c "DROP DATABASE IF EXISTS \"$database\";" >/dev/null 2>&1 || true
+  done
+}
+
+trap cleanup_pending_databases EXIT
+
 drop_database() {
   local database="$1"
   psql_admin -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$database' AND pid <> pg_backend_pid();" >/dev/null
@@ -164,11 +187,12 @@ create_database() {
 prepare_refresh_database() {
   local backup="$1"
   local refresh_database="${staging_db_name}_refresh"
+  cleanup_databases=("$refresh_database")
   drop_database "$refresh_database"
   create_database "$refresh_database"
   gzip -dc "$backup" | psql_db "$refresh_database"
   compose run --rm --no-deps -T -e "DB_NAME=$refresh_database" api node ./dist/scripts/schema.js
-  psql_db "$refresh_database" -c "UPDATE bank_connections SET provider_session_id = NULL, authorization_state_hash = NULL, status = 'CANCELLED', consent_valid_until = NULL, last_sync_error = NULL, next_sync_at = NULL, sync_started_at = NULL, sync_status = 'IDLE', sync_failure_count = 0, updated_at = NOW();" >/dev/null
+  psql_db "$refresh_database" -c "UPDATE bank_connections SET provider_session_id = NULL, authorization_state_hash = NULL, status = 'FAILED', consent_valid_until = NULL, last_sync_error = NULL, next_sync_at = NULL, sync_started_at = NULL, sync_status = 'IDLE', sync_failure_count = 0, updated_at = NOW();" >/dev/null
   local unsafe_provider_state
   unsafe_provider_state=$(psql_db "$refresh_database" -At -c "SELECT COUNT(*) FROM bank_connections WHERE provider_session_id IS NOT NULL OR authorization_state_hash IS NOT NULL OR status IN ('AUTHORIZED', 'EXPIRED', 'RUNNING');")
   [[ "$unsafe_provider_state" == 0 ]] || fail 'sanitized refresh database still contains provider state'
@@ -179,6 +203,7 @@ prepare_refresh_database() {
 
 prepare_seed_database() {
   local refresh_database="${staging_db_name}_refresh"
+  cleanup_databases=("$refresh_database")
   drop_database "$refresh_database"
   create_database "$refresh_database"
   compose run --rm --no-deps -T -e "DB_NAME=$refresh_database" api node ./dist/scripts/seed.js
@@ -187,26 +212,34 @@ prepare_seed_database() {
   [[ "$account_count" =~ ^[1-9][0-9]*$ ]] || fail 'seeded database contains no accounts'
 }
 
+rollback_database() {
+  local refresh_database="$1"
+  local previous_database="$2"
+  local failed_database="${refresh_database}_failed"
+
+  compose stop api web >/dev/null 2>&1 || true
+  psql_admin -c "ALTER DATABASE \"$staging_db_name\" RENAME TO \"$failed_database\"; ALTER DATABASE \"$previous_database\" RENAME TO \"$staging_db_name\";" >/dev/null 2>&1 || true
+  cleanup_databases=("$failed_database")
+  compose exec -T redis redis-cli FLUSHALL >/dev/null 2>&1 || true
+  "$deploy_script" up >/dev/null 2>&1 || true
+}
+
 switch_database() {
   local refresh_database="${staging_db_name}_refresh"
   local previous_database="${staging_db_name}_previous_$(date -u +%Y%m%d%H%M%S)"
   [[ "${#previous_database}" -le 63 ]] || fail 'previous database name is too long'
+  cleanup_databases=("$refresh_database" "${refresh_database}_failed")
   compose stop api web >/dev/null 2>&1 || true
   psql_admin -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$staging_db_name' AND pid <> pg_backend_pid();" >/dev/null
   psql_admin -c "ALTER DATABASE \"$staging_db_name\" RENAME TO \"$previous_database\"; ALTER DATABASE \"$refresh_database\" RENAME TO \"$staging_db_name\";" >/dev/null
 
-  if ! psql_db "$staging_db_name" -At -c "SELECT 1;" >/dev/null; then
-    fail 'new staging database is not queryable after swap'
-  fi
-  compose exec -T redis redis-cli FLUSHALL >/dev/null
-  if ! "$deploy_script" up; then
-    compose stop api web >/dev/null 2>&1 || true
-    psql_admin -c "ALTER DATABASE \"$staging_db_name\" RENAME TO \"${refresh_database}_failed\"; ALTER DATABASE \"$previous_database\" RENAME TO \"$staging_db_name\";" >/dev/null || true
-    compose exec -T redis redis-cli FLUSHALL >/dev/null 2>&1 || true
-    "$deploy_script" up >/dev/null 2>&1 || true
+  if ! (psql_db "$staging_db_name" -At -c 'SELECT 1;' >/dev/null && compose exec -T redis redis-cli FLUSHALL >/dev/null && "$deploy_script" up); then
+    rollback_database "$refresh_database" "$previous_database"
     fail 'staging health failed; previous database was restored where possible'
   fi
-  psql_admin -c "DROP DATABASE \"$previous_database\";" >/dev/null
+
+  psql_admin -c "DROP DATABASE \"$previous_database\";" >/dev/null || printf 'tempo staging refresh: warning: old staging database was not removed: %s\n' "$previous_database" >&2
+  cleanup_databases=()
 }
 
 validate_only() {
@@ -224,6 +257,7 @@ case "${1:-validate}" in
     ;;
   refresh)
     [[ "${2:-}" == --confirm-production-backup-refresh ]] || fail 'refresh requires --confirm-production-backup-refresh'
+    acquire_mutation_lock
     require_daemon
     validate_only
     ensure_dependencies
@@ -234,6 +268,7 @@ case "${1:-validate}" in
     ;;
   seed)
     [[ "${2:-}" == --confirm-seeded-reset ]] || fail 'seed requires --confirm-seeded-reset'
+    acquire_mutation_lock
     require_daemon
     "$deploy_script" validate
     ensure_dependencies

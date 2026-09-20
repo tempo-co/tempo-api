@@ -37,7 +37,7 @@ done
 
 mode=$(stat -c '%a' "$env_file")
 mode_value=$((8#$mode))
-(( (mode_value & 0077) == 0 )) || fail 'staging env file must be mode 600'
+(( (mode_value & 0777) == 0600 )) || fail 'staging env file must be mode 600'
 
 public_key=$(<"$public_key_file")
 [[ "$public_key" =~ ^ssh-ed25519[[:space:]] ]] || fail 'only ssh-ed25519 public keys are accepted'
@@ -47,6 +47,7 @@ mkdir -p "$libexec_dir" "$config_dir" "$state_dir" "$ssh_dir"
 chmod 700 "$config_dir" "$state_dir" "$ssh_dir"
 
 install -m 0755 "$source_dir/tempo-staging-deploy.sh" "$libexec_dir/tempo-staging-deploy.sh"
+install -m 0755 "$source_dir/tempo-staging-refresh.sh" "$libexec_dir/tempo-staging-refresh.sh"
 install -m 0755 "$source_dir/tempo-staging-ssh-deploy.sh" "$libexec_dir/tempo-staging-ssh-deploy.sh"
 install -m 0755 "$source_dir/install-rootless-daemon.sh" "$libexec_dir/install-rootless-daemon.sh"
 install -m 0644 "$source_dir/docker-compose.yml" "$libexec_dir/docker-compose.yml"
@@ -57,7 +58,9 @@ if [[ ! -e "$authorized_keys" ]]; then
   install -m 600 /dev/null "$authorized_keys"
 fi
 forced_command="command=\"$libexec_dir/tempo-staging-ssh-deploy.sh\",no-agent-forwarding,no-port-forwarding,no-pty,no-X11-forwarding,no-user-rc $public_key"
-if ! grep -Fq -- "$public_key" "$authorized_keys"; then
+if grep -Fq -- "$public_key" "$authorized_keys"; then
+  grep -Fqx -- "$forced_command" "$authorized_keys" || fail 'public key already exists without the required forced-command restriction'
+else
   printf '%s\n' "$forced_command" >> "$authorized_keys"
 fi
 chmod 600 "$authorized_keys"

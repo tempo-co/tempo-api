@@ -77,8 +77,6 @@ services:
     api:
         image: ${TEMPO_API_IMAGE:?TEMPO_API_IMAGE must be set to an immutable digest}
         restart: unless-stopped
-        env_file:
-            - ${TEMPO_STAGING_ENV_FILE:-/etc/tempo/staging.env}
         environment:
             NODE_ENV: production
             WEB_BASE_URL: ${STAGING_PUBLIC_URL:?STAGING_PUBLIC_URL must be set}
@@ -90,23 +88,37 @@ services:
             DB_PASSWORD: ${STAGING_DB_PASSWORD:?STAGING_DB_PASSWORD must be set}
             DB_NAME: ${STAGING_DB_NAME:?STAGING_DB_NAME must be set}
             DB_SYNCHRONIZE: 'false'
-            DB_PGADMIN_PORT: '5050'
+            DB_PGADMIN_PORT: '0'
             REDIS_URL: redis://redis:6379
             REDIS_PORT: '6379'
             REDIS_HOST: redis
-            REDIS_INSIGHT_PORT: '5540'
+            REDIS_INSIGHT_PORT: '0'
+            SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET must be set}
+            SESSION_EXPIRATION: 30d
             SESSION_REDIS_KEY: tempo-staging-session
+            AI_CATEGORIZATION_ENABLED: 'false'
+            AI_CATEGORIZATION_PROVIDER: openai
+            AI_CATEGORIZATION_MODEL: gpt-5.6-luna
+            AI_CATEGORIZATION_WEB_SEARCH_ENABLED: 'false'
             BANKING_INTEGRATION_ENABLED: 'false'
             ENABLE_BANKING_API_URL: https://disabled.invalid
             ENABLE_BANKING_APPLICATION_ID: tempo-staging-disabled
             ENABLE_BANKING_REDIRECT_URL: ${STAGING_PUBLIC_URL:?STAGING_PUBLIC_URL must be set}/bank-connections/callback
+            BANKING_SESSION_ENCRYPTION_KEY_B64: ${BANKING_SESSION_ENCRYPTION_KEY_B64:?BANKING_SESSION_ENCRYPTION_KEY_B64 must be set}
+            BANKING_SYNC_INTERVAL: 6h
+            BANKING_SYNC_DISPATCH_INTERVAL: 10m
+            BANKING_SYNC_RUNNING_TIMEOUT: 30m
             EMAIL_HOST: mailpit
             EMAIL_PORT: '1025'
             EMAIL_SECURE: 'false'
             EMAIL_UI_PORT: '8025'
             EMAIL_UI_URL: ${STAGING_PUBLIC_URL:?STAGING_PUBLIC_URL must be set}/mailpit/
-            AI_CATEGORIZATION_ENABLED: 'false'
-            AI_CATEGORIZATION_WEB_SEARCH_ENABLED: 'false'
+            EMAIL_VERIFICATION_EXPIRATION: 24h
+            EMAIL_VERIFICATION_REDIS_KEY: tempo-staging-email-verification
+            PASSWORD_RESET_EXPIRATION: 24h
+            PASSWORD_RESET_REDIS_KEY: tempo-staging-password-reset
+            THROTTLE_TTL: 1m
+            THROTTLE_LIMIT: '100'
         expose:
             - '3000'
         networks:

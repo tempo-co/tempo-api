@@ -22,6 +22,9 @@ command -v fuse-overlayfs >/dev/null || fail 'fuse-overlayfs is missing; install
 
 install -D -m 0644 "$script_dir/tempo-staging-docker.service" "$unit_target"
 systemctl --user daemon-reload
+loginctl enable-linger "$(id -un)" 2>/dev/null || {
+  [[ "$(loginctl show-user "$(id -un)" -p Linger --value 2>/dev/null || true)" == yes ]] || fail 'user lingering is not enabled; run loginctl enable-linger as an authorized administrator'
+}
 systemctl --user enable --now "$unit_name"
 
 for _ in $(seq 1 30); do
@@ -32,9 +35,10 @@ for _ in $(seq 1 30); do
 done
 [[ -S "$socket_path" ]] || fail "rootless Docker socket did not appear: $socket_path"
 
-info=$(DOCKER_HOST="unix://$socket_path" docker info --format '{{json .SecurityOptions}}|{{.DockerRootDir}}' 2>/dev/null) || fail 'rootless Docker daemon is not reachable'
-[[ "$info" == *rootless* ]] || fail 'Docker daemon does not report rootless mode'
-[[ "$info" == *"$expected_root"* ]] || fail 'Docker root is outside the staging data root'
+security_options=$(env -u DOCKER_CONTEXT DOCKER_HOST="unix://$socket_path" docker info --format '{{json .SecurityOptions}}' 2>/dev/null) || fail 'rootless Docker daemon is not reachable'
+docker_root=$(env -u DOCKER_CONTEXT DOCKER_HOST="unix://$socket_path" docker info --format '{{.DockerRootDir}}' 2>/dev/null) || fail 'Docker root cannot be inspected'
+[[ "$security_options" == *rootless* ]] || fail 'Docker daemon does not report rootless mode'
+[[ "$docker_root" == "$expected_root" ]] || fail 'Docker root is outside the staging data root'
 
 printf '%s\n' 'Tempo staging rootless Docker: PASS'
 printf 'Socket: %s\n' "$socket_path"

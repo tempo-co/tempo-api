@@ -52,6 +52,8 @@ assert services['api']['environment']['BANKING_INTEGRATION_ENABLED'] in (False, 
 assert services['api']['environment']['AI_CATEGORIZATION_ENABLED'] in (False, 'false')
 assert services['api']['environment']['AI_CATEGORIZATION_WEB_SEARCH_ENABLED'] in (False, 'false')
 assert services['api']['environment']['REDIS_URL'] == 'redis://redis:6379'
+assert 'env_file' not in services['api']
+assert 'OPENAI_API_KEY' not in services['api']['environment']
 
 for service_name in ('postgres', 'redis', 'mailpit', 'api'):
     assert not services[service_name].get('ports'), service_name
@@ -86,5 +88,26 @@ if TEMPO_STAGING_ENV_FILE="$staging_env" TEMPO_STAGING_DOCKER_HOST=unix:///var/r
     echo 'rootful Docker socket unexpectedly accepted' >&2
     exit 1
 fi
+
+bad_env=$(mktemp)
+trap 'rm -f "$staging_env" "$config_json" "$bad_env"' EXIT
+python3 - "$staging_env" "$bad_env" <<'PY'
+import sys
+from pathlib import Path
+source, target = map(Path, sys.argv[1:])
+target.write_text(source.read_text().replace('ghcr.io/tempo-co/tempo-api@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'ghcr.io/untrusted/project@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'))
+PY
+chmod 600 "$bad_env"
+if TEMPO_STAGING_ENV_FILE="$bad_env" bash "$repo_root/ops/staging/tempo-staging-deploy.sh" validate; then
+    echo 'untrusted API image unexpectedly accepted' >&2
+    exit 1
+fi
+
+chmod 644 "$staging_env"
+if TEMPO_STAGING_ENV_FILE="$staging_env" bash "$repo_root/ops/staging/tempo-staging-deploy.sh" validate; then
+    echo 'world-readable staging environment unexpectedly accepted' >&2
+    exit 1
+fi
+chmod 600 "$staging_env"
 
 printf '%s\n' 'tempo staging deployment contract: PASS'
