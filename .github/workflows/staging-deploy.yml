@@ -1,0 +1,129 @@
+name: Deploy API PR to staging
+
+on:
+    workflow_dispatch:
+        inputs:
+            pr_number:
+                description: Open API pull request number
+                required: true
+                type: number
+
+permissions:
+    contents: read
+    checks: read
+
+jobs:
+    verify-pr:
+        name: Verify API PR
+        runs-on: ubuntu-latest
+        outputs:
+            head_sha: ${{ steps.pr.outputs.head_sha }}
+        steps:
+            - name: Verify PR head and checks
+              id: pr
+              env:
+                  GH_TOKEN: ${{ github.token }}
+                  PR_NUMBER: ${{ inputs.pr_number }}
+              run: |
+                  set -euo pipefail
+                  repo="$GITHUB_REPOSITORY"
+                  pr="$PR_NUMBER"
+                  pr_json="$(gh api "repos/$repo/pulls/$pr")"
+                  head_repo="$(jq -r '.head.repo.full_name // ""' <<<"$pr_json")"
+                  head_sha="$(jq -r '.head.sha // ""' <<<"$pr_json")"
+                  base_ref="$(jq -r '.base.ref // ""' <<<"$pr_json")"
+                  state="$(jq -r '.state // ""' <<<"$pr_json")"
+                  draft="$(jq -r '.draft' <<<"$pr_json")"
+
+                  [[ "$repo" == tempo-co/tempo-api ]]
+                  [[ "$head_repo" == "$repo" ]]
+                  [[ "$base_ref" == main ]]
+                  [[ "$state" == open ]]
+                  [[ "$draft" == false ]]
+                  [[ "$head_sha" =~ ^[0-9a-f]{40}$ ]]
+
+                  checks_json="$(gh api "repos/$repo/commits/$head_sha/check-runs?per_page=100")"
+                  statuses_json="$(gh api "repos/$repo/commits/$head_sha/status")"
+                  check_count="$(jq '.total_count' <<<"$checks_json")"
+                  status_count="$(jq '.total_count' <<<"$statuses_json")"
+                  failed_checks="$(jq '[.check_runs[] | select(.status != "completed" or .conclusion != "success")] | length' <<<"$checks_json")"
+                  failed_statuses="$(jq '[.statuses[] | select(.state != "success")] | length' <<<"$statuses_json")"
+
+                  (( check_count + status_count > 0 ))
+                  (( failed_checks == 0 ))
+                  (( failed_statuses == 0 ))
+                  printf 'head_sha=%s\n' "$head_sha" >> "$GITHUB_OUTPUT"
+
+    build:
+        name: Build and publish API image
+        runs-on: ubuntu-latest
+        needs: [verify-pr]
+        permissions:
+            contents: read
+            packages: write
+        outputs:
+            digest: ${{ steps.build.outputs.digest }}
+        steps:
+            - name: Checkout exact PR head
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+              with:
+                  ref: ${{ needs.verify-pr.outputs.head_sha }}
+                  fetch-depth: 1
+
+            - name: Log in to GitHub Container registry
+              uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+              with:
+                  registry: ghcr.io
+                  username: ${{ github.actor }}
+                  password: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Build and publish immutable API image
+              id: build
+              uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+              with:
+                  context: .
+                  push: true
+                  tags: ghcr.io/${{ github.repository_owner }}/tempo-api:staging-pr-${{ inputs.pr_number }}-${{ needs.verify-pr.outputs.head_sha }}
+                  labels: |
+                      org.opencontainers.image.source=https://github.com/${{ github.repository }}
+                      org.opencontainers.image.revision=${{ needs.verify-pr.outputs.head_sha }}
+
+    deploy:
+        name: Promote API image to staging
+        runs-on: ubuntu-latest
+        needs: [verify-pr, build]
+        environment: staging
+        steps:
+            - name: Connect GitHub runner to the tailnet
+              uses: tailscale/github-action@780049a30b6ff5c378a9e7b389d15ece7a204888 # v4.1.3
+              with:
+                  oauth-client-id: ${{ secrets.STAGING_TAILSCALE_OAUTH_CLIENT_ID }}
+                  oauth-secret: ${{ secrets.STAGING_TAILSCALE_OAUTH_SECRET }}
+                  tags: tag:tempo-staging-deploy
+                  ping: ${{ vars.STAGING_DEPLOY_HOST }}
+
+            - name: Configure restricted SSH client
+              env:
+                  STAGING_SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+                  STAGING_SSH_KNOWN_HOSTS: ${{ secrets.STAGING_SSH_KNOWN_HOSTS }}
+              run: |
+                  set -euo pipefail
+                  install -d -m 700 "$HOME/.ssh"
+                  printf '%s\n' "$STAGING_SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+                  printf '%s\n' "$STAGING_SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+                  chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
+
+            - name: Deploy exact API digest
+              env:
+                  DEPLOY_HOST: ${{ vars.STAGING_DEPLOY_HOST }}
+                  DEPLOY_USER: ${{ vars.STAGING_DEPLOY_USER }}
+                  PR_NUMBER: ${{ inputs.pr_number }}
+                  HEAD_SHA: ${{ needs.verify-pr.outputs.head_sha }}
+                  IMAGE_DIGEST: ${{ needs.build.outputs.digest }}
+              run: |
+                  set -euo pipefail
+                  [[ "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+                  image="ghcr.io/${GITHUB_REPOSITORY_OWNER}/tempo-api@${IMAGE_DIGEST}"
+                  ssh -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+                    "$DEPLOY_USER@$DEPLOY_HOST" \
+                    "tempo-staging-ssh-deploy deploy api tempo-co/tempo-api $PR_NUMBER $HEAD_SHA $image"

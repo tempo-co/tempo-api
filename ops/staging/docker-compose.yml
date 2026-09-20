@@ -1,0 +1,168 @@
+name: tempo-staging
+
+services:
+    postgres:
+        image: postgres@sha256:67f41722b7a8cbdb868a44a4995c846eddfdc2973bccb291ce937dce88ad5675
+        restart: unless-stopped
+        environment:
+            POSTGRES_USER: ${STAGING_DB_USERNAME:?STAGING_DB_USERNAME must be set}
+            POSTGRES_PASSWORD: ${STAGING_DB_PASSWORD:?STAGING_DB_PASSWORD must be set}
+            POSTGRES_DB: ${STAGING_DB_NAME:?STAGING_DB_NAME must be set}
+        volumes:
+            - tempo_staging_postgres_data:/var/lib/postgresql/data
+        networks:
+            - backend
+        healthcheck:
+            test: ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+            interval: 5s
+            timeout: 5s
+            retries: 12
+        mem_limit: 512m
+        cpus: 1.0
+        pids_limit: 256
+        logging: &default-logging
+            driver: json-file
+            options:
+                max-size: 10m
+                max-file: '3'
+
+    redis:
+        image: redis@sha256:71da9275c5f3fcb97d0fa0c8c5b36cc995327265420f17a04bfd544f458059f7
+        restart: unless-stopped
+        command:
+            [
+                'redis-server',
+                '--save',
+                '',
+                '--appendonly',
+                'no',
+                '--maxmemory',
+                '128mb',
+                '--maxmemory-policy',
+                'noeviction',
+            ]
+        networks:
+            - backend
+        healthcheck:
+            test: ['CMD', 'redis-cli', 'ping']
+            interval: 5s
+            timeout: 5s
+            retries: 12
+        mem_limit: 128m
+        cpus: 0.25
+        pids_limit: 128
+        security_opt:
+            - no-new-privileges:true
+        logging: *default-logging
+
+    mailpit:
+        image: axllent/mailpit@sha256:c96991d9bef73594c246d89ca81411d4e916f03e76a7d2d72fa2ab5dd3c9ce24
+        restart: unless-stopped
+        command: ['--webroot=/staging/mailpit/']
+        networks:
+            - backend
+            - edge
+        healthcheck:
+            test: ['CMD', '/mailpit', 'readyz', '--webroot', '/staging/mailpit/']
+            interval: 5s
+            timeout: 5s
+            retries: 12
+        mem_limit: 128m
+        cpus: 0.25
+        pids_limit: 128
+        security_opt:
+            - no-new-privileges:true
+        logging: *default-logging
+
+    api:
+        image: ${TEMPO_API_IMAGE:?TEMPO_API_IMAGE must be set to an immutable digest}
+        restart: unless-stopped
+        env_file:
+            - ${TEMPO_STAGING_ENV_FILE:-/etc/tempo/staging.env}
+        environment:
+            NODE_ENV: production
+            WEB_BASE_URL: ${STAGING_PUBLIC_URL:?STAGING_PUBLIC_URL must be set}
+            API_URL: http://api:3000
+            PORT: '3000'
+            DB_HOST: postgres
+            DB_PORT: '5432'
+            DB_USERNAME: ${STAGING_DB_USERNAME:?STAGING_DB_USERNAME must be set}
+            DB_PASSWORD: ${STAGING_DB_PASSWORD:?STAGING_DB_PASSWORD must be set}
+            DB_NAME: ${STAGING_DB_NAME:?STAGING_DB_NAME must be set}
+            DB_SYNCHRONIZE: 'false'
+            DB_PGADMIN_PORT: '5050'
+            REDIS_URL: redis://redis:6379
+            REDIS_PORT: '6379'
+            REDIS_HOST: redis
+            REDIS_INSIGHT_PORT: '5540'
+            SESSION_REDIS_KEY: tempo-staging-session
+            BANKING_INTEGRATION_ENABLED: 'false'
+            ENABLE_BANKING_API_URL: https://disabled.invalid
+            ENABLE_BANKING_APPLICATION_ID: tempo-staging-disabled
+            ENABLE_BANKING_REDIRECT_URL: ${STAGING_PUBLIC_URL:?STAGING_PUBLIC_URL must be set}/bank-connections/callback
+            EMAIL_HOST: mailpit
+            EMAIL_PORT: '1025'
+            EMAIL_SECURE: 'false'
+            EMAIL_UI_PORT: '8025'
+            EMAIL_UI_URL: ${STAGING_PUBLIC_URL:?STAGING_PUBLIC_URL must be set}/mailpit/
+            AI_CATEGORIZATION_ENABLED: 'false'
+            AI_CATEGORIZATION_WEB_SEARCH_ENABLED: 'false'
+        expose:
+            - '3000'
+        networks:
+            - backend
+            - edge
+        depends_on:
+            postgres:
+                condition: service_healthy
+            redis:
+                condition: service_healthy
+            mailpit:
+                condition: service_healthy
+        healthcheck:
+            test: ['CMD', 'curl', '-f', 'http://127.0.0.1:3000/health']
+            interval: 30s
+            timeout: 5s
+            retries: 5
+            start_period: 15s
+        mem_limit: 768m
+        cpus: 1.0
+        pids_limit: 256
+        security_opt:
+            - no-new-privileges:true
+        logging: *default-logging
+
+    web:
+        image: ${TEMPO_WEB_IMAGE:?TEMPO_WEB_IMAGE must be set to an immutable digest}
+        restart: unless-stopped
+        ports:
+            - '127.0.0.1:${STAGING_WEB_HOST_PORT:?STAGING_WEB_HOST_PORT must be set}:8080'
+        networks:
+            - edge
+        depends_on:
+            api:
+                condition: service_healthy
+        healthcheck:
+            test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:8080/staging/']
+            interval: 30s
+            timeout: 5s
+            retries: 5
+            start_period: 5s
+        mem_limit: 128m
+        cpus: 0.25
+        pids_limit: 128
+        security_opt:
+            - no-new-privileges:true
+        logging: *default-logging
+
+volumes:
+    tempo_staging_postgres_data:
+        name: tempo-staging-postgres-data
+
+networks:
+    backend:
+        name: tempo-staging-backend
+        internal: true
+    edge:
+        name: tempo-staging-edge
+        internal: true
