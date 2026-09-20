@@ -3,6 +3,7 @@ import {ApiOperation, ApiResponse, ApiTags} from '@nestjs/swagger';
 import {Throttle, minutes} from '@nestjs/throttler';
 import {Request, Response} from 'express';
 
+import {ConfigurationService} from '@core/config/config.service';
 import {TOO_MANY_REQUESTS} from '@core/rate-limit/api-messages.constants';
 import {
 	ALL_OTHER_SESSIONS_REVOKED,
@@ -58,6 +59,7 @@ export class AuthController {
 		private readonly authService: AuthService,
 		private readonly sessionService: SessionService,
 		private readonly passwordResetService: PasswordResetService,
+		private readonly configurationService: ConfigurationService,
 	) {}
 
 	@Public()
@@ -94,7 +96,9 @@ export class AuthController {
 	@ApiResponse({status: 429, description: TOO_MANY_REQUESTS})
 	@ApiOperation({summary: 'Logs out the current user and destroys the session.'})
 	async logOut(@Req() request: Request, @Res({passthrough: true}) res: Response) {
-		res.clearCookie('session');
+		res.clearCookie(this.configurationService.get('SESSION_COOKIE_NAME'), {
+			path: this.configurationService.get('SESSION_COOKIE_PATH'),
+		});
 		return await this.authService.logOut(request);
 	}
 

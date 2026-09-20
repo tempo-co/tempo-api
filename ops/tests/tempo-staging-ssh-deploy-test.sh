@@ -34,17 +34,26 @@ gh_path.write_text('''#!/usr/bin/env python3
 import json
 import sys
 
+jq_expr = next((sys.argv[index + 1] for index, arg in enumerate(sys.argv[:-1]) if arg == '--jq'), None)
 endpoint = next((arg for arg in sys.argv[1:] if arg.startswith("repos/")), "")
 if endpoint.endswith('/pulls/42'):
     print(json.dumps({"head": {"repo": {"full_name": "tempo-co/tempo-api"}, "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}, "base": {"ref": "main"}, "state": "open", "draft": False}))
 elif endpoint.startswith('repos/tempo-co/tempo-api/contents/.github/workflows/ci.yml?ref='):
-    print(json.dumps({"sha": "trusted-ci-sha"}))
+    print('trusted-ci-sha' if jq_expr == '.sha' else json.dumps({"sha": "trusted-ci-sha"}))
 elif endpoint.startswith('repos/tempo-co/tempo-api/actions/runs?head_sha='):
-    print(json.dumps([{"workflow_runs": [{"workflow_id": 102921081, "path": ".github/workflows/ci.yml", "head_sha": "a" * 40, "status": "completed", "conclusion": "success", "check_suite_id": 123}]}]))
+    run = {"workflow_id": 102921081, "path": ".github/workflows/ci.yml", "head_sha": "a" * 40, "status": "completed", "conclusion": "success", "check_suite_id": 123}
+    print(json.dumps(run) if jq_expr == '.workflow_runs[]' else json.dumps({"workflow_runs": [run]}))
 elif endpoint.endswith('/check-runs?per_page=100'):
-    print(json.dumps([{"check_runs": [{"check_suite": {"id": 123}, "name": "Lint & Format", "status": "completed", "conclusion": "success"}, {"check_suite": {"id": 123}, "name": "Build", "status": "completed", "conclusion": "success"}, {"check_suite": {"id": 123}, "name": "Unit Tests", "status": "completed", "conclusion": "success"}, {"check_suite": {"id": 123}, "name": "E2E Tests", "status": "completed", "conclusion": "success"}]}]))
+    checks = [{"check_suite": {"id": 123}, "name": name, "status": "completed", "conclusion": "success"} for name in ("Lint & Format", "Build", "Unit Tests", "E2E Tests")]
+    if jq_expr == '.check_runs[]':
+        print('\\n'.join(json.dumps(check) for check in checks))
+    else:
+        print(json.dumps({"check_runs": checks}))
 elif endpoint.endswith('/status?per_page=100'):
-    print(json.dumps([{"total_count": 1, "statuses": [{"state": "success"}]}]))
+    if jq_expr == '.statuses[]':
+        pass
+    else:
+        print(json.dumps({"statuses": []}))
 else:
     raise SystemExit(f"unexpected endpoint: {endpoint}")
 ''')
