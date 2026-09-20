@@ -93,11 +93,18 @@ while IFS= read -r authorized_line || [[ -n "$authorized_line" ]]; do
     done
     (( key_field_index >= 0 )) || fail 'matching authorized key could not be parsed'
     for ((field_index = 0; field_index < key_field_index; field_index++)); do
-      if [[ "${fields[field_index]}" == from=* ]]; then
-        if [[ -n "$matching_from" && "$matching_from" != "${fields[field_index]}" ]]; then
+      option_field="${fields[field_index]}"
+      from_candidate=''
+      if [[ "$option_field" =~ (^|,)from=\"[^\"]*\" ]]; then
+        from_candidate="${BASH_REMATCH[0]#,}"
+      elif [[ "$option_field" =~ (^|,)from=[^,]+ ]]; then
+        from_candidate="${BASH_REMATCH[0]#*,}"
+      fi
+      if [[ -n "$from_candidate" ]]; then
+        if [[ -n "$matching_from" && "$matching_from" != "$from_candidate" ]]; then
           fail 'matching authorized keys have conflicting from restrictions'
         fi
-        matching_from="${fields[field_index]}"
+        matching_from="$from_candidate"
       fi
     done
     continue

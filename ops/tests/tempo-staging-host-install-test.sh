@@ -57,7 +57,7 @@ assert 'old-unrestricted-comment' not in lines[0]
 print('tempo staging host installer duplicate-key regression: PASS')
 PY
 
-printf 'from="127.0.0.1" %s %s restricted-from\n' "$key_type" "$key_blob" > "$tmp_dir/home/.ssh/authorized_keys"
+printf 'command="old",from="127.0.0.1" %s %s restricted-from\n' "$key_type" "$key_blob" > "$tmp_dir/home/.ssh/authorized_keys"
 HOME="$tmp_dir/home" bash "$installer" --ssh-public-key-file "$tmp_dir/deploy_key.pub" >/dev/null
 if ! grep -Fq 'from="127.0.0.1"' "$tmp_dir/home/.ssh/authorized_keys"; then
     echo 'authorized_keys from restriction was not preserved' >&2
