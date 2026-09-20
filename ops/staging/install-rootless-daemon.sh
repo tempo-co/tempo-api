@@ -7,6 +7,7 @@ readonly user_unit_dir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 readonly unit_target="$user_unit_dir/$unit_name"
 readonly socket_path="${XDG_RUNTIME_DIR:?XDG_RUNTIME_DIR is required}/tempo-staging/docker.sock"
 readonly expected_root="$HOME/.local/share/tempo-staging/docker"
+readonly rootless_script="$HOME/bin/dockerd-rootless.sh"
 
 fail() {
   printf 'tempo rootless Docker: %s\n' "$1" >&2
@@ -14,7 +15,7 @@ fail() {
 }
 
 [[ "$(id -u)" != 0 ]] || fail 'run this as the staging user, not root'
-command -v dockerd-rootless.sh >/dev/null || fail 'dockerd-rootless.sh is missing; install the prerequisite packages first'
+[[ -x "$rootless_script" ]] || fail "missing rootless daemon script: $rootless_script; run the official rootless installer first"
 command -v rootlesskit >/dev/null || fail 'rootlesskit is missing; install the prerequisite packages first'
 command -v slirp4netns >/dev/null || fail 'slirp4netns is missing; install the prerequisite packages first'
 command -v fuse-overlayfs >/dev/null || fail 'fuse-overlayfs is missing; install the prerequisite packages first'

@@ -53,7 +53,7 @@ docker_path.write_text('''#!/usr/bin/env sh
 case "$1 $2 $3" in
   "info --format {{json .SecurityOptions}}") printf '["name=rootless"]\\n' ;;
   "info --format {{.DockerRootDir}}") printf '%s\\n' "$HOME/.local/share/tempo-staging/docker" ;;
-  "buildx imagetools inspect") printf 'sha256:%s\\n' eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee ;;
+  "manifest inspect --verbose") printf '[{"Descriptor":{"digest":"sha256:%s"}}]\\n' eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee ;;
   *) exit 1 ;;
 esac
 ''')

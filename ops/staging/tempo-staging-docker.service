@@ -7,7 +7,7 @@ Environment=PATH=/usr/local/bin:/usr/bin:/bin
 Environment=DOCKERD_ROOTLESS_ROOTLESSKIT_NET=slirp4netns
 Environment=DOCKERD_ROOTLESS_ROOTLESSKIT_PORT_DRIVER=slirp4netns
 ExecStartPre=/usr/bin/mkdir -p %h/.local/share/tempo-staging/docker %h/.local/state/tempo-staging/docker-exec
-ExecStart=/usr/bin/dockerd-rootless.sh --experimental --host=unix://%t/tempo-staging/docker.sock --data-root=%h/.local/share/tempo-staging/docker --exec-root=%h/.local/state/tempo-staging/docker-exec --pidfile=%h/.local/state/tempo-staging/docker.pid --storage-driver=fuse-overlayfs
+ExecStart=%h/bin/dockerd-rootless.sh --experimental --host=unix://%t/tempo-staging/docker.sock --data-root=%h/.local/share/tempo-staging/docker --exec-root=%h/.local/state/tempo-staging/docker-exec --pidfile=%h/.local/state/tempo-staging/docker.pid --storage-driver=fuse-overlayfs
 ExecReload=/bin/kill -s HUP $MAINPID
 KillMode=mixed
 Restart=on-failure

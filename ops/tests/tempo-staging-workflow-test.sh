@@ -12,6 +12,7 @@ required = [
     'runs-on: ubuntu-latest',
     'gh api "repos/$repo/pulls/$pr"',
     '[[ "$GITHUB_REF" == refs/heads/main ]]',
+    'platforms: linux/amd64',
     'gh api --paginate --slurp',
     'pull-requests: read',
     'statuses: read',

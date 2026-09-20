@@ -37,7 +37,7 @@ done
 
 mode=$(stat -c '%a' "$env_file")
 mode_value=$((8#$mode))
-(( (mode_value & 0777) == 0600 )) || fail 'staging env file must be mode 600'
+(( mode_value == 0600 )) || fail 'staging env file must be mode 600'
 
 public_key=$(<"$public_key_file")
 [[ "$public_key" =~ ^ssh-ed25519[[:space:]] ]] || fail 'only ssh-ed25519 public keys are accepted'

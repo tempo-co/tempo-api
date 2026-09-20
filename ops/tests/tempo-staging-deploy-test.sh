@@ -108,6 +108,11 @@ if TEMPO_STAGING_ENV_FILE="$staging_env" bash "$repo_root/ops/staging/tempo-stag
     echo 'world-readable staging environment unexpectedly accepted' >&2
     exit 1
 fi
+chmod 1600 "$staging_env"
+if TEMPO_STAGING_ENV_FILE="$staging_env" bash "$repo_root/ops/staging/tempo-staging-deploy.sh" validate; then
+    echo 'special-bit staging environment unexpectedly accepted' >&2
+    exit 1
+fi
 chmod 600 "$staging_env"
 
 printf '%s\n' 'tempo staging deployment contract: PASS'

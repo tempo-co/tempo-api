@@ -26,7 +26,7 @@ fail() {
 
 mode=$(stat -c '%a' "$env_file")
 mode_value=$((8#$mode))
-(( (mode_value & 0777) == 0600 )) || fail 'staging environment file must have mode 600'
+(( mode_value == 0600 )) || fail 'staging environment file must have mode 600'
 
 read_env_value() {
   python3 - "$env_file" "$1" <<'PY'
@@ -77,6 +77,8 @@ compose() {
     -u STAGING_DB_USERNAME \
     -u STAGING_DB_PASSWORD \
     -u STAGING_DB_NAME \
+    -u SESSION_SECRET \
+    -u BANKING_SESSION_ENCRYPTION_KEY_B64 \
     -u DOCKER_CONTEXT \
     TEMPO_STAGING_ENV_FILE="$env_file" \
     DOCKER_HOST="$docker_host" \
@@ -221,7 +223,7 @@ rollback_database() {
   psql_admin -c "ALTER DATABASE \"$staging_db_name\" RENAME TO \"$failed_database\"; ALTER DATABASE \"$previous_database\" RENAME TO \"$staging_db_name\";" >/dev/null 2>&1 || true
   cleanup_databases=("$failed_database")
   compose exec -T redis redis-cli FLUSHALL >/dev/null 2>&1 || true
-  "$deploy_script" up >/dev/null 2>&1 || true
+  TEMPO_STAGING_ENV_FILE="$env_file" TEMPO_STAGING_STATE_DIR="$state_dir" TEMPO_STAGING_LOCK_HELD=1 "$deploy_script" up >/dev/null 2>&1 || true
 }
 
 switch_database() {
@@ -233,7 +235,7 @@ switch_database() {
   psql_admin -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$staging_db_name' AND pid <> pg_backend_pid();" >/dev/null
   psql_admin -c "ALTER DATABASE \"$staging_db_name\" RENAME TO \"$previous_database\"; ALTER DATABASE \"$refresh_database\" RENAME TO \"$staging_db_name\";" >/dev/null
 
-  if ! (psql_db "$staging_db_name" -At -c 'SELECT 1;' >/dev/null && compose exec -T redis redis-cli FLUSHALL >/dev/null && "$deploy_script" up); then
+  if ! (psql_db "$staging_db_name" -At -c 'SELECT 1;' >/dev/null && compose exec -T redis redis-cli FLUSHALL >/dev/null && TEMPO_STAGING_ENV_FILE="$env_file" TEMPO_STAGING_STATE_DIR="$state_dir" TEMPO_STAGING_LOCK_HELD=1 "$deploy_script" up); then
     rollback_database "$refresh_database" "$previous_database"
     fail 'staging health failed; previous database was restored where possible'
   fi

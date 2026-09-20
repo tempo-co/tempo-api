@@ -24,7 +24,7 @@ fail() {
 
 mode=$(stat -c '%a' "$env_file")
 mode_value=$((8#$mode))
-(( (mode_value & 0777) == 0600 )) || fail 'staging environment file must have mode 600'
+(( mode_value == 0600 )) || fail 'staging environment file must have mode 600'
 [[ ! -L "$state_dir" ]] || fail 'staging state directory must not be a symlink'
 mkdir -p "$state_dir"
 chmod 700 "$state_dir"
@@ -81,8 +81,10 @@ require_daemon() {
 
 require_daemon
 image_tag="${image_tag_prefix}${pr_number}-${head_sha}"
-remote_digest=$(docker_cli buildx imagetools inspect "$image_tag" --format '{{.Manifest.Digest}}' 2>/dev/null) || fail 'staging image tag is not available in the registry'
-[[ "$remote_digest" == "sha256:$digest" ]] || fail 'image digest does not match the verified PR build tag'
+manifest_json=$(docker_cli manifest inspect --verbose "$image_tag" 2>/dev/null) || fail 'staging image tag is not available in the registry'
+if ! jq -e --arg expected "sha256:$digest" 'if type == "array" then any(.[]; .Descriptor.digest == $expected) else .Descriptor.digest == $expected end' <<< "$manifest_json" >/dev/null; then
+  fail 'image digest does not match the verified PR build tag'
+fi
 
 read_env_value() {
   python3 - "$env_file" "$1" <<'PY'
@@ -167,6 +169,7 @@ update_manifest() {
   deployed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   mkdir -p "$state_dir"
   chmod 700 "$state_dir"
+  [[ ! -L "$state_dir/deployed.json" ]] || fail 'deployment manifest must not be a symlink'
   python3 - "$state_dir/deployed.json" "$component" "$repository" "$pr_number" "$head_sha" "$image" "$deployed_at" <<'PY'
 import json
 import os
@@ -198,11 +201,35 @@ os.replace(temporary, path)
 PY
 }
 
+manifest_path="$state_dir/deployed.json"
+manifest_backup="$state_dir/.deployed.rollback.$$"
+manifest_existed=0
+if [[ -e "$manifest_path" ]]; then
+  cp -p -- "$manifest_path" "$manifest_backup" || fail 'could not back up the deployment manifest'
+  manifest_existed=1
+fi
+restore_manifest() {
+  if (( manifest_existed )); then
+    mv -f -- "$manifest_backup" "$manifest_path"
+  else
+    rm -f -- "$manifest_path" "$manifest_backup"
+  fi
+}
+cleanup_manifest_backup() {
+  rm -f -- "$manifest_backup"
+}
+trap cleanup_manifest_backup EXIT
+
 update_image "$image_key" "$image"
-if ! TEMPO_STAGING_ENV_FILE="$env_file" TEMPO_STAGING_DOCKER_HOST="$docker_host" "$deploy_script" deploy "$component"; then
+if ! TEMPO_STAGING_ENV_FILE="$env_file" TEMPO_STAGING_STATE_DIR="$state_dir" TEMPO_STAGING_LOCK_HELD=1 TEMPO_STAGING_DOCKER_HOST="$docker_host" "$deploy_script" deploy "$component"; then
   update_image "$image_key" "$old_image"
-  TEMPO_STAGING_ENV_FILE="$env_file" TEMPO_STAGING_DOCKER_HOST="$docker_host" "$deploy_script" deploy "$component" >/dev/null 2>&1 || true
+  TEMPO_STAGING_ENV_FILE="$env_file" TEMPO_STAGING_STATE_DIR="$state_dir" TEMPO_STAGING_LOCK_HELD=1 TEMPO_STAGING_DOCKER_HOST="$docker_host" "$deploy_script" deploy "$component" >/dev/null 2>&1 || true
   fail 'staging deployment failed; previous image was restored where possible'
 fi
-update_manifest
+if ! update_manifest; then
+  restore_manifest
+  update_image "$image_key" "$old_image"
+  TEMPO_STAGING_ENV_FILE="$env_file" TEMPO_STAGING_STATE_DIR="$state_dir" TEMPO_STAGING_LOCK_HELD=1 TEMPO_STAGING_DOCKER_HOST="$docker_host" "$deploy_script" deploy "$component" >/dev/null 2>&1 || true
+  fail 'staging manifest update failed; previous image was restored where possible'
+fi
 printf 'tempo staging deploy: PASS component=%s pr=%s sha=%s\n' "$component" "$pr_number" "$head_sha"

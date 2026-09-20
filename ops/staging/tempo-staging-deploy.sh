@@ -8,6 +8,7 @@ readonly env_file="${TEMPO_STAGING_ENV_FILE:-$HOME/.config/tempo-staging/staging
 readonly runtime_dir="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 readonly expected_docker_host="unix://$runtime_dir/tempo-staging/docker.sock"
 readonly docker_host="${TEMPO_STAGING_DOCKER_HOST:-$expected_docker_host}"
+readonly state_dir="${TEMPO_STAGING_STATE_DIR:-$HOME/.local/state/tempo-staging}"
 
 fail() {
   printf 'tempo staging: %s\n' "$1" >&2
@@ -21,7 +22,7 @@ fail() {
 
 mode=$(stat -c '%a' "$env_file")
 mode_value=$((8#$mode))
-(( (mode_value & 0777) == 0600 )) || fail 'staging environment file must have mode 600'
+(( mode_value == 0600 )) || fail 'staging environment file must have mode 600'
 
 read_env_value() {
   python3 - "$env_file" "$1" <<'PY'
@@ -101,6 +102,8 @@ compose() {
     -u STAGING_DB_USERNAME \
     -u STAGING_DB_PASSWORD \
     -u STAGING_DB_NAME \
+    -u SESSION_SECRET \
+    -u BANKING_SESSION_ENCRYPTION_KEY_B64 \
     -u DOCKER_CONTEXT \
     TEMPO_STAGING_ENV_FILE="$env_file" \
     DOCKER_HOST="$docker_host" \
@@ -109,6 +112,16 @@ compose() {
       --file "$compose_file" \
       --env-file "$env_file" \
       "$@"
+}
+
+acquire_mutation_lock() {
+  [[ "${TEMPO_STAGING_LOCK_HELD:-0}" == 1 ]] && return 0
+  [[ ! -L "$state_dir" ]] || fail 'staging state directory must not be a symlink'
+  mkdir -p "$state_dir"
+  chmod 700 "$state_dir"
+  exec 9>"$state_dir/deploy.lock"
+  chmod 600 "$state_dir/deploy.lock"
+  flock -x 9
 }
 
 validate_compose() {
@@ -219,6 +232,7 @@ fail "$service did not become healthy"
 }
 
 up() {
+  acquire_mutation_lock
   validate_compose
   require_daemon
   compose up -d --remove-orphans postgres redis mailpit api web
@@ -232,6 +246,7 @@ up() {
 deploy_component() {
   local service="$1"
   [[ "$service" == api || "$service" == web ]] || fail 'component must be api or web'
+  acquire_mutation_lock
   validate_compose
   require_daemon
   compose pull "$service"
@@ -244,6 +259,11 @@ case "${1:-validate}" in
   up) up ;;
   deploy) [[ $# == 2 ]] || fail 'usage: deploy api|web'; deploy_component "$2" ;;
   status) validate_compose; require_daemon; compose ps ;;
-  down) validate_compose; require_daemon; compose down --remove-orphans ;;
+  down)
+    acquire_mutation_lock
+    validate_compose
+    require_daemon
+    compose down --remove-orphans
+    ;;
   *) fail 'usage: validate|up|deploy api|deploy web|status|down' ;;
 esac

@@ -4,11 +4,14 @@ This directory defines one persistent, tailnet-only staging slot. It is delibera
 
 ## One-time host setup
 
-1. Install the rootless prerequisites from an interactive terminal:
+1. Install the rootless prerequisites from an interactive terminal. The existing Ubuntu `docker.io` daemon does not include `dockerd-rootless.sh`; install the rootless binaries into the user account with Docker's official rootless installer without replacing or reconfiguring production Docker:
 
    ```text
    sudo apt-get install -y rootlesskit slirp4netns fuse-overlayfs uidmap
+   curl -fsSL https://get.docker.com/rootless | sh
    ```
+
+   Verify `~/bin/dockerd-rootless.sh` exists before continuing.
 
 2. Create `~/.config/tempo-staging/staging.env` from `staging.env.example`. Generate every secret locally, set the API/web image digests, and keep the file mode at `600`.
 3. Run `install-rootless-daemon.sh`, then verify the user service is healthy:
@@ -19,6 +22,7 @@ This directory defines one persistent, tailnet-only staging slot. It is delibera
    ```
 
 4. Install the forced-command SSH key and staging files with `install-staging-host.sh --ssh-public-key-file <deploy-public-key>`.
+5. The staging user must have `gh auth status` working for both repositories. If GHCR packages are private, authenticate the rootless daemon to `ghcr.io` interactively before promotion. The verifier uses built-in `docker manifest inspect`; Buildx is not required.
 
 The installer does not modify `/etc/tempo`, the production Compose project, production volumes, or `/var/run/docker.sock`.
 
