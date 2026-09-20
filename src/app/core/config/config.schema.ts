@@ -54,6 +54,7 @@ export const configSchema = z
 		OPENAI_API_KEY: z.string().min(1).optional(),
 
 		// --- APIs ---
+		BANKING_INTEGRATION_ENABLED: strictBooleanEnvSchema.default(true),
 		ENABLE_BANKING_API_URL: z.string().url(),
 		ENABLE_BANKING_APPLICATION_ID: z.string().min(1),
 		ENABLE_BANKING_PRIVATE_KEY_B64: z.string().min(1).optional(),
@@ -87,11 +88,19 @@ export const configSchema = z
 		const hasPrivateKeyB64 = config.ENABLE_BANKING_PRIVATE_KEY_B64 !== undefined;
 		const hasPrivateKeyPath = config.ENABLE_BANKING_PRIVATE_KEY_PATH !== undefined;
 
-		if (hasPrivateKeyB64 === hasPrivateKeyPath) {
+		if (config.BANKING_INTEGRATION_ENABLED && hasPrivateKeyB64 === hasPrivateKeyPath) {
 			context.addIssue({
 				code: 'custom',
 				path: ['ENABLE_BANKING_PRIVATE_KEY_B64'],
 				message: 'Configure exactly one of ENABLE_BANKING_PRIVATE_KEY_B64 or ENABLE_BANKING_PRIVATE_KEY_PATH.',
+			});
+		}
+
+		if (!config.BANKING_INTEGRATION_ENABLED && (hasPrivateKeyB64 || hasPrivateKeyPath)) {
+			context.addIssue({
+				code: 'custom',
+				path: ['BANKING_INTEGRATION_ENABLED'],
+				message: 'Do not configure an Enable Banking private key when banking integration is disabled.',
 			});
 		}
 

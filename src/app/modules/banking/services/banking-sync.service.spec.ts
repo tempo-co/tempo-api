@@ -33,6 +33,29 @@ function deferred<T>(): Deferred<T> {
 	return {promise, resolve};
 }
 
+describe('BankingSyncService disabled integration', () => {
+	it('rejects manual sync and skips automatic sync without touching persistence', async () => {
+		const bankConnectionRepository = {findOne: jest.fn()};
+		const service = new BankingSyncService(
+			bankConnectionRepository as unknown as Repository<BankConnection>,
+			{} as Repository<BankAccount>,
+			{} as Repository<BankSyncRun>,
+			{} as DataSource,
+			{} as EnableBankingClient,
+			{} as BankingEncryptionService,
+			{} as BankingConnectionLockService,
+			{} as BankTransactionCategorizationService,
+			{
+				get: jest.fn((key: string) => (key === 'BANKING_INTEGRATION_ENABLED' ? false : '6h')),
+			} as unknown as ConfigurationService,
+		);
+
+		await expect(service.synchronize('account-id', 'connection-id')).rejects.toThrow(BANKING_SERVICE_UNAVAILABLE);
+		await expect(service.synchronizeAutomatically('connection-id')).resolves.toBeNull();
+		expect(bankConnectionRepository.findOne).not.toHaveBeenCalled();
+	});
+});
+
 describe('BankingSyncService', () => {
 	it('does not lock an unauthorized connection while ownership is being resolved', async () => {
 		const connection = {

@@ -52,3 +52,33 @@ describe('categorization web-search configuration', () => {
 		expect(parsed.AI_CATEGORIZATION_WEB_SEARCH_ENABLED).toBe(true);
 	});
 });
+
+describe('banking integration configuration', () => {
+	it('defaults banking integration to enabled for production compatibility', () => {
+		const parsed = configSchema.parse(baseConfig);
+
+		expect(parsed.BANKING_INTEGRATION_ENABLED).toBe(true);
+	});
+
+	it('allows banking integration to be disabled without a provider private key', () => {
+		const parsed = configSchema.parse({
+			...baseConfig,
+			BANKING_INTEGRATION_ENABLED: 'false',
+			ENABLE_BANKING_PRIVATE_KEY_B64: undefined,
+			ENABLE_BANKING_PRIVATE_KEY_PATH: undefined,
+		});
+
+		expect(parsed.BANKING_INTEGRATION_ENABLED).toBe(false);
+	});
+
+	it('requires a provider private key when banking integration is enabled', () => {
+		expect(() =>
+			configSchema.parse({
+				...baseConfig,
+				BANKING_INTEGRATION_ENABLED: 'true',
+				ENABLE_BANKING_PRIVATE_KEY_B64: undefined,
+				ENABLE_BANKING_PRIVATE_KEY_PATH: undefined,
+			}),
+		).toThrow('Configure exactly one');
+	});
+});
