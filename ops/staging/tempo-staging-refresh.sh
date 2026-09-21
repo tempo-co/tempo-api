@@ -137,7 +137,7 @@ import pathlib
 import sys
 
 root = pathlib.Path(sys.argv[1])
-files = [path for path in root.glob('tempo_*.sql.gz') if path.is_file() and not path.is_symlink()]
+files = [path for path in root.glob('tempo-*.sql.gz') if path.is_file() and not path.is_symlink()]
 if not files:
     raise SystemExit('no production SQL backups found')
 print(max(files, key=lambda path: path.stat().st_mtime))

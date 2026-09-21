@@ -8,7 +8,7 @@ export_duplicate_env=$(mktemp)
 trap 'rm -rf "$tmp_dir" "$duplicate_env" "$export_duplicate_env"' EXIT
 mkdir -p "$tmp_dir/backups"
 
-python3 - "$tmp_dir/backups/tempo_20260920_000000.sql.gz" <<'PY'
+python3 - "$tmp_dir/backups/tempo-20260920-000000.sql.gz" <<'PY'
 import gzip
 import sys
 with gzip.open(sys.argv[1], 'wt', encoding='utf-8') as handle:

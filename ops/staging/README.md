@@ -51,7 +51,7 @@ Production-data refresh and seeded reset are both destructive to **staging only*
 ./tempo-staging-refresh.sh seed --confirm-seeded-reset
 ```
 
-Refresh restores the newest verified `tempo_*.sql.gz` from `$HOME/backups/tempo`, applies the current API schema complement in a temporary database, clears provider authorization/sync state, swaps databases only after validation, flushes staging Redis, and health-checks the stack.
+Refresh restores the newest verified `tempo-*.sql.gz` from `$HOME/backups/tempo`, applies the current API schema complement in a temporary database, clears provider authorization/sync state, swaps databases only after validation, flushes staging Redis, and health-checks the stack.
 
 ## GitHub Actions
 
