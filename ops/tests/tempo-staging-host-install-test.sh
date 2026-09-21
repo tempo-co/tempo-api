@@ -21,6 +21,7 @@ for fragment in [
     'config_dir="$HOME/.config/tempo-staging"',
     'env_file="$config_dir/staging.env"',
     'tempo-staging-refresh.sh',
+    'tempo-staging-origin.py',
     'key_fingerprint=',
     'authorized_tmp=',
     'authorized_backup=',
@@ -58,6 +59,16 @@ key_blob=$(awk '{print $2}' "$tmp_dir/deploy_key.pub")
 printf '%s %s old-unrestricted-comment\n' "$key_type" "$key_blob" > "$tmp_dir/home/.ssh/authorized_keys"
 chmod 600 "$tmp_dir/home/.config/tempo-staging/staging.env" "$tmp_dir/deploy_key.pub" "$tmp_dir/home/.ssh/authorized_keys"
 HOME="$tmp_dir/home" bash "$installer" --ssh-public-key-file "$tmp_dir/deploy_key.pub" >/dev/null
+[[ -f "$tmp_dir/home/.local/libexec/tempo-staging/tempo-staging-origin.py" ]] || {
+    echo 'origin validator was not installed' >&2
+    exit 1
+}
+python3 - "$tmp_dir/home/.local/libexec/tempo-staging/tempo-staging-origin.py" <<'PY'
+import sys
+from pathlib import Path
+assert Path(sys.argv[1]).read_text(encoding='utf-8').startswith('#!/usr/bin/env python3')
+print('tempo staging host installer origin-validator regression: PASS')
+PY
 python3 - "$tmp_dir/home/.ssh/authorized_keys" "$key_type" "$key_blob" <<'PY'
 import sys
 path, key_type, key_blob = sys.argv[1:]

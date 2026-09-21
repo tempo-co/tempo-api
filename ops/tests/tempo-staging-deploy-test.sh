@@ -104,7 +104,8 @@ export_duplicate_env=$(mktemp)
 same_origin_env=$(mktemp)
 unicode_origin_env=$(mktemp)
 ipv4_origin_env=$(mktemp)
-trap 'rm -f "$staging_env" "$config_json" "$bad_env" "$duplicate_env" "$export_duplicate_env" "$same_origin_env" "$unicode_origin_env" "$ipv4_origin_env"' EXIT
+malformed_origin_dir=$(mktemp -d)
+trap 'rm -rf "$staging_env" "$config_json" "$bad_env" "$duplicate_env" "$export_duplicate_env" "$same_origin_env" "$unicode_origin_env" "$ipv4_origin_env" "$malformed_origin_dir"' EXIT
 python3 - "$staging_env" "$bad_env" <<'PY'
 import sys
 from pathlib import Path
@@ -145,6 +146,29 @@ chmod 600 "$unicode_origin_env" "$ipv4_origin_env"
 for equivalent_env in "$unicode_origin_env" "$ipv4_origin_env"; do
     if TEMPO_STAGING_ENV_FILE="$equivalent_env" bash "$repo_root/ops/staging/tempo-staging-deploy.sh" validate; then
         echo 'equivalent browser origin unexpectedly accepted' >&2
+        exit 1
+    fi
+done
+
+python3 - "$staging_env" "$malformed_origin_dir" <<'PY'
+import sys
+from pathlib import Path
+source = Path(sys.argv[1]).read_text()
+target_dir = Path(sys.argv[2])
+malformed = {
+    'credentials': 'https://user:password@staging.example.test/staging',
+    'query': 'https://staging.example.test?ignored/staging',
+    'fragment': 'https://staging.example.test/staging#ignored',
+    'backslash': 'https://staging.example.test\\staging',
+    'invalid-port': 'https://staging.example.test:bad/staging',
+}
+for name, value in malformed.items():
+    (target_dir / f'{name}.env').write_text(source.replace('https://staging.example.test/staging', value))
+PY
+for malformed_env in "$malformed_origin_dir"/*.env; do
+    chmod 600 "$malformed_env"
+    if TEMPO_STAGING_ENV_FILE="$malformed_env" bash "$repo_root/ops/staging/tempo-staging-deploy.sh" validate; then
+        echo "malformed staging URL unexpectedly accepted: $malformed_env" >&2
         exit 1
     fi
 done

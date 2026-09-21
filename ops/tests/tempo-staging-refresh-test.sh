@@ -8,7 +8,7 @@ export_duplicate_env=$(mktemp)
 unicode_origin_env=$(mktemp)
 ipv4_origin_env=$(mktemp)
 trap 'rm -rf "$tmp_dir" "$duplicate_env" "$export_duplicate_env" "$unicode_origin_env" "$ipv4_origin_env"' EXIT
-mkdir -p "$tmp_dir/backups" "$tmp_dir/fake-bin" "$tmp_dir/runtime/tempo-staging"
+mkdir -p "$tmp_dir/backups" "$tmp_dir/fake-bin" "$tmp_dir/runtime/tempo-staging" "$tmp_dir/malformed-origins"
 python3 - "$tmp_dir/runtime/tempo-staging/docker.sock" "$tmp_dir/fake-bin/docker" <<'PY'
 import socket
 import stat
@@ -103,6 +103,29 @@ chmod 600 "$unicode_origin_env" "$ipv4_origin_env"
 for equivalent_env in "$unicode_origin_env" "$ipv4_origin_env"; do
     if TEMPO_STAGING_ENV_FILE="$equivalent_env" TEMPO_STAGING_REFRESH_BACKUP_DIR="$tmp_dir/backups" XDG_RUNTIME_DIR="$tmp_dir/runtime" bash "$repo_root/ops/staging/tempo-staging-refresh.sh" validate; then
         echo 'equivalent browser origin unexpectedly accepted by refresh' >&2
+        exit 1
+    fi
+done
+
+python3 - "$tmp_dir/staging.env" "$tmp_dir/malformed-origins" <<'PY'
+import sys
+from pathlib import Path
+source = Path(sys.argv[1]).read_text()
+target_dir = Path(sys.argv[2])
+malformed = {
+    'credentials': 'https://user:password@staging.example.test/staging',
+    'query': 'https://staging.example.test?ignored/staging',
+    'fragment': 'https://staging.example.test/staging#ignored',
+    'backslash': 'https://staging.example.test\\staging',
+    'invalid-port': 'https://staging.example.test:bad/staging',
+}
+for name, value in malformed.items():
+    (target_dir / f'{name}.env').write_text(source.replace('https://staging.example.test/staging', value))
+PY
+for malformed_env in "$tmp_dir/malformed-origins"/*.env; do
+    chmod 600 "$malformed_env"
+    if TEMPO_STAGING_ENV_FILE="$malformed_env" TEMPO_STAGING_REFRESH_BACKUP_DIR="$tmp_dir/backups" XDG_RUNTIME_DIR="$tmp_dir/runtime" bash "$repo_root/ops/staging/tempo-staging-refresh.sh" validate; then
+        echo "malformed staging URL unexpectedly accepted: $malformed_env" >&2
         exit 1
     fi
 done

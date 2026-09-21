@@ -11,6 +11,7 @@ readonly expected_docker_host="unix://$runtime_dir/tempo-staging/docker.sock"
 readonly docker_host="${TEMPO_STAGING_DOCKER_HOST:-$expected_docker_host}"
 readonly project_name='tempo-staging'
 readonly state_dir="${TEMPO_STAGING_STATE_DIR:-$HOME/.local/state/tempo-staging}"
+readonly origin_validator="$script_dir/tempo-staging-origin.py"
 readonly pgpass_path='/tmp/tempo-staging.pgpass'
 
 cleanup_databases=()
@@ -22,6 +23,7 @@ fail() {
 }
 
 [[ -f "$compose_file" ]] || fail "missing Compose file: $compose_file"
+[[ -f "$origin_validator" && ! -L "$origin_validator" ]] || fail "missing origin validator: $origin_validator"
 [[ -f "$env_file" && ! -L "$env_file" ]] || fail 'staging environment file is missing or a symlink'
 [[ -x "$deploy_script" ]] || fail "staging deploy script is missing or not executable: $deploy_script"
 [[ "$docker_host" == "$expected_docker_host" ]] || fail "staging Docker host must be $expected_docker_host"
@@ -76,15 +78,7 @@ PY
 
 staging_public_url=$(read_env_value STAGING_PUBLIC_URL) || fail 'STAGING_PUBLIC_URL is missing'
 production_public_url=$(read_env_value PRODUCTION_PUBLIC_URL) || fail 'PRODUCTION_PUBLIC_URL is missing'
-[[ "$staging_public_url" =~ ^https://[^/]+/staging/?$ ]] || fail 'STAGING_PUBLIC_URL must be the tailnet HTTPS /staging URL'
-[[ "$production_public_url" =~ ^https://[^/]+/tempo/?$ ]] || fail 'PRODUCTION_PUBLIC_URL must be the production HTTPS /tempo URL'
-node - "$staging_public_url" "$production_public_url" <<'NODE'
-const [staging, production] = process.argv.slice(2).map((value) => new URL(value));
-if (staging.origin === production.origin) {
-    console.error('tempo staging: staging and production URLs must have different browser origins');
-    process.exit(1);
-}
-NODE
+python3 "$origin_validator" "$staging_public_url" "$production_public_url" || fail 'staging and production URLs must be distinct valid browser origins'
 
 staging_db_user=$(read_env_value STAGING_DB_USERNAME) || fail 'STAGING_DB_USERNAME is missing'
 staging_db_password=$(read_env_value STAGING_DB_PASSWORD) || fail 'STAGING_DB_PASSWORD is missing'

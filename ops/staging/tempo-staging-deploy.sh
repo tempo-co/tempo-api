@@ -9,6 +9,7 @@ readonly runtime_dir="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 readonly expected_docker_host="unix://$runtime_dir/tempo-staging/docker.sock"
 readonly docker_host="${TEMPO_STAGING_DOCKER_HOST:-$expected_docker_host}"
 readonly state_dir="${TEMPO_STAGING_STATE_DIR:-$HOME/.local/state/tempo-staging}"
+readonly origin_validator="$script_dir/tempo-staging-origin.py"
 
 fail() {
   printf 'tempo staging: %s\n' "$1" >&2
@@ -16,6 +17,7 @@ fail() {
 }
 
 [[ -f "$compose_file" ]] || fail "missing Compose file: $compose_file"
+[[ -f "$origin_validator" && ! -L "$origin_validator" ]] || fail "missing origin validator: $origin_validator"
 [[ -f "$env_file" ]] || fail "missing environment file: $env_file"
 [[ "$docker_host" == "$expected_docker_host" ]] || fail "staging Docker host must be $expected_docker_host"
 [[ ! -L "$env_file" ]] || fail 'staging environment file must not be a symlink'
@@ -116,15 +118,7 @@ web_digest="${web_image#"$web_image_prefix"}"
 [[ "$api_digest" =~ ^[0-9a-f]{64}$ ]] || fail 'TEMPO_API_IMAGE must be an immutable digest reference'
 [[ "$web_digest" =~ ^[0-9a-f]{64}$ ]] || fail 'TEMPO_WEB_IMAGE must be an immutable digest reference'
 [[ "$api_image" != *production* && "$web_image" != *production* ]] || fail 'production image references are not allowed'
-[[ "$public_url" =~ ^https://[^/]+/staging/?$ ]] || fail 'STAGING_PUBLIC_URL must be the tailnet HTTPS /staging URL'
-[[ "$production_url" =~ ^https://[^/]+/tempo/?$ ]] || fail 'PRODUCTION_PUBLIC_URL must be the production HTTPS /tempo URL'
-node - "$public_url" "$production_url" <<'NODE'
-const [staging, production] = process.argv.slice(2).map((value) => new URL(value));
-if (staging.origin === production.origin) {
-    console.error('tempo staging: staging and production URLs must have different browser origins');
-    process.exit(1);
-}
-NODE
+python3 "$origin_validator" "$public_url" "$production_url" || fail 'staging and production URLs must be distinct valid browser origins'
 
 [[ "$web_port" =~ ^[0-9]+$ ]] || fail 'STAGING_WEB_HOST_PORT must be numeric'
 (( web_port >= 1024 && web_port <= 65535 )) || fail 'STAGING_WEB_HOST_PORT is outside the unprivileged port range'
