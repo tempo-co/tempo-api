@@ -32,6 +32,8 @@ required = [
     'pull-requests: read',
     'statuses: read',
     'head_repo',
+    'merged_at=',
+    'state" != open',
     'head_sha',
     'persist-credentials: false',
     'Run staging contract tests',

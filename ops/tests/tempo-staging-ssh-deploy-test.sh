@@ -37,7 +37,7 @@ import sys
 jq_expr = next((sys.argv[index + 1] for index, arg in enumerate(sys.argv[:-1]) if arg == '--jq'), None)
 endpoint = next((arg for arg in sys.argv[1:] if arg.startswith("repos/")), "")
 if endpoint.endswith('/pulls/42'):
-    print(json.dumps({"head": {"repo": {"full_name": "tempo-co/tempo-api"}, "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}, "base": {"ref": "main"}, "state": "open", "draft": False}))
+    print(json.dumps({"head": {"repo": {"full_name": "tempo-co/tempo-api"}, "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}, "base": {"ref": "main"}, "state": "closed", "merged_at": "2026-09-21T19:43:26Z", "draft": False}))
 elif endpoint.startswith('repos/tempo-co/tempo-api/contents/.github/workflows/ci.yml?ref='):
     print('trusted-ci-sha' if jq_expr == '.sha' else json.dumps({"sha": "trusted-ci-sha"}))
 elif endpoint.startswith('repos/tempo-co/tempo-api/actions/runs?head_sha='):

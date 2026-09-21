@@ -156,10 +156,14 @@ head_repo=$(jq -r '.head.repo.full_name // ""' <<< "$pr_json")
 remote_sha=$(jq -r '.head.sha // ""' <<< "$pr_json")
 base_ref=$(jq -r '.base.ref // ""' <<< "$pr_json")
 state=$(jq -r '.state // ""' <<< "$pr_json")
+merged_at=$(jq -r '.merged_at // ""' <<< "$pr_json")
 draft=$(jq -r '.draft' <<< "$pr_json")
 [[ "$head_repo" == "$repository" ]] || fail 'fork PRs are not deployable'
 [[ "$remote_sha" == "$head_sha" ]] || fail 'PR head SHA changed since workflow verification'
-[[ "$base_ref" == main && "$state" == open && "$draft" == false ]] || fail 'PR is not an open non-draft main PR'
+[[ "$base_ref" == main && "$draft" == false ]] || fail 'PR is not a main non-draft PR'
+if [[ "$state" != open && ( "$state" != closed || -z "$merged_at" ) ]]; then
+  fail 'PR is neither open nor merged'
+fi
 
 checks_json=$("$gh_cli" api --paginate "repos/$repository/commits/$head_sha/check-runs?per_page=100" --jq '.check_runs[]' | jq -s '{check_runs: .}') || fail 'commit check lookup failed'
 statuses_json=$("$gh_cli" api --paginate "repos/$repository/commits/$head_sha/status?per_page=100" --jq '.statuses[]' | jq -s '{statuses: .}') || fail 'commit status lookup failed'
