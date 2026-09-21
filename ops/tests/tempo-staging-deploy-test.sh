@@ -102,12 +102,13 @@ bad_env=$(mktemp)
 duplicate_env=$(mktemp)
 export_duplicate_env=$(mktemp)
 same_origin_env=$(mktemp)
+same_host_port_env=$(mktemp)
 unicode_origin_env=$(mktemp)
 ipv4_origin_env=$(mktemp)
 legacy_ipv4_origin_env=$(mktemp)
 dotted_hex_origin_env=$(mktemp)
 malformed_origin_dir=$(mktemp -d)
-trap 'rm -rf "$staging_env" "$config_json" "$bad_env" "$duplicate_env" "$export_duplicate_env" "$same_origin_env" "$unicode_origin_env" "$ipv4_origin_env" "$legacy_ipv4_origin_env" "$dotted_hex_origin_env" "$malformed_origin_dir"' EXIT
+trap 'rm -rf "$staging_env" "$config_json" "$bad_env" "$duplicate_env" "$export_duplicate_env" "$same_origin_env" "$same_host_port_env" "$unicode_origin_env" "$ipv4_origin_env" "$legacy_ipv4_origin_env" "$dotted_hex_origin_env" "$malformed_origin_dir"' EXIT
 python3 - "$staging_env" "$bad_env" <<'PY'
 import sys
 from pathlib import Path
@@ -129,6 +130,18 @@ PY
 chmod 600 "$same_origin_env"
 if TEMPO_STAGING_ENV_FILE="$same_origin_env" bash "$repo_root/ops/staging/tempo-staging-deploy.sh" validate; then
     echo 'shared staging/production hostname unexpectedly accepted' >&2
+    exit 1
+fi
+
+python3 - "$staging_env" "$same_host_port_env" <<'PY'
+import sys
+from pathlib import Path
+source, target = map(Path, sys.argv[1:])
+target.write_text(source.read_text().replace('https://production.example.test/tempo', 'https://staging.example.test:8443/tempo'))
+PY
+chmod 600 "$same_host_port_env"
+if TEMPO_STAGING_ENV_FILE="$same_host_port_env" bash "$repo_root/ops/staging/tempo-staging-deploy.sh" validate; then
+    echo 'same staging/production hostname on different ports unexpectedly accepted' >&2
     exit 1
 fi
 

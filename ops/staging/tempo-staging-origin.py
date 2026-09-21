@@ -6,7 +6,7 @@ from __future__ import annotations
 import ipaddress
 import re
 import sys
-from typing import NoReturn, Optional
+from typing import NoReturn, Optional, Tuple
 from urllib.parse import urlsplit
 
 
@@ -89,7 +89,7 @@ def canonical_host(host: str) -> str:
     return host
 
 
-def browser_origin(value: str, expected_path: str) -> str:
+def browser_endpoint(value: str, expected_path: str) -> Tuple[str, str]:
     if "\\" in value or any(ord(char) <= 0x20 for char in value):
         fail("URLs must not contain backslashes, whitespace, or control characters")
     try:
@@ -109,16 +109,23 @@ def browser_origin(value: str, expected_path: str) -> str:
     if port is None:
         port = 443
     serialized_port = "" if port == 443 else f":{port}"
+    canonical_host_value = host
     if ":" in host:
         host = f"[{host}]"
-    return f"https://{host}{serialized_port}"
+    return f"https://{host}{serialized_port}", canonical_host_value
+
+
+def browser_origin(value: str, expected_path: str) -> str:
+    return browser_endpoint(value, expected_path)[0]
 
 
 def main() -> None:
     if len(sys.argv) != 3:
         raise SystemExit("usage: tempo-staging-origin.py STAGING_URL PRODUCTION_URL")
-    staging_origin = browser_origin(sys.argv[1], "/staging")
-    production_origin = browser_origin(sys.argv[2], "/tempo")
+    staging_origin, staging_host = browser_endpoint(sys.argv[1], "/staging")
+    production_origin, production_host = browser_endpoint(sys.argv[2], "/tempo")
+    if staging_host == production_host:
+        fail("staging and production URLs must use different canonical hostnames")
     if staging_origin == production_origin:
         fail("staging and production URLs must have different browser origins")
 

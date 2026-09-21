@@ -5,11 +5,12 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 tmp_dir=$(mktemp -d)
 duplicate_env=$(mktemp)
 export_duplicate_env=$(mktemp)
+same_host_port_env=$(mktemp)
 unicode_origin_env=$(mktemp)
 ipv4_origin_env=$(mktemp)
 legacy_ipv4_origin_env=$(mktemp)
 dotted_hex_origin_env=$(mktemp)
-trap 'rm -rf "$tmp_dir" "$duplicate_env" "$export_duplicate_env" "$unicode_origin_env" "$ipv4_origin_env" "$legacy_ipv4_origin_env" "$dotted_hex_origin_env"' EXIT
+trap 'rm -rf "$tmp_dir" "$duplicate_env" "$export_duplicate_env" "$same_host_port_env" "$unicode_origin_env" "$ipv4_origin_env" "$legacy_ipv4_origin_env" "$dotted_hex_origin_env"' EXIT
 mkdir -p "$tmp_dir/backups" "$tmp_dir/fake-bin" "$tmp_dir/runtime/tempo-staging" "$tmp_dir/malformed-origins"
 python3 - "$tmp_dir/runtime/tempo-staging/docker.sock" "$tmp_dir/fake-bin/docker" <<'PY'
 import socket
@@ -87,6 +88,18 @@ if PATH="$tmp_dir/fake-bin:$PATH" \
     TEMPO_STAGING_REFRESH_BACKUP_DIR="$tmp_dir/backups" \
     bash "$repo_root/ops/staging/tempo-staging-refresh.sh" refresh --confirm-production-backup-refresh; then
     echo 'refresh unexpectedly ran without a staging daemon' >&2
+    exit 1
+fi
+
+python3 - "$tmp_dir/staging.env" "$tmp_dir/same-host-port.env" <<'PY'
+import sys
+from pathlib import Path
+source, target = map(Path, sys.argv[1:])
+target.write_text(source.read_text().replace('https://production.example.test/tempo', 'https://staging.example.test:8443/tempo'))
+PY
+chmod 600 "$tmp_dir/same-host-port.env"
+if TEMPO_STAGING_ENV_FILE="$tmp_dir/same-host-port.env" TEMPO_STAGING_REFRESH_BACKUP_DIR="$tmp_dir/backups" XDG_RUNTIME_DIR="$tmp_dir/runtime" bash "$repo_root/ops/staging/tempo-staging-refresh.sh" validate; then
+    echo 'same staging/production hostname on different ports unexpectedly accepted by refresh' >&2
     exit 1
 fi
 
