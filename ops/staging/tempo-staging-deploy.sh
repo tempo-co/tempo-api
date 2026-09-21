@@ -104,6 +104,7 @@ staging_db_name=$(read_env_value STAGING_DB_NAME) || fail 'STAGING_DB_NAME is mi
 api_image=$(read_env_value TEMPO_API_IMAGE) || fail 'TEMPO_API_IMAGE is missing'
 web_image=$(read_env_value TEMPO_WEB_IMAGE) || fail 'TEMPO_WEB_IMAGE is missing'
 public_url=$(read_env_value STAGING_PUBLIC_URL) || fail 'STAGING_PUBLIC_URL is missing'
+production_url=$(read_env_value PRODUCTION_PUBLIC_URL) || fail 'PRODUCTION_PUBLIC_URL is missing'
 web_port=$(read_env_value STAGING_WEB_HOST_PORT) || fail 'STAGING_WEB_HOST_PORT is missing'
 
 api_image_prefix='ghcr.io/tempo-co/tempo-api@sha256:'
@@ -116,6 +117,16 @@ web_digest="${web_image#"$web_image_prefix"}"
 [[ "$web_digest" =~ ^[0-9a-f]{64}$ ]] || fail 'TEMPO_WEB_IMAGE must be an immutable digest reference'
 [[ "$api_image" != *production* && "$web_image" != *production* ]] || fail 'production image references are not allowed'
 [[ "$public_url" =~ ^https://[^/]+/staging/?$ ]] || fail 'STAGING_PUBLIC_URL must be the tailnet HTTPS /staging URL'
+[[ "$production_url" =~ ^https://[^/]+/tempo/?$ ]] || fail 'PRODUCTION_PUBLIC_URL must be the production HTTPS /tempo URL'
+python3 - "$public_url" "$production_url" <<'PY'
+from urllib.parse import urlparse
+import sys
+
+staging, production = (urlparse(value) for value in sys.argv[1:])
+if staging.hostname == production.hostname:
+    raise SystemExit('staging and production URLs must use different hostnames')
+PY
+
 [[ "$web_port" =~ ^[0-9]+$ ]] || fail 'STAGING_WEB_HOST_PORT must be numeric'
 (( web_port >= 1024 && web_port <= 65535 )) || fail 'STAGING_WEB_HOST_PORT is outside the unprivileged port range'
 

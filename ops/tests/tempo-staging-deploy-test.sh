@@ -10,6 +10,7 @@ cat >"$staging_env" <<'EOF'
 TEMPO_API_IMAGE=ghcr.io/tempo-co/tempo-api@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 TEMPO_WEB_IMAGE=ghcr.io/tempo-co/tempo-web@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 STAGING_PUBLIC_URL=https://staging.example.test/staging
+PRODUCTION_PUBLIC_URL=https://production.example.test/tempo
 STAGING_WEB_HOST_PORT=18119
 STAGING_DB_USERNAME=tempo_staging
 STAGING_DB_PASSWORD=synthetic-staging-password
@@ -100,7 +101,8 @@ fi
 bad_env=$(mktemp)
 duplicate_env=$(mktemp)
 export_duplicate_env=$(mktemp)
-trap 'rm -f "$staging_env" "$config_json" "$bad_env" "$duplicate_env" "$export_duplicate_env"' EXIT
+same_origin_env=$(mktemp)
+trap 'rm -f "$staging_env" "$config_json" "$bad_env" "$duplicate_env" "$export_duplicate_env" "$same_origin_env"' EXIT
 python3 - "$staging_env" "$bad_env" <<'PY'
 import sys
 from pathlib import Path
@@ -110,6 +112,18 @@ PY
 chmod 600 "$bad_env"
 if TEMPO_STAGING_ENV_FILE="$bad_env" bash "$repo_root/ops/staging/tempo-staging-deploy.sh" validate; then
     echo 'untrusted API image unexpectedly accepted' >&2
+    exit 1
+fi
+
+python3 - "$staging_env" "$same_origin_env" <<'PY'
+import sys
+from pathlib import Path
+source, target = map(Path, sys.argv[1:])
+target.write_text(source.read_text().replace('https://production.example.test/tempo', 'https://staging.example.test/tempo'))
+PY
+chmod 600 "$same_origin_env"
+if TEMPO_STAGING_ENV_FILE="$same_origin_env" bash "$repo_root/ops/staging/tempo-staging-deploy.sh" validate; then
+    echo 'shared staging/production hostname unexpectedly accepted' >&2
     exit 1
 fi
 

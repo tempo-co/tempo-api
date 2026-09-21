@@ -47,6 +47,7 @@ cat >"$tmp_dir/staging.env" <<'EOF'
 TEMPO_API_IMAGE=ghcr.io/tempo-co/tempo-api@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 TEMPO_WEB_IMAGE=ghcr.io/tempo-co/tempo-web@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 STAGING_PUBLIC_URL=https://staging.example.test/staging
+PRODUCTION_PUBLIC_URL=https://production.example.test/tempo
 STAGING_WEB_HOST_PORT=8119
 STAGING_DB_USERNAME=tempo_staging
 STAGING_DB_PASSWORD=synthetic-password

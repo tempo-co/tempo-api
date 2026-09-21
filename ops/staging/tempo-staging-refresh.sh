@@ -74,6 +74,19 @@ with open(path, encoding='utf-8') as handle:
 PY
 }
 
+staging_public_url=$(read_env_value STAGING_PUBLIC_URL) || fail 'STAGING_PUBLIC_URL is missing'
+production_public_url=$(read_env_value PRODUCTION_PUBLIC_URL) || fail 'PRODUCTION_PUBLIC_URL is missing'
+[[ "$staging_public_url" =~ ^https://[^/]+/staging/?$ ]] || fail 'STAGING_PUBLIC_URL must be the tailnet HTTPS /staging URL'
+[[ "$production_public_url" =~ ^https://[^/]+/tempo/?$ ]] || fail 'PRODUCTION_PUBLIC_URL must be the production HTTPS /tempo URL'
+python3 - "$staging_public_url" "$production_public_url" <<'PY'
+from urllib.parse import urlparse
+import sys
+
+staging, production = (urlparse(value) for value in sys.argv[1:])
+if staging.hostname == production.hostname:
+    raise SystemExit('staging and production URLs must use different hostnames')
+PY
+
 staging_db_user=$(read_env_value STAGING_DB_USERNAME) || fail 'STAGING_DB_USERNAME is missing'
 staging_db_password=$(read_env_value STAGING_DB_PASSWORD) || fail 'STAGING_DB_PASSWORD is missing'
 staging_db_name=$(read_env_value STAGING_DB_NAME) || fail 'STAGING_DB_NAME is missing'

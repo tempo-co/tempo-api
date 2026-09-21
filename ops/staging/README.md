@@ -1,6 +1,6 @@
 # Persistent staging
 
-This directory defines one persistent, tailnet-only staging slot. It is deliberately separate from the production Compose project and must use the dedicated rootless Docker socket.
+This directory defines one persistent, tailnet-only staging slot. It is deliberately separate from the production Compose project and must use the dedicated rootless Docker socket. Staging must use a distinct HTTPS hostname from production; a `/staging` path on the production hostname is rejected because it does not create a browser-origin boundary.
 
 ## One-time host setup
 
@@ -13,16 +13,17 @@ This directory defines one persistent, tailnet-only staging slot. It is delibera
 
    Verify `~/bin/dockerd-rootless.sh` exists before continuing.
 
-2. Create `~/.config/tempo-staging/staging.env` from `staging.env.example`. Generate every secret locally, set the API/web image digests, and keep the file mode at `600`.
-3. Run `install-rootless-daemon.sh`, then verify the user service is healthy:
+2. Use a separate Linux host or VM with a tag-based Tailscale identity for staging. Define and approve the `svc:tempo-staging` Tailscale Service, then advertise the staging host's local web port through it. Do not retag or run a second Tailscale daemon on the production route host.
+3. Create `~/.config/tempo-staging/staging.env` from `staging.env.example`. Set `PRODUCTION_PUBLIC_URL` to the production `/tempo` URL and `STAGING_PUBLIC_URL` to the distinct staging Service hostname with `/staging`; generate every secret locally with hex/base64-safe values, set the API/web image digests, and keep the file mode at `600`.
+4. Run `install-rootless-daemon.sh`, then verify the user service is healthy:
 
    ```text
    bash install-rootless-daemon.sh
    systemctl --user status tempo-staging-docker.service
    ```
 
-4. Install the forced-command SSH key and staging files with `install-staging-host.sh --ssh-public-key-file <deploy-public-key>`.
-5. The staging user must have `gh auth status` working for both repositories. If GHCR packages are private, authenticate the rootless daemon to `ghcr.io` interactively before promotion. The verifier uses built-in `docker manifest inspect`; Buildx is not required.
+5. Install the forced-command SSH key and staging files with `install-staging-host.sh --ssh-public-key-file <deploy-public-key>`.
+6. The staging user must have `gh auth status` working for both repositories. If GHCR packages are private, authenticate the rootless daemon to `ghcr.io` interactively before promotion. The verifier uses built-in `docker manifest inspect`; Buildx is not required.
 
 The installer does not modify `/etc/tempo`, the production Compose project, production volumes, or `/var/run/docker.sock`.
 
