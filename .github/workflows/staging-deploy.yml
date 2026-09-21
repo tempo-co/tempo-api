@@ -50,8 +50,11 @@ jobs:
                   head_ci_sha="$(gh api "repos/$repo/contents/.github/workflows/ci.yml?ref=$head_sha" --jq '.sha')"
                   [[ "$head_ci_sha" == "$main_ci_sha" ]]
                   runs_json="$(gh api --paginate "repos/$repo/actions/runs?head_sha=$head_sha&per_page=100" --jq '.workflow_runs[]' | jq -s '{workflow_runs: .}')"
-                  trusted_suite_id="$(jq -r --argjson workflow_id "$trusted_workflow_id" --arg head_sha "$head_sha" '[.workflow_runs[] | select(.workflow_id == $workflow_id and .head_sha == $head_sha and .path == ".github/workflows/ci.yml" and .status == "completed" and .conclusion == "success" and .check_suite_id != null) | .check_suite_id] | max // empty' <<<"$runs_json")"
-                  [[ "$trusted_suite_id" =~ ^[0-9]+$ ]]
+                  trusted_run_json="$(jq -c --argjson workflow_id "$trusted_workflow_id" --arg head_sha "$head_sha" '[.workflow_runs[] | select(.workflow_id == $workflow_id and .head_sha == $head_sha and .path == ".github/workflows/ci.yml" and .check_suite_id != null)] | max_by(.id) // empty' <<<"$runs_json")"
+                  [[ -n "$trusted_run_json" ]]
+                  [[ "$(jq -r '.status' <<<"$trusted_run_json")" == completed ]]
+                  [[ "$(jq -r '.conclusion' <<<"$trusted_run_json")" == success ]]
+                  trusted_suite_id="$(jq -r '.check_suite_id' <<<"$trusted_run_json")"
 
                   checks_json="$(gh api --paginate "repos/$repo/commits/$head_sha/check-runs?per_page=100" --jq '.check_runs[]' | jq -s '{check_runs: .}')"
                   statuses_json="$(gh api --paginate "repos/$repo/commits/$head_sha/status?per_page=100" --jq '.statuses[]' | jq -s '{statuses: .}')"

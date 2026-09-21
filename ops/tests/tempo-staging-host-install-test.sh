@@ -77,4 +77,15 @@ if HOME="$tmp_dir/home" bash "$installer" --ssh-public-key-file "$tmp_dir/bad.pu
     echo 'malformed Ed25519 key unexpectedly accepted' >&2
     exit 1
 fi
-printf '%s\n' 'tempo staging host installer malformed-key regression: PASS'
+printf '%s %s ssh-ed25519 %s no-final-newline' ssh-rsa UNRELATED "$key_blob" > "$tmp_dir/home/.ssh/authorized_keys"
+HOME="$tmp_dir/home" bash "$installer" --ssh-public-key-file "$tmp_dir/deploy_key.pub" >/dev/null
+python3 - "$tmp_dir/home/.ssh/authorized_keys" "$key_blob" <<'PY'
+import sys
+path, key_blob = sys.argv[1:]
+data = open(path, 'rb').read()
+assert b'ssh-rsa UNRELATED' in data
+assert b'\ncommand=' in data
+assert data.count(b'\ncommand=') == 1
+assert data.endswith(b'\n')
+print('tempo staging host installer comment/newline regression: PASS')
+PY

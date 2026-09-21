@@ -148,13 +148,17 @@ def split_options(token):
 
 
 def append_line(lines, line):
-    lines.append(line if line.endswith('\\n') else line + '\\n')
+    lines.append(line if line.endswith('\n') else line + '\n')
 
 
 def merge_restriction(current, candidate, name):
     if candidate and current and candidate != current:
         raise SystemExit(f'conflicting {name} restrictions')
     return current or candidate
+
+def is_key_type(value):
+    return value.startswith(('ssh-', 'ecdsa-', 'sk-', 'rsa-sha2-'))
+
 
 lines = []
 matching_from = None
@@ -165,12 +169,12 @@ for raw_line in Path(authorized_path).read_text(encoding='utf-8').splitlines(kee
         append_line(lines, raw_line)
         continue
     try:
-        fields = tokenize(raw_line.rstrip('\\r\\n'))
+        fields = tokenize(raw_line.rstrip('\r\n'))
     except ValueError:
         append_line(lines, raw_line)
         continue
-    key_index = next((index for index in range(len(fields) - 1) if fields[index] == key_type and fields[index + 1] == key_blob), None)
-    if key_index is None:
+    key_index = next((index for index in range(len(fields) - 1) if is_key_type(fields[index])), None)
+    if key_index is None or fields[key_index] != key_type or fields[key_index + 1] != key_blob:
         append_line(lines, raw_line)
         continue
     for field in fields[:key_index]:
@@ -182,7 +186,7 @@ for raw_line in Path(authorized_path).read_text(encoding='utf-8').splitlines(kee
 
 preserved = [option for option in (matching_from, matching_expiry) if option]
 forced = ','.join(preserved + [forced_options])
-lines.append(f'{forced} {key_type} {key_blob}\\n')
+lines.append(f'{forced} {key_type} {key_blob}\n')
 Path(output_path).write_text(''.join(lines), encoding='utf-8')
 PY
 then

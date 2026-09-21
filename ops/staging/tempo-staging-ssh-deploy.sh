@@ -126,8 +126,11 @@ main_ci_sha=$("$gh_cli" api "repos/$repository/contents/.github/workflows/ci.yml
 head_ci_sha=$("$gh_cli" api "repos/$repository/contents/.github/workflows/ci.yml?ref=$head_sha" --jq '.sha') || fail 'PR CI workflow lookup failed'
 [[ "$head_ci_sha" == "$main_ci_sha" ]] || fail 'PR CI workflow differs from trusted main workflow'
 runs_json=$("$gh_cli" api --paginate "repos/$repository/actions/runs?head_sha=$head_sha&per_page=100" --jq '.workflow_runs[]' | jq -s '{workflow_runs: .}') || fail 'workflow run lookup failed'
-trusted_suite_id=$(jq -r --argjson workflow_id "$trusted_workflow_id" --arg head_sha "$head_sha" '[.workflow_runs[] | select(.workflow_id == $workflow_id and .head_sha == $head_sha and .path == ".github/workflows/ci.yml" and .status == "completed" and .conclusion == "success" and .check_suite_id != null) | .check_suite_id] | max // empty' <<< "$runs_json")
-[[ "$trusted_suite_id" =~ ^[0-9]+$ ]] || fail 'trusted CI workflow has not completed successfully for this PR head'
+trusted_run_json=$(jq -c --argjson workflow_id "$trusted_workflow_id" --arg head_sha "$head_sha" '[.workflow_runs[] | select(.workflow_id == $workflow_id and .head_sha == $head_sha and .path == ".github/workflows/ci.yml" and .check_suite_id != null)] | max_by(.id) // empty' <<< "$runs_json")
+[[ -n "$trusted_run_json" ]] || fail 'trusted CI workflow run is missing for this PR head'
+[[ "$(jq -r '.status' <<< "$trusted_run_json")" == completed ]] || fail 'trusted CI workflow has not completed for this PR head'
+[[ "$(jq -r '.conclusion' <<< "$trusted_run_json")" == success ]] || fail 'trusted CI workflow did not succeed for this PR head'
+trusted_suite_id=$(jq -r '.check_suite_id' <<< "$trusted_run_json")
 
 check_count=$(jq --argjson suite_id "$trusted_suite_id" '[.check_runs[] | select(.check_suite.id == $suite_id)] | length' <<< "$checks_json")
 status_count=$(jq '.statuses | length' <<< "$statuses_json")
