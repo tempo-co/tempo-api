@@ -15,7 +15,7 @@ fail() {
 }
 
 [[ "$(id -u)" != 0 ]] || fail 'run this as the staging user, not root'
-[[ -x "$rootless_script" ]] || fail "missing rootless daemon script: $rootless_script; run the official rootless installer first"
+[[ -x "$rootless_script" ]] || fail "missing rootless daemon script: $rootless_script; install the packaged rootless script first"
 command -v rootlesskit >/dev/null || fail 'rootlesskit is missing; install the prerequisite packages first'
 command -v slirp4netns >/dev/null || fail 'slirp4netns is missing; install the prerequisite packages first'
 command -v fuse-overlayfs >/dev/null || fail 'fuse-overlayfs is missing; install the prerequisite packages first'

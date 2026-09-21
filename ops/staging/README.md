@@ -4,12 +4,14 @@ This directory defines one persistent, tailnet-only staging slot. It is delibera
 
 ## One-time host setup
 
-1. Install the rootless prerequisites from an interactive terminal. The existing Ubuntu `docker.io` daemon does not include `dockerd-rootless.sh`; install the rootless binaries into the user account with Docker's official rootless installer without replacing or reconfiguring production Docker:
+1. Install the rootless prerequisites from an interactive terminal. On Ubuntu, use the packaged rootless script and copy only that script into the staging user's private `~/bin`; this does not replace or reconfigure the production Docker daemon:
 
    ```text
-   sudo apt-get install -y jq rootlesskit slirp4netns fuse-overlayfs uidmap
-   curl -fsSL https://get.docker.com/rootless | sh
+   sudo apt-get install -y jq rootlesskit slirp4netns fuse-overlayfs uidmap docker.io
+   install -D -m 0755 /usr/share/docker.io/contrib/dockerd-rootless.sh "$HOME/bin/dockerd-rootless.sh"
    ```
+
+   Do not use an unpinned remote `curl | sh` installer on the production host. If the distribution stores the packaged script elsewhere, use that distribution's documented rootless package path and verify the copied script before continuing.
 
    Verify `~/bin/dockerd-rootless.sh` exists before continuing.
 

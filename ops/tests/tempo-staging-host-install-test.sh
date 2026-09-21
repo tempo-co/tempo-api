@@ -5,12 +5,14 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 installer="$repo_root/ops/staging/install-staging-host.sh"
 unit="$repo_root/ops/staging/tempo-staging-docker.service"
 rootless_installer="$repo_root/ops/staging/install-rootless-daemon.sh"
-python3 - "$installer" "$unit" "$rootless_installer" <<'PY'
+readme="$repo_root/ops/staging/README.md"
+python3 - "$installer" "$unit" "$rootless_installer" "$readme" <<'PY'
 import sys
 
 installer = open(sys.argv[1], encoding='utf-8').read()
 unit = open(sys.argv[2], encoding='utf-8').read()
 rootless_installer = open(sys.argv[3], encoding='utf-8').read()
+readme = open(sys.argv[4], encoding='utf-8').read()
 for fragment in [
     'authorized_keys',
     'no-agent-forwarding',
@@ -45,6 +47,9 @@ assert '--ip6tables=false' not in unit
 assert 'After=default.target' not in unit
 assert 'Delegate=yes' in unit
 assert 'WantedBy=default.target' in unit
+assert 'docker.io/contrib/dockerd-rootless.sh' in readme
+assert 'get.docker.com/rootless' not in readme
+assert 'curl -fsSL' not in readme
 assert 'docker_info() {' in rootless_installer
 assert '[[ -n "$security_options" && -n "$docker_root" ]]' in rootless_installer
 print('tempo staging host installer contract: PASS')
