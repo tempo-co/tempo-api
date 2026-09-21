@@ -104,6 +104,14 @@ assert manifest['api']['head_sha'] == 'a' * 40
 assert manifest['api']['image'].endswith('@sha256:' + 'e' * 64)
 PY
 
+mv "$tmp_dir/state/deployed.json" "$tmp_dir/state/deployed.json.saved"
+if output=$(SSH_ORIGINAL_COMMAND='tempo-staging-ssh-deploy deploy web tempo-co/tempo-web 64 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb ghcr.io/tempo-co/tempo-web@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee' bash "$repo_root/ops/staging/tempo-staging-ssh-deploy.sh" 2>&1); then
+    echo 'web deployment unexpectedly accepted without an API deployment' >&2
+    exit 1
+fi
+printf '%s\n' "$output" | grep -Fq 'API component must be deployed before web'
+mv "$tmp_dir/state/deployed.json.saved" "$tmp_dir/state/deployed.json"
+
 if SSH_ORIGINAL_COMMAND='tempo-staging-ssh-deploy deploy api tempo-co/tempo-api 42 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ghcr.io/tempo-co/tempo-api:latest' bash "$repo_root/ops/staging/tempo-staging-ssh-deploy.sh"; then
     echo 'mutable image unexpectedly accepted' >&2
     exit 1

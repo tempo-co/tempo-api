@@ -96,6 +96,12 @@ case "$component" in
   *) fail 'component must be api or web' ;;
 esac
 
+manifest_path="$state_dir/deployed.json"
+if [[ "$component" == web ]]; then
+  [[ -f "$manifest_path" && ! -L "$manifest_path" ]] || fail 'API component must be deployed before web'
+  jq -e '(.api.repository == "tempo-co/tempo-api") and (.api.image | startswith("ghcr.io/tempo-co/tempo-api@sha256:"))' "$manifest_path" >/dev/null || fail 'API component must be deployed before web'
+fi
+
 [[ "$repository" == "$expected_repository" ]] || fail 'repository does not match component'
 [[ "$pr_number" =~ ^[1-9][0-9]*$ ]] || fail 'PR number is invalid'
 [[ "$head_sha" =~ ^[0-9a-f]{40}$ ]] || fail 'head SHA is invalid'
@@ -255,7 +261,6 @@ os.replace(temporary, path)
 PY
 }
 
-manifest_path="$state_dir/deployed.json"
 manifest_backup="$state_dir/.deployed.rollback.$$"
 manifest_existed=0
 if [[ -e "$manifest_path" ]]; then
