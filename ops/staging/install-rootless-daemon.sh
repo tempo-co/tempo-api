@@ -28,16 +28,23 @@ loginctl enable-linger "$(id -un)" 2>/dev/null || {
 }
 systemctl --user enable --now "$unit_name"
 
+docker_info() {
+  env -u DOCKER_CONTEXT DOCKER_HOST="unix://$socket_path" docker info "$@"
+}
+
+security_options=''
+docker_root=''
 for _ in $(seq 1 30); do
   if [[ -S "$socket_path" ]]; then
-    break
+    security_options=$(docker_info --format '{{json .SecurityOptions}}' 2>/dev/null) || security_options=''
+    docker_root=$(docker_info --format '{{.DockerRootDir}}' 2>/dev/null) || docker_root=''
+    if [[ -n "$security_options" && -n "$docker_root" ]]; then
+      break
+    fi
   fi
   sleep 2
 done
-[[ -S "$socket_path" ]] || fail "rootless Docker socket did not appear: $socket_path"
-
-security_options=$(env -u DOCKER_CONTEXT DOCKER_HOST="unix://$socket_path" docker info --format '{{json .SecurityOptions}}' 2>/dev/null) || fail 'rootless Docker daemon is not reachable'
-docker_root=$(env -u DOCKER_CONTEXT DOCKER_HOST="unix://$socket_path" docker info --format '{{.DockerRootDir}}' 2>/dev/null) || fail 'Docker root cannot be inspected'
+[[ -n "$security_options" && -n "$docker_root" ]] || fail 'rootless Docker daemon is not reachable'
 [[ "$security_options" == *rootless* ]] || fail 'Docker daemon does not report rootless mode'
 [[ "$docker_root" == "$expected_root" ]] || fail 'Docker root is outside the staging data root'
 
