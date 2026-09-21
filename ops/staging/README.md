@@ -1,6 +1,6 @@
 # Persistent staging
 
-This directory defines one persistent, tailnet-only staging slot. It is deliberately separate from the production Compose project and must use the dedicated rootless Docker socket. Staging must use a distinct HTTPS hostname from production; a `/staging` path on the production hostname is rejected because it does not create a browser-origin boundary.
+This directory defines one persistent, tailnet-only staging slot. It is deliberately separate from the production Compose project and must use the dedicated rootless Docker socket. Staging must use a distinct HTTPS hostname from production; a `/staging` path on the production hostname is rejected because it does not create a browser-origin boundary. A separate tagged host is preferred, but a second userspace Tailscale node on this machine is supported as a lower-isolation fallback.
 
 ## One-time host setup
 
@@ -13,7 +13,7 @@ This directory defines one persistent, tailnet-only staging slot. It is delibera
 
    Verify `~/bin/dockerd-rootless.sh` exists before continuing.
 
-2. Use a separate Linux host or VM with a tag-based Tailscale identity for staging. Define and approve the `svc:tempo-staging` Tailscale Service, then advertise the staging host's local web port through it. Do not retag or run a second Tailscale daemon on the production route host.
+2. Use a separate Linux host or VM with a tag-based Tailscale identity for staging when available. If this production node is the only machine, use the separate userspace daemon described in `/home/sami/Documents/tempo-staging-second-tailscale-setup.txt`; keep its state/socket separate and do not retag or restart the production Tailscale daemon. Define and approve the `svc:tempo-staging` Tailscale Service, then advertise the staging host's local web port through it.
 3. Create `~/.config/tempo-staging/staging.env` from `staging.env.example`. Set `PRODUCTION_PUBLIC_URL` to the production `/tempo` URL and `STAGING_PUBLIC_URL` to the distinct staging Service hostname with `/staging`; generate every secret locally with hex/base64-safe values, set the API/web image digests, and keep the file mode at `600`.
 4. Run `install-rootless-daemon.sh`, then verify the user service is healthy:
 
