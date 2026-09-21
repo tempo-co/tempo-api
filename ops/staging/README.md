@@ -7,7 +7,7 @@ This directory defines one persistent, tailnet-only staging slot. It is delibera
 1. Install the rootless prerequisites from an interactive terminal. The existing Ubuntu `docker.io` daemon does not include `dockerd-rootless.sh`; install the rootless binaries into the user account with Docker's official rootless installer without replacing or reconfiguring production Docker:
 
    ```text
-   sudo apt-get install -y rootlesskit slirp4netns fuse-overlayfs uidmap
+   sudo apt-get install -y jq rootlesskit slirp4netns fuse-overlayfs uidmap
    curl -fsSL https://get.docker.com/rootless | sh
    ```
 

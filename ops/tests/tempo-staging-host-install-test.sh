@@ -28,6 +28,7 @@ for fragment in [
     'mv -f -- "$authorized_tmp" "$authorized_keys"',
     'ssh-keygen -lf -',
     'expiry-time=',
+    'command -v jq',
 ]:
     assert fragment in installer, fragment
 for forbidden in ('production.compose.yml', 'production.env', 'tempo_production_postgres_data'):
@@ -111,3 +112,35 @@ assert data.count(b'\ncommand=') == 1
 assert data.endswith(b'\n')
 print('tempo staging host installer comment/newline regression: PASS')
 PY
+
+no_jq_bin="$tmp_dir/no-jq-bin"
+mkdir -p "$no_jq_bin"
+python3 - "$no_jq_bin" <<'PY'
+import os
+import sys
+from pathlib import Path
+
+target = Path(sys.argv[1])
+seen = set()
+for directory in os.environ.get('PATH', '').split(':'):
+    if not directory:
+        continue
+    directory_path = Path(directory)
+    if not directory_path.is_dir():
+        continue
+    for candidate in directory_path.iterdir():
+        if candidate.name == 'jq' or candidate.name in seen or not candidate.is_file():
+            continue
+        if os.access(candidate, os.X_OK):
+            destination = target / candidate.name
+            try:
+                destination.symlink_to(candidate)
+                seen.add(candidate.name)
+            except FileExistsError:
+                pass
+PY
+if PATH="$no_jq_bin" HOME="$tmp_dir/home" /usr/bin/bash "$installer" --ssh-public-key-file "$tmp_dir/deploy_key.pub" >"$tmp_dir/no-jq.out" 2>&1; then
+    echo 'host installer unexpectedly accepted a missing jq prerequisite' >&2
+    exit 1
+fi
+grep -Fq 'jq is required' "$tmp_dir/no-jq.out"

@@ -101,6 +101,8 @@ def browser_endpoint(value: str, expected_path: str) -> Tuple[str, str]:
         fail("URLs must use HTTPS")
     if parsed.username is not None or parsed.password is not None or "@" in parsed.netloc:
         fail("URLs must not contain credentials")
+    if parsed.netloc.startswith("[") and ":" not in (parsed.hostname or ""):
+        fail("URL contains an invalid bracketed host")
     if "?" in value or "#" in value:
         fail("URLs must not contain a query or fragment")
     if parsed.path not in (expected_path, f"{expected_path}/"):

@@ -20,6 +20,7 @@ usage() {
 }
 
 [[ "$(id -u)" != 0 ]] || fail 'run this as the staging user, not root'
+command -v jq >/dev/null 2>&1 || fail 'jq is required for staging promotion; install jq before running the host installer'
 public_key_file=''
 while [[ $# -gt 0 ]]; do
   case "$1" in

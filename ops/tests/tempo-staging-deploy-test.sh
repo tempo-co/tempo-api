@@ -187,6 +187,7 @@ malformed = {
     'invalid-dotted-hex-prefix': 'https://foo.0x1/staging',
     'invalid-dotted-hex-range': 'https://1.2.0x1000000/staging',
     'scoped-ipv6': 'https://[fe80::1%25eth0]/staging',
+    'ipvfuture': 'https://[v1.fe]/staging',
 }
 for name, value in malformed.items():
     (target_dir / f'{name}.env').write_text(source.replace('https://staging.example.test/staging', value))
