@@ -96,7 +96,8 @@ if TEMPO_STAGING_ENV_FILE="$staging_env" TEMPO_STAGING_DOCKER_HOST=unix:///var/r
 fi
 
 bad_env=$(mktemp)
-trap 'rm -f "$staging_env" "$config_json" "$bad_env"' EXIT
+duplicate_env=$(mktemp)
+trap 'rm -f "$staging_env" "$config_json" "$bad_env" "$duplicate_env"' EXIT
 python3 - "$staging_env" "$bad_env" <<'PY'
 import sys
 from pathlib import Path
@@ -106,6 +107,13 @@ PY
 chmod 600 "$bad_env"
 if TEMPO_STAGING_ENV_FILE="$bad_env" bash "$repo_root/ops/staging/tempo-staging-deploy.sh" validate; then
     echo 'untrusted API image unexpectedly accepted' >&2
+    exit 1
+fi
+
+cp "$staging_env" "$duplicate_env"
+printf '%s\n' 'STAGING_DB_NAME=other_staging' >> "$duplicate_env"
+if TEMPO_STAGING_ENV_FILE="$duplicate_env" bash "$repo_root/ops/staging/tempo-staging-deploy.sh" validate; then
+    echo 'duplicate staging environment key unexpectedly accepted' >&2
     exit 1
 fi
 

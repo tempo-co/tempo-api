@@ -3,7 +3,8 @@ set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 tmp_dir=$(mktemp -d)
-trap 'rm -rf "$tmp_dir"' EXIT
+duplicate_env=$(mktemp)
+trap 'rm -rf "$tmp_dir" "$duplicate_env"' EXIT
 mkdir -p "$tmp_dir/backups"
 
 python3 - "$tmp_dir/backups/tempo_20260920_000000.sql.gz" <<'PY'
@@ -30,6 +31,13 @@ TEMPO_STAGING_ENV_FILE="$tmp_dir/staging.env" \
 TEMPO_STAGING_REFRESH_BACKUP_DIR="$tmp_dir/backups" \
 TEMPO_STAGING_DOCKER_HOST="unix:///run/user/$(id -u)/tempo-staging/docker.sock" \
 bash "$repo_root/ops/staging/tempo-staging-refresh.sh" validate
+
+cp "$tmp_dir/staging.env" "$duplicate_env"
+printf '%s\n' 'STAGING_DB_NAME=other_staging' >> "$duplicate_env"
+if TEMPO_STAGING_ENV_FILE="$duplicate_env" TEMPO_STAGING_REFRESH_BACKUP_DIR="$tmp_dir/backups" TEMPO_STAGING_DOCKER_HOST="unix:///run/user/$(id -u)/tempo-staging/docker.sock" bash "$repo_root/ops/staging/tempo-staging-refresh.sh" validate; then
+    echo 'duplicate staging environment key unexpectedly accepted by refresh' >&2
+    exit 1
+fi
 
 if TEMPO_STAGING_ENV_FILE="$tmp_dir/staging.env" TEMPO_STAGING_REFRESH_BACKUP_DIR="$tmp_dir/backups" TEMPO_STAGING_DOCKER_HOST="unix:///run/user/$(id -u)/tempo-staging/docker.sock" bash "$repo_root/ops/staging/tempo-staging-refresh.sh" refresh --confirm-production-backup-refresh; then
     echo 'refresh unexpectedly ran without a staging daemon' >&2

@@ -9,6 +9,7 @@ on:
                 type: number
 
 permissions:
+    actions: read
     contents: read
     checks: read
     pull-requests: read

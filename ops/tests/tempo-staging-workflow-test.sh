@@ -8,6 +8,7 @@ import yaml
 
 workflow = open(sys.argv[1], encoding='utf-8').read()
 parsed = yaml.safe_load(workflow)
+assert parsed['permissions']['actions'] == 'read'
 assert parsed['jobs']['build']['permissions'] == {'contents': 'read'}
 assert parsed['jobs']['publish']['permissions']['packages'] == 'write'
 required = [
@@ -27,6 +28,7 @@ required = [
     'actions/runs?head_sha=',
     'contents/.github/workflows/ci.yml?ref=',
     'check_suite.id',
+    'actions: read',
     'pull-requests: read',
     'statuses: read',
     'head_repo',

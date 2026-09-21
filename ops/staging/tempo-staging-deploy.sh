@@ -24,6 +24,29 @@ mode=$(stat -c '%a' "$env_file")
 mode_value=$((8#$mode))
 (( mode_value == 0600 )) || fail 'staging environment file must have mode 600'
 
+validate_unique_env_keys() {
+  python3 - "$env_file" <<'PY'
+import sys
+
+path = sys.argv[1]
+seen = {}
+with open(path, encoding='utf-8') as handle:
+    for line_number, raw_line in enumerate(handle, 1):
+        line = raw_line.strip()
+        if not line or line.startswith('#'):
+            continue
+        key, separator, _ = line.partition('=')
+        if not separator:
+            continue
+        key = key.strip()
+        if key in seen:
+            raise SystemExit(f'duplicate staging environment key: {key} (lines {seen[key]} and {line_number})')
+        seen[key] = line_number
+PY
+}
+
+validate_unique_env_keys || fail 'staging environment file contains duplicate keys'
+
 read_env_value() {
   python3 - "$env_file" "$1" <<'PY'
 import sys
