@@ -57,6 +57,9 @@ required = [
 ]
 for fragment in required:
     assert fragment in workflow, fragment
+contract_checkout = workflow.split('Checkout staging contracts', 1)[1].split('Run staging contract tests', 1)[0]
+assert 'ref: ${{ steps.pr.outputs.head_sha }}' in contract_checkout
+assert 'persist-credentials: false' in contract_checkout
 assert 'self-hosted' not in workflow
 assert ':latest' not in workflow
 assert 'pull_request:' not in workflow

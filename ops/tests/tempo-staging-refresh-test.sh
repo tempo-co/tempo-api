@@ -6,7 +6,35 @@ tmp_dir=$(mktemp -d)
 duplicate_env=$(mktemp)
 export_duplicate_env=$(mktemp)
 trap 'rm -rf "$tmp_dir" "$duplicate_env" "$export_duplicate_env"' EXIT
-mkdir -p "$tmp_dir/backups"
+mkdir -p "$tmp_dir/backups" "$tmp_dir/fake-bin" "$tmp_dir/runtime/tempo-staging"
+python3 - "$tmp_dir/runtime/tempo-staging/docker.sock" "$tmp_dir/fake-bin/docker" <<'PY'
+import socket
+import stat
+import sys
+from pathlib import Path
+
+socket_path, docker_path = map(Path, sys.argv[1:])
+listener = socket.socket(socket.AF_UNIX)
+listener.bind(str(socket_path))
+listener.close()
+Path(docker_path).write_text(
+    '''#!/usr/bin/env python3
+import os
+import sys
+
+if sys.argv[1:2] == ['info']:
+    output = ' '.join(sys.argv[2:])
+    if '.SecurityOptions' in output:
+        print('["name=rootless"]')
+    elif '.DockerRootDir' in output:
+        print(os.path.expanduser('~/.local/share/tempo-staging/docker'))
+    raise SystemExit(0)
+raise SystemExit(42)
+''',
+    encoding='utf-8',
+)
+docker_path.chmod(stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
+PY
 
 python3 - "$tmp_dir/backups/tempo-20260920-000000.sql.gz" <<'PY'
 import gzip
@@ -30,24 +58,29 @@ chmod 600 "$tmp_dir/staging.env"
 
 TEMPO_STAGING_ENV_FILE="$tmp_dir/staging.env" \
 TEMPO_STAGING_REFRESH_BACKUP_DIR="$tmp_dir/backups" \
-TEMPO_STAGING_DOCKER_HOST="unix:///run/user/$(id -u)/tempo-staging/docker.sock" \
+XDG_RUNTIME_DIR="$tmp_dir/runtime" \
 bash "$repo_root/ops/staging/tempo-staging-refresh.sh" validate
 
 cp "$tmp_dir/staging.env" "$duplicate_env"
 printf '%s\n' 'STAGING_DB_NAME=other_staging' >> "$duplicate_env"
-if TEMPO_STAGING_ENV_FILE="$duplicate_env" TEMPO_STAGING_REFRESH_BACKUP_DIR="$tmp_dir/backups" TEMPO_STAGING_DOCKER_HOST="unix:///run/user/$(id -u)/tempo-staging/docker.sock" bash "$repo_root/ops/staging/tempo-staging-refresh.sh" validate; then
+if TEMPO_STAGING_ENV_FILE="$duplicate_env" TEMPO_STAGING_REFRESH_BACKUP_DIR="$tmp_dir/backups" XDG_RUNTIME_DIR="$tmp_dir/runtime" bash "$repo_root/ops/staging/tempo-staging-refresh.sh" validate; then
     echo 'duplicate staging environment key unexpectedly accepted by refresh' >&2
     exit 1
 fi
 
 cp "$tmp_dir/staging.env" "$export_duplicate_env"
 printf '%s\n' 'export STAGING_DB_NAME=other_staging' >> "$export_duplicate_env"
-if TEMPO_STAGING_ENV_FILE="$export_duplicate_env" TEMPO_STAGING_REFRESH_BACKUP_DIR="$tmp_dir/backups" TEMPO_STAGING_DOCKER_HOST="unix:///run/user/$(id -u)/tempo-staging/docker.sock" bash "$repo_root/ops/staging/tempo-staging-refresh.sh" validate; then
+if TEMPO_STAGING_ENV_FILE="$export_duplicate_env" TEMPO_STAGING_REFRESH_BACKUP_DIR="$tmp_dir/backups" XDG_RUNTIME_DIR="$tmp_dir/runtime" bash "$repo_root/ops/staging/tempo-staging-refresh.sh" validate; then
     echo 'export staging environment key unexpectedly accepted by refresh' >&2
     exit 1
 fi
 
-if TEMPO_STAGING_ENV_FILE="$tmp_dir/staging.env" TEMPO_STAGING_REFRESH_BACKUP_DIR="$tmp_dir/backups" TEMPO_STAGING_DOCKER_HOST="unix:///run/user/$(id -u)/tempo-staging/docker.sock" bash "$repo_root/ops/staging/tempo-staging-refresh.sh" refresh --confirm-production-backup-refresh; then
+if PATH="$tmp_dir/fake-bin:$PATH" \
+    XDG_RUNTIME_DIR="$tmp_dir/runtime" \
+    TEMPO_STAGING_STATE_DIR="$tmp_dir/state" \
+    TEMPO_STAGING_ENV_FILE="$tmp_dir/staging.env" \
+    TEMPO_STAGING_REFRESH_BACKUP_DIR="$tmp_dir/backups" \
+    bash "$repo_root/ops/staging/tempo-staging-refresh.sh" refresh --confirm-production-backup-refresh; then
     echo 'refresh unexpectedly ran without a staging daemon' >&2
     exit 1
 fi

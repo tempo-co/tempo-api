@@ -3,12 +3,22 @@ set -euo pipefail
 
 readonly command_name='tempo-staging-ssh-deploy'
 readonly runtime_dir="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
-readonly env_file="${TEMPO_STAGING_ENV_FILE:-$HOME/.config/tempo-staging/staging.env}"
-readonly state_dir="${TEMPO_STAGING_STATE_DIR:-$HOME/.local/state/tempo-staging}"
-readonly deploy_script="${TEMPO_STAGING_DEPLOY_SCRIPT:-$HOME/.local/libexec/tempo-staging/tempo-staging-deploy.sh}"
-readonly docker_host="${TEMPO_STAGING_DOCKER_HOST:-unix://$runtime_dir/tempo-staging/docker.sock}"
+if [[ -n "${SSH_CONNECTION:-}" ]]; then
+  readonly env_file="$HOME/.config/tempo-staging/staging.env"
+  readonly state_dir="$HOME/.local/state/tempo-staging"
+  readonly deploy_script="$HOME/.local/libexec/tempo-staging/tempo-staging-deploy.sh"
+  readonly docker_host="unix://$runtime_dir/tempo-staging/docker.sock"
+  readonly docker_bin='docker'
+  readonly gh_cli='gh'
+else
+  readonly env_file="${TEMPO_STAGING_ENV_FILE:-$HOME/.config/tempo-staging/staging.env}"
+  readonly state_dir="${TEMPO_STAGING_STATE_DIR:-$HOME/.local/state/tempo-staging}"
+  readonly deploy_script="${TEMPO_STAGING_DEPLOY_SCRIPT:-$HOME/.local/libexec/tempo-staging/tempo-staging-deploy.sh}"
+  readonly docker_host="${TEMPO_STAGING_DOCKER_HOST:-unix://$runtime_dir/tempo-staging/docker.sock}"
+  readonly docker_bin="${TEMPO_STAGING_DOCKER_BIN:-docker}"
+  readonly gh_cli="${TEMPO_STAGING_GH_CLI:-gh}"
+fi
 readonly expected_docker_host="unix://$runtime_dir/tempo-staging/docker.sock"
-readonly docker_bin="${TEMPO_STAGING_DOCKER_BIN:-docker}"
 
 fail() {
   printf 'tempo staging SSH deploy: %s\n' "$1" >&2
@@ -135,7 +145,6 @@ PY
 
 old_image=$(read_env_value "$image_key") || fail "$image_key is missing from the staging environment file"
 
-gh_cli="${TEMPO_STAGING_GH_CLI:-gh}"
 pr_json=$("$gh_cli" api "repos/$repository/pulls/$pr_number") || fail 'GitHub PR lookup failed'
 head_repo=$(jq -r '.head.repo.full_name // ""' <<< "$pr_json")
 remote_sha=$(jq -r '.head.sha // ""' <<< "$pr_json")

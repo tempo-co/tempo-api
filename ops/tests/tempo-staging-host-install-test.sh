@@ -40,6 +40,7 @@ assert 'Environment=DOCKERD_ROOTLESS_ROOTLESSKIT_PORT_DRIVER=builtin' in unit
 assert '--experimental' not in unit
 assert '--iptables=false' not in unit
 assert '--ip6tables=false' not in unit
+assert 'Delegate=yes' in unit
 assert 'WantedBy=default.target' in unit
 assert 'docker_info() {' in rootless_installer
 assert '[[ -n "$security_options" && -n "$docker_root" ]]' in rootless_installer

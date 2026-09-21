@@ -115,4 +115,13 @@ if SSH_ORIGINAL_COMMAND='tempo-staging-ssh-deploy deploy api tempo-co/tempo-api 
     exit 1
 fi
 
+python3 - "$repo_root/ops/staging/tempo-staging-ssh-deploy.sh" <<'PY'
+import sys
+text = open(sys.argv[1], encoding='utf-8').read()
+assert 'SSH_CONNECTION' in text
+assert 'TEMPO_STAGING_GH_CLI' in text
+assert 'TEMPO_STAGING_DOCKER_BIN' in text
+print('tempo staging SSH runtime environment boundary: PASS')
+PY
+
 printf '%s\n' 'tempo staging SSH deploy contract: PASS'
