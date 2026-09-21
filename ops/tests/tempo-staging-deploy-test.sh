@@ -102,7 +102,9 @@ bad_env=$(mktemp)
 duplicate_env=$(mktemp)
 export_duplicate_env=$(mktemp)
 same_origin_env=$(mktemp)
-trap 'rm -f "$staging_env" "$config_json" "$bad_env" "$duplicate_env" "$export_duplicate_env" "$same_origin_env"' EXIT
+unicode_origin_env=$(mktemp)
+ipv4_origin_env=$(mktemp)
+trap 'rm -f "$staging_env" "$config_json" "$bad_env" "$duplicate_env" "$export_duplicate_env" "$same_origin_env" "$unicode_origin_env" "$ipv4_origin_env"' EXIT
 python3 - "$staging_env" "$bad_env" <<'PY'
 import sys
 from pathlib import Path
@@ -126,6 +128,26 @@ if TEMPO_STAGING_ENV_FILE="$same_origin_env" bash "$repo_root/ops/staging/tempo-
     echo 'shared staging/production hostname unexpectedly accepted' >&2
     exit 1
 fi
+
+python3 - "$staging_env" "$unicode_origin_env" "$ipv4_origin_env" <<'PY'
+import sys
+from pathlib import Path
+source = Path(sys.argv[1]).read_text()
+replacements = [
+    (sys.argv[2], 'https://staging.example.test/staging', 'https://éxample.test/staging', 'https://production.example.test/tempo', 'https://xn--xample-9ua.test/tempo'),
+    (sys.argv[3], 'https://staging.example.test/staging', 'https://127.0.0.1/staging', 'https://production.example.test/tempo', 'https://127.1/tempo'),
+]
+for target_name, old_staging, new_staging, old_production, new_production in replacements:
+    text = source.replace(old_staging, new_staging).replace(old_production, new_production)
+    Path(target_name).write_text(text)
+PY
+chmod 600 "$unicode_origin_env" "$ipv4_origin_env"
+for equivalent_env in "$unicode_origin_env" "$ipv4_origin_env"; do
+    if TEMPO_STAGING_ENV_FILE="$equivalent_env" bash "$repo_root/ops/staging/tempo-staging-deploy.sh" validate; then
+        echo 'equivalent browser origin unexpectedly accepted' >&2
+        exit 1
+    fi
+done
 
 cp "$staging_env" "$duplicate_env"
 printf '%s\n' 'STAGING_DB_NAME=other_staging' >> "$duplicate_env"

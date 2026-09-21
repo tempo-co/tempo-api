@@ -118,14 +118,13 @@ web_digest="${web_image#"$web_image_prefix"}"
 [[ "$api_image" != *production* && "$web_image" != *production* ]] || fail 'production image references are not allowed'
 [[ "$public_url" =~ ^https://[^/]+/staging/?$ ]] || fail 'STAGING_PUBLIC_URL must be the tailnet HTTPS /staging URL'
 [[ "$production_url" =~ ^https://[^/]+/tempo/?$ ]] || fail 'PRODUCTION_PUBLIC_URL must be the production HTTPS /tempo URL'
-python3 - "$public_url" "$production_url" <<'PY'
-from urllib.parse import urlparse
-import sys
-
-staging, production = (urlparse(value) for value in sys.argv[1:])
-if staging.hostname == production.hostname:
-    raise SystemExit('staging and production URLs must use different hostnames')
-PY
+node - "$public_url" "$production_url" <<'NODE'
+const [staging, production] = process.argv.slice(2).map((value) => new URL(value));
+if (staging.origin === production.origin) {
+    console.error('tempo staging: staging and production URLs must have different browser origins');
+    process.exit(1);
+}
+NODE
 
 [[ "$web_port" =~ ^[0-9]+$ ]] || fail 'STAGING_WEB_HOST_PORT must be numeric'
 (( web_port >= 1024 && web_port <= 65535 )) || fail 'STAGING_WEB_HOST_PORT is outside the unprivileged port range'

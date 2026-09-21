@@ -5,7 +5,9 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 tmp_dir=$(mktemp -d)
 duplicate_env=$(mktemp)
 export_duplicate_env=$(mktemp)
-trap 'rm -rf "$tmp_dir" "$duplicate_env" "$export_duplicate_env"' EXIT
+unicode_origin_env=$(mktemp)
+ipv4_origin_env=$(mktemp)
+trap 'rm -rf "$tmp_dir" "$duplicate_env" "$export_duplicate_env" "$unicode_origin_env" "$ipv4_origin_env"' EXIT
 mkdir -p "$tmp_dir/backups" "$tmp_dir/fake-bin" "$tmp_dir/runtime/tempo-staging"
 python3 - "$tmp_dir/runtime/tempo-staging/docker.sock" "$tmp_dir/fake-bin/docker" <<'PY'
 import socket
@@ -85,6 +87,25 @@ if PATH="$tmp_dir/fake-bin:$PATH" \
     echo 'refresh unexpectedly ran without a staging daemon' >&2
     exit 1
 fi
+
+python3 - "$tmp_dir/staging.env" "$unicode_origin_env" "$ipv4_origin_env" <<'PY'
+import sys
+from pathlib import Path
+source = Path(sys.argv[1]).read_text()
+replacements = [
+    (sys.argv[2], 'https://staging.example.test/staging', 'https://éxample.test/staging', 'https://production.example.test/tempo', 'https://xn--xample-9ua.test/tempo'),
+    (sys.argv[3], 'https://staging.example.test/staging', 'https://127.0.0.1/staging', 'https://production.example.test/tempo', 'https://127.1/tempo'),
+]
+for target_name, old_staging, new_staging, old_production, new_production in replacements:
+    Path(target_name).write_text(source.replace(old_staging, new_staging).replace(old_production, new_production))
+PY
+chmod 600 "$unicode_origin_env" "$ipv4_origin_env"
+for equivalent_env in "$unicode_origin_env" "$ipv4_origin_env"; do
+    if TEMPO_STAGING_ENV_FILE="$equivalent_env" TEMPO_STAGING_REFRESH_BACKUP_DIR="$tmp_dir/backups" XDG_RUNTIME_DIR="$tmp_dir/runtime" bash "$repo_root/ops/staging/tempo-staging-refresh.sh" validate; then
+        echo 'equivalent browser origin unexpectedly accepted by refresh' >&2
+        exit 1
+    fi
+done
 
 python3 - "$repo_root/ops/staging/tempo-staging-refresh.sh" <<'PY'
 import sys
