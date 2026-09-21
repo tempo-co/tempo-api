@@ -98,6 +98,25 @@ if TEMPO_STAGING_ENV_FILE="$staging_env" TEMPO_STAGING_DOCKER_HOST=unix:///var/r
     exit 1
 fi
 
+python3 - "$repo_root/ops/staging/tempo-staging-origin.py" <<'PY'
+import importlib.util
+import sys
+
+spec = importlib.util.spec_from_file_location('tempo_staging_origin', sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+spec.loader.exec_module(module)
+cases = {
+    'https://[::ffff:192.0.2.1]/staging': 'https://[::ffff:c000:201]',
+    'https://[2001:0db8:0000:0000:0000:0000:0000:0001]/staging': 'https://[2001:db8::1]',
+    'https://[2001:db8:1:2:3:4:5:6]/staging': 'https://[2001:db8:1:2:3:4:5:6]',
+    'https://[::1]/staging': 'https://[::1]',
+}
+for value, expected in cases.items():
+    assert module.browser_origin(value, '/staging') == expected, (value, expected)
+print('tempo staging origin IPv6 canonicalization: PASS')
+PY
+
 bad_env=$(mktemp)
 duplicate_env=$(mktemp)
 export_duplicate_env=$(mktemp)

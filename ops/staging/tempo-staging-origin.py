@@ -60,6 +60,34 @@ def canonical_ipv4(host: str) -> Optional[str]:
     return ".".join(str((address >> shift) & 255) for shift in (24, 16, 8, 0))
 
 
+def canonical_ipv6(host: str) -> str:
+    address = ipaddress.IPv6Address(host)
+    groups = [(int(address) >> shift) & 0xFFFF for shift in range(112, -1, -16)]
+    best_start = -1
+    best_length = 0
+    start = 0
+    while start < len(groups):
+        if groups[start] != 0:
+            start += 1
+            continue
+        end = start
+        while end < len(groups) and groups[end] == 0:
+            end += 1
+        if end - start >= 2 and end - start > best_length:
+            best_start = start
+            best_length = end - start
+        start = end
+    if best_start < 0:
+        return ":".join(f"{group:x}" for group in groups)
+    left = ":".join(f"{group:x}" for group in groups[:best_start])
+    right = ":".join(f"{group:x}" for group in groups[best_start + best_length :])
+    if left and right:
+        return f"{left}::{right}"
+    if left:
+        return f"{left}::"
+    return f"::{right}" if right else "::"
+
+
 def canonical_host(host: str) -> str:
     if not host:
         fail("URLs must contain a host")
@@ -70,7 +98,7 @@ def canonical_host(host: str) -> str:
         if "%" in host:
             fail("URL contains an invalid scoped IPv6 host")
         try:
-            return ipaddress.IPv6Address(host).compressed.lower()
+            return canonical_ipv6(host)
         except ipaddress.AddressValueError:
             fail("URL contains an invalid IPv6 host")
     trailing_dot_stripped = host.rstrip(".")
