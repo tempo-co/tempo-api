@@ -24,6 +24,7 @@ for fragment in [
     'authorized_backup=',
     'mv -f -- "$authorized_tmp" "$authorized_keys"',
     'ssh-keygen -lf -',
+    'expiry-time=',
 ]:
     assert fragment in installer, fragment
 for forbidden in ('production.compose.yml', 'production.env', 'tempo_production_postgres_data'):
@@ -57,10 +58,17 @@ assert 'old-unrestricted-comment' not in lines[0]
 print('tempo staging host installer duplicate-key regression: PASS')
 PY
 
-printf 'command="old",from="127.0.0.1" %s %s restricted-from\n' "$key_type" "$key_blob" > "$tmp_dir/home/.ssh/authorized_keys"
+printf 'command="old",from="127.0.0.1",expiry-time="20000101000000" %s %s restricted-from\n' "$key_type" "$key_blob" > "$tmp_dir/home/.ssh/authorized_keys"
 HOME="$tmp_dir/home" bash "$installer" --ssh-public-key-file "$tmp_dir/deploy_key.pub" >/dev/null
-if ! grep -Fq 'from="127.0.0.1"' "$tmp_dir/home/.ssh/authorized_keys"; then
-    echo 'authorized_keys from restriction was not preserved' >&2
+if ! grep -Fq 'from="127.0.0.1"' "$tmp_dir/home/.ssh/authorized_keys" || ! grep -Fq 'expiry-time="20000101000000"' "$tmp_dir/home/.ssh/authorized_keys"; then
+    echo 'authorized_keys restrictions were not preserved' >&2
+    exit 1
+fi
+
+printf 'command="echo from=127.0.0.1 baz" %s %s command-text\n' "$key_type" "$key_blob" > "$tmp_dir/home/.ssh/authorized_keys"
+HOME="$tmp_dir/home" bash "$installer" --ssh-public-key-file "$tmp_dir/deploy_key.pub" >/dev/null
+if grep -Fq 'from=127.0.0.1' "$tmp_dir/home/.ssh/authorized_keys"; then
+    echo 'from text inside command option was misclassified as a restriction' >&2
     exit 1
 fi
 

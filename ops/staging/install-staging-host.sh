@@ -79,42 +79,115 @@ if [[ -e "$authorized_keys" ]]; then
   cp -p -- "$authorized_keys" "$authorized_backup"
 fi
 
-matching_from=''
-while IFS= read -r authorized_line || [[ -n "$authorized_line" ]]; do
-  line_fingerprint=$(printf '%s\n' "$authorized_line" | ssh-keygen -lf - 2>/dev/null | awk '$NF == "(ED25519)" {print $2; exit}' || true)
-  if [[ "$line_fingerprint" == "$key_fingerprint" ]]; then
-    read -r -a fields <<< "$authorized_line"
-    key_field_index=-1
-    for ((field_index = 0; field_index + 1 < ${#fields[@]}; field_index++)); do
-      if [[ "${fields[field_index]}" == "$key_type" && "${fields[field_index + 1]}" == "$key_blob" ]]; then
-        key_field_index=$field_index
-        break
-      fi
-    done
-    (( key_field_index >= 0 )) || fail 'matching authorized key could not be parsed'
-    for ((field_index = 0; field_index < key_field_index; field_index++)); do
-      option_field="${fields[field_index]}"
-      from_candidate=''
-      if [[ "$option_field" =~ (^|,)from=\"[^\"]*\" ]]; then
-        from_candidate="${BASH_REMATCH[0]#,}"
-      elif [[ "$option_field" =~ (^|,)from=[^,]+ ]]; then
-        from_candidate="${BASH_REMATCH[0]#*,}"
-      fi
-      if [[ -n "$from_candidate" ]]; then
-        if [[ -n "$matching_from" && "$matching_from" != "$from_candidate" ]]; then
-          fail 'matching authorized keys have conflicting from restrictions'
-        fi
-        matching_from="$from_candidate"
-      fi
-    done
-    continue
-  fi
-  printf '%s\n' "$authorized_line" >> "$authorized_tmp"
-done < "$authorized_keys"
-
 forced_options="command=\"$libexec_dir/tempo-staging-ssh-deploy.sh\",no-agent-forwarding,no-port-forwarding,no-pty,no-X11-forwarding,no-user-rc"
-[[ -n "$matching_from" ]] && forced_options="$matching_from,$forced_options"
-printf '%s\n' "$forced_options $key_identity" >> "$authorized_tmp"
+if ! python3 - "$authorized_keys" "$authorized_tmp" "$key_type" "$key_blob" "$forced_options" <<'PY'
+import sys
+from pathlib import Path
+
+authorized_path, output_path, key_type, key_blob, forced_options = sys.argv[1:]
+
+
+def tokenize(line):
+    tokens = []
+    current = []
+    quote = None
+    escaped = False
+    for char in line:
+        if escaped:
+            current.append(char)
+            escaped = False
+        elif char == '\\' and quote != "'":
+            current.append(char)
+            escaped = True
+        elif quote is not None:
+            current.append(char)
+            if char == quote:
+                quote = None
+        elif char in ("'", '"'):
+            current.append(char)
+            quote = char
+        elif char.isspace():
+            if current:
+                tokens.append(''.join(current))
+                current = []
+        else:
+            current.append(char)
+    if quote is not None:
+        raise ValueError('unterminated quote')
+    if current:
+        tokens.append(''.join(current))
+    return tokens
+
+
+def split_options(token):
+    options = []
+    current = []
+    quote = None
+    escaped = False
+    for char in token:
+        if escaped:
+            current.append(char)
+            escaped = False
+        elif char == '\\' and quote != "'":
+            current.append(char)
+            escaped = True
+        elif quote is not None:
+            current.append(char)
+            if char == quote:
+                quote = None
+        elif char in ("'", '"'):
+            current.append(char)
+            quote = char
+        elif char == ',':
+            options.append(''.join(current))
+            current = []
+        else:
+            current.append(char)
+    options.append(''.join(current))
+    return options
+
+
+def append_line(lines, line):
+    lines.append(line if line.endswith('\\n') else line + '\\n')
+
+
+def merge_restriction(current, candidate, name):
+    if candidate and current and candidate != current:
+        raise SystemExit(f'conflicting {name} restrictions')
+    return current or candidate
+
+lines = []
+matching_from = None
+matching_expiry = None
+for raw_line in Path(authorized_path).read_text(encoding='utf-8').splitlines(keepends=True):
+    stripped = raw_line.strip()
+    if not stripped or stripped.startswith('#'):
+        append_line(lines, raw_line)
+        continue
+    try:
+        fields = tokenize(raw_line.rstrip('\\r\\n'))
+    except ValueError:
+        append_line(lines, raw_line)
+        continue
+    key_index = next((index for index in range(len(fields) - 1) if fields[index] == key_type and fields[index + 1] == key_blob), None)
+    if key_index is None:
+        append_line(lines, raw_line)
+        continue
+    for field in fields[:key_index]:
+        for option in split_options(field):
+            if option.startswith('from='):
+                matching_from = merge_restriction(matching_from, option, 'from')
+            elif option.startswith('expiry-time='):
+                matching_expiry = merge_restriction(matching_expiry, option, 'expiry-time')
+
+preserved = [option for option in (matching_from, matching_expiry) if option]
+forced = ','.join(preserved + [forced_options])
+lines.append(f'{forced} {key_type} {key_blob}\\n')
+Path(output_path).write_text(''.join(lines), encoding='utf-8')
+PY
+then
+  fail 'authorized_keys parsing failed'
+fi
 chmod 600 "$authorized_tmp"
 mv -f -- "$authorized_tmp" "$authorized_keys"
 authorized_install_complete=1
