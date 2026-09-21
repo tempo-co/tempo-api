@@ -32,11 +32,12 @@ export class SessionModule implements NestModule {
 						client: this.redisClient,
 						prefix: `${this.config.get('SESSION_REDIS_KEY')}:`,
 					}),
-					name: 'session',
+					name: this.config.get('SESSION_COOKIE_NAME'),
 					secret: this.config.get('SESSION_SECRET'),
 					resave: false,
 					saveUninitialized: false,
 					cookie: {
+						path: this.config.get('SESSION_COOKIE_PATH'),
 						secure: isProduction,
 						httpOnly: true,
 						sameSite: 'strict',

@@ -36,6 +36,38 @@ const baseConfig = {
 	THROTTLE_LIMIT: '100',
 };
 
+describe('boolean environment configuration', () => {
+	it('parses literal false strings as false', () => {
+		const parsed = configSchema.parse({
+			...baseConfig,
+			EMAIL_SECURE: 'false',
+		});
+
+		expect(parsed.DB_SYNCHRONIZE).toBe(false);
+		expect(parsed.EMAIL_SECURE).toBe(false);
+	});
+});
+
+describe('session cookie configuration', () => {
+	it('defaults to the production cookie contract', () => {
+		const parsed = configSchema.parse(baseConfig);
+
+		expect(parsed.SESSION_COOKIE_NAME).toBe('session');
+		expect(parsed.SESSION_COOKIE_PATH).toBe('/');
+	});
+
+	it('accepts an isolated mounted-path cookie contract', () => {
+		const parsed = configSchema.parse({
+			...baseConfig,
+			SESSION_COOKIE_NAME: 'tempo_staging_session',
+			SESSION_COOKIE_PATH: '/staging',
+		});
+
+		expect(parsed.SESSION_COOKIE_NAME).toBe('tempo_staging_session');
+		expect(parsed.SESSION_COOKIE_PATH).toBe('/staging');
+	});
+});
+
 describe('categorization web-search configuration', () => {
 	it('defaults the fallback off', () => {
 		const parsed = configSchema.parse(baseConfig);
@@ -50,5 +82,35 @@ describe('categorization web-search configuration', () => {
 		});
 
 		expect(parsed.AI_CATEGORIZATION_WEB_SEARCH_ENABLED).toBe(true);
+	});
+});
+
+describe('banking integration configuration', () => {
+	it('defaults banking integration to enabled for production compatibility', () => {
+		const parsed = configSchema.parse(baseConfig);
+
+		expect(parsed.BANKING_INTEGRATION_ENABLED).toBe(true);
+	});
+
+	it('allows banking integration to be disabled without a provider private key', () => {
+		const parsed = configSchema.parse({
+			...baseConfig,
+			BANKING_INTEGRATION_ENABLED: 'false',
+			ENABLE_BANKING_PRIVATE_KEY_B64: undefined,
+			ENABLE_BANKING_PRIVATE_KEY_PATH: undefined,
+		});
+
+		expect(parsed.BANKING_INTEGRATION_ENABLED).toBe(false);
+	});
+
+	it('requires a provider private key when banking integration is enabled', () => {
+		expect(() =>
+			configSchema.parse({
+				...baseConfig,
+				BANKING_INTEGRATION_ENABLED: 'true',
+				ENABLE_BANKING_PRIVATE_KEY_B64: undefined,
+				ENABLE_BANKING_PRIVATE_KEY_PATH: undefined,
+			}),
+		).toThrow('Configure exactly one');
 	});
 });
