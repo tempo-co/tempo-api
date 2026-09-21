@@ -8,7 +8,8 @@ export_duplicate_env=$(mktemp)
 unicode_origin_env=$(mktemp)
 ipv4_origin_env=$(mktemp)
 legacy_ipv4_origin_env=$(mktemp)
-trap 'rm -rf "$tmp_dir" "$duplicate_env" "$export_duplicate_env" "$unicode_origin_env" "$ipv4_origin_env" "$legacy_ipv4_origin_env"' EXIT
+dotted_hex_origin_env=$(mktemp)
+trap 'rm -rf "$tmp_dir" "$duplicate_env" "$export_duplicate_env" "$unicode_origin_env" "$ipv4_origin_env" "$legacy_ipv4_origin_env" "$dotted_hex_origin_env"' EXIT
 mkdir -p "$tmp_dir/backups" "$tmp_dir/fake-bin" "$tmp_dir/runtime/tempo-staging" "$tmp_dir/malformed-origins"
 python3 - "$tmp_dir/runtime/tempo-staging/docker.sock" "$tmp_dir/fake-bin/docker" <<'PY'
 import socket
@@ -89,7 +90,7 @@ if PATH="$tmp_dir/fake-bin:$PATH" \
     exit 1
 fi
 
-python3 - "$tmp_dir/staging.env" "$unicode_origin_env" "$ipv4_origin_env" "$legacy_ipv4_origin_env" <<'PY'
+python3 - "$tmp_dir/staging.env" "$unicode_origin_env" "$ipv4_origin_env" "$legacy_ipv4_origin_env" "$dotted_hex_origin_env" <<'PY'
 import sys
 from pathlib import Path
 source = Path(sys.argv[1]).read_text()
@@ -97,12 +98,13 @@ replacements = [
     (sys.argv[2], 'https://staging.example.test/staging', 'https://éxample.test/staging', 'https://production.example.test/tempo', 'https://xn--xample-9ua.test/tempo'),
     (sys.argv[3], 'https://staging.example.test/staging', 'https://127.0.0.1/staging', 'https://production.example.test/tempo', 'https://127.1/tempo'),
     (sys.argv[4], 'https://staging.example.test/staging', 'https://0x/staging', 'https://production.example.test/tempo', 'https://0.0.0.0/tempo'),
+    (sys.argv[5], 'https://staging.example.test/staging', 'https://1.2.3.0x10/staging', 'https://production.example.test/tempo', 'https://1.2.3.16/tempo'),
 ]
 for target_name, old_staging, new_staging, old_production, new_production in replacements:
     Path(target_name).write_text(source.replace(old_staging, new_staging).replace(old_production, new_production))
 PY
-chmod 600 "$unicode_origin_env" "$ipv4_origin_env" "$legacy_ipv4_origin_env"
-for equivalent_env in "$unicode_origin_env" "$ipv4_origin_env" "$legacy_ipv4_origin_env"; do
+chmod 600 "$unicode_origin_env" "$ipv4_origin_env" "$legacy_ipv4_origin_env" "$dotted_hex_origin_env"
+for equivalent_env in "$unicode_origin_env" "$ipv4_origin_env" "$legacy_ipv4_origin_env" "$dotted_hex_origin_env"; do
     if TEMPO_STAGING_ENV_FILE="$equivalent_env" TEMPO_STAGING_REFRESH_BACKUP_DIR="$tmp_dir/backups" XDG_RUNTIME_DIR="$tmp_dir/runtime" bash "$repo_root/ops/staging/tempo-staging-refresh.sh" validate; then
         echo 'equivalent browser origin unexpectedly accepted by refresh' >&2
         exit 1
@@ -126,6 +128,9 @@ malformed = {
     'invalid-ipv4-range': 'https://999.999.999.999/staging',
     'invalid-ipv4-final': 'https://1.2.3.999/staging',
     'invalid-ipv4-empty-part': 'https://1..2/staging',
+    'invalid-dotted-hex-prefix': 'https://foo.0x1/staging',
+    'invalid-dotted-hex-range': 'https://1.2.0x1000000/staging',
+    'scoped-ipv6': 'https://[fe80::1%25eth0]/staging',
 }
 for name, value in malformed.items():
     (target_dir / f'{name}.env').write_text(source.replace('https://staging.example.test/staging', value))

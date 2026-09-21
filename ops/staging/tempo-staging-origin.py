@@ -67,6 +67,8 @@ def canonical_host(host: str) -> str:
         fail("URLs must use ASCII hostnames or punycode")
     host = host.lower()
     if ":" in host:
+        if "%" in host:
+            fail("URL contains an invalid scoped IPv6 host")
         try:
             return ipaddress.IPv6Address(host).compressed.lower()
         except ipaddress.AddressValueError:
@@ -75,7 +77,7 @@ def canonical_host(host: str) -> str:
     last_host_part = trailing_dot_stripped.rsplit(".", 1)[-1]
     ipv4_candidate = (
         _IPV4_DECIMAL.fullmatch(last_host_part) is not None
-        or (host.lower().startswith("0x") and _IPV4_HEX.fullmatch(host[2:] or "0") is not None)
+        or last_host_part.lower().startswith("0x")
     )
     if ipv4_candidate:
         ipv4 = canonical_ipv4(host)
