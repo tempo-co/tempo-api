@@ -109,7 +109,7 @@ if SSH_ORIGINAL_COMMAND='tempo-staging-ssh-deploy deploy api tempo-co/tempo-api 
     exit 1
 fi
 
-printf '%s\n' 'STAGING_DB_NAME=tempo_staging' 'STAGING_DB_NAME=other_staging' >> "$tmp_dir/config/staging.env"
+printf '%s\n' 'STAGING_DB_NAME=tempo_staging' 'export STAGING_DB_NAME=other_staging' >> "$tmp_dir/config/staging.env"
 if SSH_ORIGINAL_COMMAND='tempo-staging-ssh-deploy deploy api tempo-co/tempo-api 42 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ghcr.io/tempo-co/tempo-api@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee' bash "$repo_root/ops/staging/tempo-staging-ssh-deploy.sh"; then
     echo 'duplicate staging environment key unexpectedly accepted by SSH verifier' >&2
     exit 1

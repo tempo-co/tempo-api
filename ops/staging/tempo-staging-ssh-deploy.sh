@@ -37,6 +37,8 @@ with open(path, encoding='utf-8') as handle:
         line = raw_line.strip()
         if not line or line.startswith('#'):
             continue
+        if line.split(None, 1)[0] == 'export':
+            raise SystemExit(f'export syntax is not supported in staging environment files (line {line_number})')
         key, separator, _ = line.partition('=')
         if not separator:
             continue

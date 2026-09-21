@@ -97,7 +97,8 @@ fi
 
 bad_env=$(mktemp)
 duplicate_env=$(mktemp)
-trap 'rm -f "$staging_env" "$config_json" "$bad_env" "$duplicate_env"' EXIT
+export_duplicate_env=$(mktemp)
+trap 'rm -f "$staging_env" "$config_json" "$bad_env" "$duplicate_env" "$export_duplicate_env"' EXIT
 python3 - "$staging_env" "$bad_env" <<'PY'
 import sys
 from pathlib import Path
@@ -114,6 +115,13 @@ cp "$staging_env" "$duplicate_env"
 printf '%s\n' 'STAGING_DB_NAME=other_staging' >> "$duplicate_env"
 if TEMPO_STAGING_ENV_FILE="$duplicate_env" bash "$repo_root/ops/staging/tempo-staging-deploy.sh" validate; then
     echo 'duplicate staging environment key unexpectedly accepted' >&2
+    exit 1
+fi
+
+cp "$staging_env" "$export_duplicate_env"
+printf '%s\n' 'export STAGING_DB_NAME=other_staging' >> "$export_duplicate_env"
+if TEMPO_STAGING_ENV_FILE="$export_duplicate_env" bash "$repo_root/ops/staging/tempo-staging-deploy.sh" validate; then
+    echo 'export staging environment key unexpectedly accepted' >&2
     exit 1
 fi
 
