@@ -260,6 +260,14 @@ done
 fail "$service did not become healthy"
 }
 
+require_existing_healthy() {
+  local service="$1"
+  local container
+  container=$(compose ps -q "$service" 2>/dev/null || true)
+  [[ -n "$container" ]] || fail "$service component must be deployed before web"
+  wait_for_healthy "$service"
+}
+
 up() {
   acquire_mutation_lock
   validate_compose
@@ -285,11 +293,16 @@ deploy_component() {
   acquire_mutation_lock
   validate_compose
   require_daemon
+  if [[ "$service" == web ]]; then
+    require_existing_healthy api
+  fi
   compose pull "$service"
   compose up -d --no-deps "$service"
   wait_for_healthy "$service"
   if [[ "$service" == api ]]; then
     reload_web_proxy
+  else
+    wait_for_healthy api
   fi
 }
 

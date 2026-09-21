@@ -78,6 +78,8 @@ for service_name, service in services.items():
 assert config['volumes']['tempo_staging_postgres_data']['name'] == 'tempo-staging-postgres-data'
 assert config['networks']['backend']['internal'] is True
 assert 'nginx -s reload' in Path('ops/staging/tempo-staging-deploy.sh').read_text(encoding='utf-8')
+assert 'require_existing_healthy api' in Path('ops/staging/tempo-staging-deploy.sh').read_text(encoding='utf-8')
+assert "fail \"$service component must be deployed before web\"" in Path('ops/staging/tempo-staging-deploy.sh').read_text(encoding='utf-8')
 PY
 
 if TEMPO_STAGING_ENV_FILE="$staging_env" TEMPO_API_IMAGE=ghcr.io/tempo-co/tempo-api:latest bash "$repo_root/ops/staging/tempo-staging-deploy.sh" validate; then
@@ -136,5 +138,79 @@ if TEMPO_STAGING_ENV_FILE="$staging_env" bash "$repo_root/ops/staging/tempo-stag
     exit 1
 fi
 chmod 600 "$staging_env"
+
+(
+    set -euo pipefail
+    deploy_tmp=$(mktemp -d)
+    cleanup() {
+        kill "${socket_pid:-}" 2>/dev/null || true
+        rm -rf "$deploy_tmp"
+    }
+    trap cleanup EXIT
+    mkdir -p "$deploy_tmp/bin" "$deploy_tmp/runtime/tempo-staging" "$deploy_tmp/state"
+    python3 - "$deploy_tmp/runtime/tempo-staging/docker.sock" <<'PY' &
+import socket
+import sys
+import time
+server = socket.socket(socket.AF_UNIX)
+server.bind(sys.argv[1])
+server.listen(1)
+time.sleep(120)
+PY
+    socket_pid=$!
+    for _ in $(seq 1 20); do
+        [[ -S "$deploy_tmp/runtime/tempo-staging/docker.sock" ]] && break
+        sleep 0.1
+    done
+    real_docker=$(command -v docker)
+    cat >"$deploy_tmp/bin/docker" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "$FAKE_DOCKER_LOG"
+if [[ "$1" == compose && "$*" == *' config --format json' ]]; then
+    exec "$REAL_DOCKER" "$@"
+fi
+if [[ "$1" == info && "$2" == --format ]]; then
+    case "$3" in
+        '{{json .SecurityOptions}}') printf '["name=rootless"]\n' ;;
+        '{{.DockerRootDir}}') printf '%s\n' "$HOME/.local/share/tempo-staging/docker" ;;
+        *) exit 1 ;;
+    esac
+    exit 0
+fi
+if [[ "$1" == inspect ]]; then
+    printf 'healthy\n'
+    exit 0
+fi
+if [[ "$1" == compose ]]; then
+    case "$*" in
+        *' ps -q api')
+            [[ "${FAKE_API_PRESENT:-1}" == 1 ]] && printf 'api-container\n'
+            ;;
+        *' ps -q web') printf 'web-container\n' ;;
+        *' pull web'|*' up -d --no-deps web') ;;
+        *) exit 1 ;;
+    esac
+    exit 0
+fi
+exit 1
+SH
+    chmod 700 "$deploy_tmp/bin/docker"
+    if TEMPO_STAGING_ENV_FILE="$staging_env" TEMPO_STAGING_STATE_DIR="$deploy_tmp/state" XDG_RUNTIME_DIR="$deploy_tmp/runtime" REAL_DOCKER="$real_docker" FAKE_DOCKER_LOG="$deploy_tmp/docker.log" FAKE_API_PRESENT=0 PATH="$deploy_tmp/bin:$PATH" bash "$repo_root/ops/staging/tempo-staging-deploy.sh" deploy web >"$deploy_tmp/missing-api.out" 2>&1; then
+        echo 'web deployment unexpectedly accepted without a healthy API' >&2
+        exit 1
+    fi
+    grep -Fq 'api component must be deployed before web' "$deploy_tmp/missing-api.out"
+    TEMPO_STAGING_ENV_FILE="$staging_env" TEMPO_STAGING_STATE_DIR="$deploy_tmp/state" XDG_RUNTIME_DIR="$deploy_tmp/runtime" REAL_DOCKER="$real_docker" FAKE_DOCKER_LOG="$deploy_tmp/docker.log" FAKE_API_PRESENT=1 PATH="$deploy_tmp/bin:$PATH" bash "$repo_root/ops/staging/tempo-staging-deploy.sh" deploy web
+    python3 - "$deploy_tmp/docker.log" <<'PY'
+import sys
+lines = open(sys.argv[1], encoding='utf-8').read().splitlines()
+api_probe = next(i for i, line in enumerate(lines) if ' ps -q api' in line)
+pull = next(i for i, line in enumerate(lines) if ' pull web' in line)
+replace = next(i for i, line in enumerate(lines) if ' up -d --no-deps web' in line)
+assert api_probe < pull < replace
+print('tempo staging web promotion ordering: PASS')
+PY
+)
 
 printf '%s\n' 'tempo staging deployment contract: PASS'
