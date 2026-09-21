@@ -26,9 +26,9 @@ def parse_ipv4_component(component: str) -> Optional[int]:
         return None
     if component.lower().startswith("0x"):
         digits = component[2:]
-        if not digits or not _IPV4_HEX.fullmatch(digits):
+        if digits and not _IPV4_HEX.fullmatch(digits):
             return None
-        return int(digits, 16)
+        return int(digits or "0", 16)
     if len(component) > 1 and component.startswith("0"):
         digits = component[1:]
         if not _IPV4_OCTAL.fullmatch(digits):
@@ -39,7 +39,9 @@ def parse_ipv4_component(component: str) -> Optional[int]:
     return int(component, 10)
 
 
-def canonical_ipv4(host: str) -> str | None:
+def canonical_ipv4(host: str) -> Optional[str]:
+    if host.endswith("."):
+        host = host[:-1]
     parts = host.split(".")
     if not 1 <= len(parts) <= 4:
         return None
@@ -69,8 +71,16 @@ def canonical_host(host: str) -> str:
             return ipaddress.IPv6Address(host).compressed.lower()
         except ipaddress.AddressValueError:
             fail("URL contains an invalid IPv6 host")
-    ipv4 = canonical_ipv4(host)
-    if ipv4 is not None:
+    trailing_dot_stripped = host.rstrip(".")
+    last_host_part = trailing_dot_stripped.rsplit(".", 1)[-1]
+    ipv4_candidate = (
+        _IPV4_DECIMAL.fullmatch(last_host_part) is not None
+        or (host.lower().startswith("0x") and _IPV4_HEX.fullmatch(host[2:] or "0") is not None)
+    )
+    if ipv4_candidate:
+        ipv4 = canonical_ipv4(host)
+        if ipv4 is None:
+            fail("URL contains an invalid IPv4 host")
         return ipv4
     if not _ASCII_HOST.fullmatch(host) or host.startswith(".") or host.endswith("."):
         fail("URL contains an invalid host")
@@ -89,7 +99,7 @@ def browser_origin(value: str, expected_path: str) -> str:
         fail("URLs must use HTTPS")
     if parsed.username is not None or parsed.password is not None or "@" in parsed.netloc:
         fail("URLs must not contain credentials")
-    if parsed.query or parsed.fragment:
+    if "?" in value or "#" in value:
         fail("URLs must not contain a query or fragment")
     if parsed.path not in (expected_path, f"{expected_path}/"):
         fail(f"URL path must be {expected_path} or {expected_path}/")
