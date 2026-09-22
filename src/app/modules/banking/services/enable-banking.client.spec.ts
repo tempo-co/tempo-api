@@ -29,6 +29,23 @@ describe('EnableBankingClient', () => {
 		fetchMock.mockRestore();
 	});
 
+	it('does not load the provider private key when banking integration is disabled', () => {
+		const config = {
+			get: (key: string) => {
+				if (key === 'BANKING_INTEGRATION_ENABLED') return false;
+				if (key === 'ENABLE_BANKING_PRIVATE_KEY_PATH' || key === 'ENABLE_BANKING_PRIVATE_KEY_B64') {
+					throw new Error('provider private key must not be read');
+				}
+				return {
+					ENABLE_BANKING_API_URL: 'https://api.example.test',
+					ENABLE_BANKING_APPLICATION_ID: 'application-id',
+				}[key];
+			},
+		} as unknown as ConfigurationService;
+
+		expect(() => new EnableBankingClient(config)).not.toThrow();
+	});
+
 	it('reuses a JWT while it remains valid', () => {
 		const {privateKey} = generateKeyPairSync('rsa', {modulusLength: 2048});
 		const values: Record<string, string> = {
