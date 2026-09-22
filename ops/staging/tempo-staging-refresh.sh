@@ -246,9 +246,11 @@ postgres_volume = volumes.get('tempo_staging_postgres_data', {})
 if not str(postgres_volume.get('name', '')).startswith('tempo-staging-'):
     raise SystemExit('staging Postgres volume is not isolated')
 networks = config.get('networks', {})
-for network_name in ('backend', 'edge'):
+for network_name in ('backend', 'edge', 'ingress'):
     if not str(networks.get(network_name, {}).get('name', '')).startswith('tempo-staging-'):
         raise SystemExit(f'staging network is not isolated: {network_name}')
+if networks.get('ingress', {}).get('internal'):
+    raise SystemExit('staging ingress network must remain externally publishable')
 
 ports = []
 for service_name, service in services.items():
@@ -266,8 +268,11 @@ if len(ports) != 1:
     raise SystemExit('staging must publish exactly one web port')
 if not {'backend', 'edge'} <= set(api.get('networks', [])):
     raise SystemExit('staging API networks are incomplete')
-if set(services['web'].get('networks', [])) != {'edge'}:
-    raise SystemExit('staging web network is not isolated')
+if set(services['web'].get('networks', [])) != {'edge', 'ingress'}:
+    raise SystemExit('staging web networks are not isolated')
+for service_name in ('postgres', 'redis', 'mailpit', 'api'):
+    if 'ingress' in services[service_name].get('networks', []):
+        raise SystemExit(f'{service_name} must not attach to the staging ingress network')
 PY
     rm -f -- "$rendered_file"
     return "$status"
