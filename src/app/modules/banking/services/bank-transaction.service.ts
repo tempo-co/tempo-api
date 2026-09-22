@@ -190,6 +190,7 @@ export class BankTransactionService {
 		const result = await this.bankTransactionRepository.update({id}, values);
 		if (result.affected === 0) throw new NotFoundException(BANKING_TRANSACTION_NOT_FOUND);
 		Object.assign(transaction, values);
+		transaction.categoryRule = null;
 
 		return this.toResponse(transaction);
 	}

@@ -24,7 +24,7 @@ describe('BankTransactionRuleController', () => {
 		const draft = {
 			sourceTransactionId: CATEGORIZATION_E2E_AI_TRANSACTION_ID,
 			name: 'Synthetic card purchase rule',
-			category: 'DINING_OUT',
+			category: 'FOOD_AND_DRINK',
 			matchField: 'BANK_TRANSACTION_DESCRIPTION',
 			matchText: 'Card purchase',
 		} as const;
@@ -33,7 +33,7 @@ describe('BankTransactionRuleController', () => {
 		expect(previewResponse.body).toMatchObject({
 			bankAccountId: CATEGORIZATION_E2E_ACCOUNT_ID,
 			direction: 'EXPENSE',
-			transactionType: 'CARD',
+			transactionType: 'CARD_PAYMENT',
 			currency: 'EUR',
 			amount: '47.25',
 			totalMatches: 1,
@@ -59,7 +59,7 @@ describe('BankTransactionRuleController', () => {
 			.get(`/bank-transactions/${CATEGORIZATION_E2E_AI_TRANSACTION_ID}`)
 			.expect(200);
 		expect(appliedTransaction.body).toMatchObject({
-			category: 'DINING_OUT',
+			category: 'FOOD_AND_DRINK',
 			categorySource: 'RULE',
 			categoryRuleId: ruleId,
 			categoryRuleName: draft.name,
@@ -67,10 +67,10 @@ describe('BankTransactionRuleController', () => {
 
 		const manualTransaction = await agent
 			.patch(`/bank-transactions/${CATEGORIZATION_E2E_AI_TRANSACTION_ID}/category`)
-			.send({category: 'GROCERIES'})
+			.send({category: 'SHOPPING'})
 			.expect(200);
 		expect(manualTransaction.body).toMatchObject({
-			category: 'GROCERIES',
+			category: 'SHOPPING',
 			categorySource: 'MANUAL',
 			categoryRuleId: null,
 			categoryRuleName: null,
