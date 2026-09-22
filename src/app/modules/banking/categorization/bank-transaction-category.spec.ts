@@ -18,7 +18,6 @@ describe('bank transaction categorization contract', () => {
 			'PERSONAL_CARE',
 			'EDUCATION',
 			'INSURANCE',
-			'TAXES',
 			'FEES',
 			'CASH_WITHDRAWAL',
 			'INCOME',
@@ -28,7 +27,7 @@ describe('bank transaction categorization contract', () => {
 			'NEEDS_REVIEW',
 			'OTHER',
 		]);
-		expect(BANK_TRANSACTION_CATEGORY_DEFINITIONS).toHaveLength(20);
+		expect(BANK_TRANSACTION_CATEGORY_DEFINITIONS).toHaveLength(19);
 		expect(BANK_TRANSACTION_CATEGORY_DEFINITIONS).toEqual(
 			expect.arrayContaining(
 				BANK_TRANSACTION_CATEGORIES.map((value) =>

@@ -1,10 +1,10 @@
-export const BANK_TRANSACTION_CATEGORIZATION_PROMPT_VERSION = 'bank-transaction-categorization-v3';
+export const BANK_TRANSACTION_CATEGORIZATION_PROMPT_VERSION = 'bank-transaction-categorization-v4';
 export const BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_PROMPT_VERSION =
-	'bank-transaction-categorization-web-search-v4';
+	'bank-transaction-categorization-web-search-v5';
 export const BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_SKIPPED_PROMPT_VERSION =
-	'bank-transaction-categorization-web-search-skipped-v3';
+	'bank-transaction-categorization-web-search-skipped-v4';
 export const BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_FAILED_PROMPT_VERSION =
-	'bank-transaction-categorization-web-search-failed-v3';
+	'bank-transaction-categorization-web-search-failed-v4';
 export const BANK_TRANSACTION_CATEGORIZATION_PROVIDER_NAME = 'openai';
 export const BANK_TRANSACTION_CATEGORIZATION_REQUEST_TIMEOUT_MS = 30_000;
 export const BANK_TRANSACTION_CATEGORIZATION_MAX_WEB_SEARCH_QUERY_LENGTH = 240;

@@ -12,7 +12,6 @@ export const BANK_TRANSACTION_CATEGORIES = [
 	'PERSONAL_CARE',
 	'EDUCATION',
 	'INSURANCE',
-	'TAXES',
 	'FEES',
 	'CASH_WITHDRAWAL',
 	'INCOME',
@@ -98,12 +97,6 @@ export const BANK_TRANSACTION_CATEGORY_DEFINITIONS: readonly BankTransactionCate
 		label: 'Insurance',
 		description:
 			'Premiums or payments for an insurance policy; a claim payout, repair, or ordinary service charge is not insurance.',
-	},
-	{
-		value: 'TAXES',
-		label: 'Taxes',
-		description:
-			'Payments to tax authorities or public bodies for taxes; fines, fees, licenses, and ordinary government services require different evidence.',
 	},
 	{
 		value: 'FEES',
