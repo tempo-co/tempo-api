@@ -144,7 +144,7 @@ describe('Bank transaction categorization integration', () => {
 			bankTransactionSubCode: 'CARD',
 			merchantCategoryCode: '5814',
 		});
-		expect(categorizeSpy.mock.calls[0][1]).toHaveLength(20);
+		expect(categorizeSpy.mock.calls[0][1]).toHaveLength(19);
 
 		const persisted = await bankTransactionRepository.findOneByOrFail({id: CATEGORIZATION_E2E_AI_TRANSACTION_ID});
 		expect(persisted).toMatchObject({
