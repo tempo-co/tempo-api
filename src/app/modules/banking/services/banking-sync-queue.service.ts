@@ -39,8 +39,23 @@ export class BankingSyncQueueService implements OnModuleInit {
 		this.bankingIntegrationEnabled = configurationService.get('BANKING_INTEGRATION_ENABLED') !== false;
 	}
 
+	isIntegrationEnabled(): boolean {
+		return this.bankingIntegrationEnabled;
+	}
+
 	async onModuleInit(): Promise<void> {
-		if (!this.bankingIntegrationEnabled || this.configurationService.get('NODE_ENV') === 'test') return;
+		if (this.configurationService.get('NODE_ENV') === 'test') return;
+		if (!this.bankingIntegrationEnabled) {
+			try {
+				await this.queue.removeJobScheduler(BANK_CONNECTION_SYNC_SCHEDULER_ID);
+			} catch (error) {
+				this.logger.warn(
+					`Could not remove disabled banking scheduler: ${error instanceof Error ? error.message : String(error)}`,
+				);
+				throw error;
+			}
+			return;
+		}
 
 		await this.queue.upsertJobScheduler(
 			BANK_CONNECTION_SYNC_SCHEDULER_ID,
@@ -121,7 +136,6 @@ export class BankingSyncQueueService implements OnModuleInit {
 
 	private async enqueueConnectionSync(connectionId: string, initial: boolean): Promise<void> {
 		if (!this.bankingIntegrationEnabled) return;
-
 		const jobId = this.getJobId(connectionId);
 		const existingJob = await this.queue.getJob(jobId);
 		if (existingJob) {

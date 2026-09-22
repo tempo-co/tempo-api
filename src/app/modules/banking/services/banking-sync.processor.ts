@@ -25,6 +25,7 @@ export class BankingSyncProcessor extends WorkerHost {
 	}
 
 	async process(job: Job<BankConnectionSyncJobData>): Promise<void> {
+		if (!this.bankingSyncQueueService.isIntegrationEnabled()) return;
 		if (job.name === DISPATCH_BANK_CONNECTION_SYNCS_JOB) {
 			await this.bankingSyncQueueService.dispatchDueConnections();
 			return;

@@ -25,6 +25,23 @@ describe('EnableBankingClient', () => {
 		fetchMock = jest.spyOn(globalThis, 'fetch');
 	});
 
+	it('does not initialize or call the provider when banking integration is disabled', async () => {
+		const values: Record<string, string | boolean | undefined> = {
+			BANKING_INTEGRATION_ENABLED: false,
+			ENABLE_BANKING_API_URL: 'https://disabled.invalid',
+			ENABLE_BANKING_APPLICATION_ID: 'disabled',
+		};
+		const disabledConfig = {
+			get: (key: string) => values[key],
+		} as unknown as ConfigurationService;
+
+		expect(() => new EnableBankingClient(disabledConfig)).not.toThrow();
+		const disabledClient = new EnableBankingClient(disabledConfig);
+
+		await expect(disabledClient.getAspsps()).rejects.toMatchObject({code: 'banking_integration_disabled'});
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
 	afterEach(() => {
 		fetchMock.mockRestore();
 	});

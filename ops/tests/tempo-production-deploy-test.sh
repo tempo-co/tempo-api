@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-SCRIPT=$SCRIPT_DIR/../tempo-production-deploy.sh
+SCRIPT=$SCRIPT_DIR/../tempo-deploy.sh
 TMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TMP_DIR"' EXIT
 
@@ -96,6 +96,7 @@ EOF
     : > "$FIXTURE/runtime-api"; : > "$FIXTURE/runtime-web"
     touch "$FIXTURE/production.compose.yml" "$FIXTURE/production.env"
     export PATH="$BIN:$PATH" DOCKER_LOG="$FIXTURE/docker.log" CURL_LOG="$FIXTURE/curl.log"
+    export TEMPO_DEPLOY_TEST_MODE=1 TEMPO_DEPLOY_TEST_ROOT="$FIXTURE"
     export RUNTIME_API_FILE="$FIXTURE/runtime-api" RUNTIME_WEB_FILE="$FIXTURE/runtime-web"
     export COMPOSE_FAILURE_MARKER="$FIXTURE/compose-failed"
     export TEMPO_DEPLOY_COMPOSE_FILE="$FIXTURE/production.compose.yml"
@@ -118,11 +119,15 @@ set_target() {
     export TEST_API_SHA TEST_WEB_SHA TEST_API_DIGEST TEST_WEB_DIGEST TEST_CURRENT_API_IMAGE TEST_CURRENT_WEB_IMAGE
 }
 
+run_deploy() {
+    bash "$SCRIPT" --target production "$@"
+}
+
 run_initialize_test() {
     setup_fixture initialize
     TEST_CURRENT_API_IMAGE=ghcr.io/tempo-co/tempo-api:latest; TEST_CURRENT_WEB_IMAGE=$WEB_RUNNING_IMAGE
     export TEST_CURRENT_API_IMAGE TEST_CURRENT_WEB_IMAGE
-    bash "$SCRIPT" --initialize
+    run_deploy --initialize
     assert_contains "$TEMPO_DEPLOY_STATE_FILE" 'TEMPO_API_SHA=bootstrap'
     assert_contains "$TEMPO_DEPLOY_STATE_FILE" 'TEMPO_WEB_IMAGE=tempo-api-production-web:latest'
     assert_contains "$TEMPO_DEPLOY_STATE_FILE.rollback" 'TEMPO_WEB_SHA=bootstrap'
@@ -134,9 +139,9 @@ run_bootstrap_cleanup_test() {
     setup_fixture bootstrap-cleanup
     TEST_CURRENT_API_IMAGE=ghcr.io/tempo-co/tempo-api:latest; TEST_CURRENT_WEB_IMAGE=$WEB_RUNNING_IMAGE
     export TEST_CURRENT_API_IMAGE TEST_CURRENT_WEB_IMAGE
-    bash "$SCRIPT" --initialize
+    run_deploy --initialize
 
-    set_target; bash "$SCRIPT"
+    set_target; run_deploy
     assert_contains "$TEMPO_DEPLOY_STATE_FILE.rollback" 'TEMPO_API_SHA=bootstrap'
     assert_contains "$TEMPO_DEPLOY_STATE_FILE.rollback" 'TEMPO_API_IMAGE=ghcr.io/tempo-co/tempo-api:latest'
     assert_contains "$TEMPO_DEPLOY_STATE_FILE.rollback" 'TEMPO_WEB_IMAGE=tempo-api-production-web:latest'
@@ -145,7 +150,7 @@ run_bootstrap_cleanup_test() {
     [[ $first_log != *'image rm tempo-api-production-web:latest'* ]] || fail 'first deployment removed web bootstrap rollback image'
     TEST_API_SHA=$SHA_A; TEST_WEB_SHA=$SHA_D; TEST_API_DIGEST=$(printf '5%.0s' {1..64})
     export TEST_API_SHA TEST_WEB_SHA TEST_API_DIGEST
-    bash "$SCRIPT"
+    run_deploy
 
     assert_contains "$DOCKER_LOG" 'image rm ghcr.io/tempo-co/tempo-api:latest'
     assert_contains "$DOCKER_LOG" 'image rm tempo-api-production-web:latest'
@@ -154,14 +159,14 @@ run_bootstrap_cleanup_test() {
 
 run_noop_test() {
     setup_fixture noop; TEST_API_SHA=$SHA_A; TEST_WEB_SHA=$SHA_B; export TEST_API_SHA TEST_WEB_SHA
-    write_active_state; bash "$SCRIPT"
+    write_active_state; run_deploy
     [[ ! -s $DOCKER_LOG ]] || fail 'no-op invoked Docker'
 }
 
 run_failed_pull_test() {
     setup_fixture failed-pull; set_target; write_active_state
     export FAIL_PULL=ghcr.io/tempo-co/tempo-web:$TEST_WEB_SHA
-    if bash "$SCRIPT"; then fail 'failed web pull unexpectedly succeeded'; fi
+    if run_deploy; then fail 'failed web pull unexpectedly succeeded'; fi
     [[ ! -s $CURL_LOG ]] || fail 'failed pull reached health checks'
     assert_no_stateful_compose
 }
@@ -169,7 +174,7 @@ run_failed_pull_test() {
 run_failed_pull_cleanup_test() {
     setup_fixture failed-pull-cleanup; set_target; write_active_state
     export FAIL_PULL=ghcr.io/tempo-co/tempo-web:$TEST_WEB_SHA
-    if bash "$SCRIPT"; then fail 'failed web pull unexpectedly succeeded'; fi
+    if run_deploy; then fail 'failed web pull unexpectedly succeeded'; fi
     assert_contains "$DOCKER_LOG" "image rm ghcr.io/tempo-co/tempo-api:$TEST_API_SHA"
     assert_contains "$DOCKER_LOG" "image rm ghcr.io/tempo-co/tempo-api@sha256:$TEST_API_DIGEST"
     assert_no_stateful_compose
@@ -178,7 +183,7 @@ run_failed_pull_cleanup_test() {
 run_failed_rollout_cleanup_test() {
     setup_fixture failed-rollout-cleanup; set_target; write_active_state
     export FAIL_COMPOSE_ONCE=web
-    if bash "$SCRIPT"; then fail 'failed rollout unexpectedly succeeded'; fi
+    if run_deploy; then fail 'failed rollout unexpectedly succeeded'; fi
     assert_contains "$DOCKER_LOG" "image rm ghcr.io/tempo-co/tempo-api:$TEST_API_SHA"
     assert_contains "$DOCKER_LOG" "image rm ghcr.io/tempo-co/tempo-api@sha256:$TEST_API_DIGEST"
     assert_contains "$DOCKER_LOG" "image rm ghcr.io/tempo-co/tempo-web:$TEST_WEB_SHA"
@@ -187,7 +192,7 @@ run_failed_rollout_cleanup_test() {
 }
 
 run_success_test() {
-    setup_fixture success; set_target; write_active_state; cp "$TEMPO_DEPLOY_STATE_FILE" "$TEMPO_DEPLOY_STATE_FILE.rollback"; bash "$SCRIPT"
+    setup_fixture success; set_target; write_active_state; cp "$TEMPO_DEPLOY_STATE_FILE" "$TEMPO_DEPLOY_STATE_FILE.rollback"; run_deploy
     assert_contains "$DOCKER_LOG" '--env-file'; assert_contains "$CURL_LOG" '/tempo/'
     assert_contains "$CURL_LOG" '/tempo/api/health'
     assert_contains "$TEMPO_DEPLOY_STATE_FILE" "TEMPO_API_SHA=$TEST_API_SHA"
@@ -203,7 +208,7 @@ run_api_only_test() {
     TEST_API_DIGEST=$API_NEW_DIGEST; TEST_WEB_DIGEST=$WEB_NEW_DIGEST
     TEST_CURRENT_API_IMAGE=$API_OLD_IMAGE; TEST_CURRENT_WEB_IMAGE=$WEB_OLD_IMAGE
     export TEST_API_SHA TEST_WEB_SHA TEST_API_DIGEST TEST_WEB_DIGEST TEST_CURRENT_API_IMAGE TEST_CURRENT_WEB_IMAGE
-    write_active_state; bash "$SCRIPT"
+    write_active_state; run_deploy
     local log; log=$(<"$DOCKER_LOG")
     [[ $log == *' up -d --no-deps --force-recreate --wait api'* ]] || fail 'API-only update did not invoke API Compose service'
     [[ $log == *' up -d --no-deps --force-recreate --wait web'* ]] || fail 'API-only update did not recreate web proxy'
@@ -215,7 +220,7 @@ run_api_only_rollback_test() {
     TEST_CURRENT_WEB_IMAGE=$WEB_OLD_IMAGE
     export TEST_WEB_SHA TEST_CURRENT_WEB_IMAGE
     write_active_state; export FAIL_COMPOSE_ONCE=web
-    if bash "$SCRIPT"; then fail 'API-only web failure unexpectedly succeeded'; fi
+    if run_deploy; then fail 'API-only web failure unexpectedly succeeded'; fi
     assert_exact "$RUNTIME_API_FILE" "$API_OLD_IMAGE"
     assert_exact "$RUNTIME_WEB_FILE" "$WEB_OLD_IMAGE"
     assert_no_stateful_compose
@@ -226,7 +231,7 @@ run_web_only_test() {
     TEST_API_DIGEST=$API_NEW_DIGEST; TEST_WEB_DIGEST=$WEB_NEW_DIGEST
     TEST_CURRENT_API_IMAGE=$API_OLD_IMAGE; TEST_CURRENT_WEB_IMAGE=$WEB_OLD_IMAGE
     export TEST_API_SHA TEST_WEB_SHA TEST_API_DIGEST TEST_WEB_DIGEST TEST_CURRENT_API_IMAGE TEST_CURRENT_WEB_IMAGE
-    write_active_state; bash "$SCRIPT"
+    write_active_state; run_deploy
     local log; log=$(<"$DOCKER_LOG")
     [[ $log == *' up -d --no-deps --force-recreate --wait web'* ]] || fail 'web-only update did not invoke web Compose service'
     [[ $log != *' up -d --no-deps --force-recreate --wait api'* ]] || fail 'web-only update invoked API Compose service'
@@ -235,7 +240,7 @@ run_web_only_test() {
 
 run_rollback_test() {
     setup_fixture rollback; set_target; write_active_state; export FAIL_COMPOSE_ONCE=web
-    if bash "$SCRIPT"; then fail 'failed web rollout unexpectedly succeeded'; fi
+    if run_deploy; then fail 'failed web rollout unexpectedly succeeded'; fi
     assert_exact "$RUNTIME_API_FILE" "$API_OLD_IMAGE"; assert_exact "$RUNTIME_WEB_FILE" "$WEB_OLD_IMAGE"
     assert_contains "$TEMPO_DEPLOY_STATE_FILE" "TEMPO_API_SHA=$SHA_A"
     assert_no_stateful_compose

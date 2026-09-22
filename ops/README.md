@@ -1,23 +1,61 @@
-# Tempo production image deployment
+# Tempo operations
 
-This directory contains the reviewed, host-side deployer. The production host does not run a GitHub Actions runner, pull a repository checkout, execute moving repository code, or accept an inbound webhook.
+## Image deployment
 
-## How it works
+`ops/tempo-deploy.sh` is the target-aware image reconciler. It keeps the
+production and staging contracts explicit:
 
-- Successful `main` workflows publish immutable full-commit-SHA images to GHCR.
-- A host-local systemd timer checks both `main` refs every five minutes. A no-op reads state and ref metadata only; it does not pull images, invoke Compose, restart containers, or run migrations.
-- When a ref changes, the updater pulls the matching SHA image, recreates only `api` and `web` with `--no-deps`, and checks container and served-route health. An API update also recreates `web` so Nginx refreshes Docker DNS.
-- API and web repositories advance independently, so the deployed pair is not atomic. The host converges on the latest successful image from each repository.
+```bash
+# Existing production entrypoint, preserved for the installed systemd unit.
+/usr/local/libexec/tempo-production-deploy
 
-## Database changes
+# Isolated staging poller.
+~/.local/bin/tempo-deploy --target staging
+```
 
-Production API startup runs pending TypeORM migrations. A migration included in a published API image is applied when that image starts. The updater itself never invokes migration, seed, or schema-bootstrap commands. If startup or health verification fails, rollback restores application images only; it cannot undo an applied database migration. Keep migrations backward-compatible with the previous application, and separately review and back up destructive or incompatible schema changes.
+Production uses the rootful Docker socket, `/etc/tempo/production.compose.yml`,
+`/etc/tempo/production.env`, `/var/lib/tempo-deploy/`, and the existing
+production container names/routes. Staging uses the dedicated rootless socket,
+`tempo-staging` Compose project, separate state, separate volumes, and
+loopback port `8119`. The reconciler recreates only API/web and verifies the
+stateful container IDs remain unchanged.
 
-## Safety and host boundary
+Staging promotion is not based on a moving branch or mutable image tag. The
+protected manual workflows in the API and web repositories publish immutable
+GHCR image digests and a successful GitHub deployment record. The host poller
+validates the exact repository, component, PR head, image digest, workflow
+metadata, and check evidence before pulling.
 
-- Postgres, Redis, Mailpit, their volumes, and production data are never recreated by this deployer.
-- The updater never runs `down`, `rm`, `--volumes`, or `build`; it recreates only application containers and keeps one rollback pair. Successful deployments remove stale application image references, and verified rollbacks remove pulled candidates, but a failed rollback leaves candidates for safety. Unrelated images and build cache are not pruned.
-- Monitor host disk usage with `df -h /` and `docker system df`; the updater has no global Docker quota or low-disk guard.
-- Keep the installed updater and Compose manifest as reviewed host-local snapshots; do not execute a moving public checkout.
-- Keep `/etc/tempo/production.env`, the banking key, deployment state, and any private-GHCR Docker config outside Git. The service uses `/var/lib/tempo-deploy/docker-config` because `ProtectHome=true` hides account home directories.
-- The service runs under the host account selected by the systemd template (`User=%i`). Docker-group membership is effectively privileged.
+See [`staging/README.md`](staging/README.md) for the staging isolation,
+no-provider/no-AI policy, promotion workflow, and PostgreSQL-only refresh.
+
+## Production deployment reference
+
+The existing production service/timer invoke the installed
+`tempo-production-deploy` entrypoint. The repository wrapper delegates to the
+shared target-aware engine, while production configuration and Docker state stay
+outside the repository and are not modified by staging operations.
+
+The production deployment contract tests run entirely against fake Docker/Git
+and HTTP commands:
+
+```bash
+bash ops/tests/tempo-production-deploy-test.sh
+```
+
+They cover bootstrap, no-op, immutable main-image resolution, API-only and
+web-only changes, stateful-container protection, pull/rollout failure cleanup,
+rollback, health routes, and persistent state.
+
+## Host installation boundary
+
+A host installation must copy reviewed snapshots of the deployment script,
+refresh script, Compose manifest, env template, and systemd units into
+root-owned or owner-scoped paths with restrictive permissions. It must verify
+rootless Docker mode, the exact staging socket/data root, required utilities
+(`docker`, Compose, `curl`, `jq`/Python where used, `flock`), and free disk
+before enabling a timer.
+
+Do not install, enable, deploy, refresh, revoke credentials, remove the old
+SSH path, or rewrite public history as part of a repository test. Those are
+separate approved operations with read-back verification and rollback plans.

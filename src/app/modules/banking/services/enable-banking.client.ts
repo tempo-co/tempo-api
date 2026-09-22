@@ -37,14 +37,19 @@ export class EnableBankingClientError extends Error {
 @Injectable()
 export class EnableBankingClient {
 	private readonly enabled: boolean;
-	private readonly apiUrl?: string;
-	private readonly applicationId?: string;
-	private readonly privateKey?: string;
+	private readonly apiUrl: string;
+	private readonly applicationId: string;
+	private readonly privateKey: string;
 	private cachedJwt: {token: string; expiresAt: number} | undefined;
 
 	constructor(config: ConfigurationService) {
 		this.enabled = config.get('BANKING_INTEGRATION_ENABLED') !== false;
-		if (!this.enabled) return;
+		if (!this.enabled) {
+			this.apiUrl = '';
+			this.applicationId = '';
+			this.privateKey = '';
+			return;
+		}
 
 		this.apiUrl = config.get('ENABLE_BANKING_API_URL').replace(/\/$/, '');
 		this.applicationId = config.get('ENABLE_BANKING_APPLICATION_ID');
@@ -175,19 +180,15 @@ export class EnableBankingClient {
 		throw new EnableBankingClientError('provider_pagination_limit_exceeded');
 	}
 
-	private ensureEnabled(): void {
-		if (!this.enabled) throw new EnableBankingClientError('banking_integration_disabled');
-	}
-
 	private async request(path: string, body?: Record<string, unknown>, signal?: AbortSignal): Promise<unknown> {
-		this.ensureEnabled();
+		if (!this.enabled) throw new EnableBankingClientError('banking_integration_disabled');
 
 		let response: Response;
 		const timeoutSignal = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
 		const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
 
 		try {
-			response = await fetch(`${this.apiUrl!}${path}`, {
+			response = await fetch(`${this.apiUrl}${path}`, {
 				method: body ? 'POST' : 'GET',
 				headers: {
 					Accept: 'application/json',
@@ -226,15 +227,13 @@ export class EnableBankingClient {
 	}
 
 	private createJwt(): string {
-		this.ensureEnabled();
-
 		const issuedAt = Math.floor(Date.now() / 1000);
 		if (this.cachedJwt && this.cachedJwt.expiresAt - issuedAt > JWT_REFRESH_MARGIN_SECONDS) {
 			return this.cachedJwt.token;
 		}
 
 		const expiresAt = issuedAt + JWT_TTL_SECONDS;
-		const header = this.base64UrlEncode({typ: 'JWT', alg: 'RS256', kid: this.applicationId!});
+		const header = this.base64UrlEncode({typ: 'JWT', alg: 'RS256', kid: this.applicationId});
 		const payload = this.base64UrlEncode({
 			iss: 'enablebanking.com',
 			aud: 'api.enablebanking.com',
@@ -247,7 +246,7 @@ export class EnableBankingClient {
 			const signer = createSign('RSA-SHA256');
 			signer.update(unsignedToken);
 			signer.end();
-			const signature = signer.sign(this.privateKey!).toString('base64url');
+			const signature = signer.sign(this.privateKey).toString('base64url');
 			const token = `${unsignedToken}.${signature}`;
 			this.cachedJwt = {token, expiresAt};
 			return token;

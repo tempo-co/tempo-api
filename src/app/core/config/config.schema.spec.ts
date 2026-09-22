@@ -37,14 +37,26 @@ const baseConfig = {
 };
 
 describe('boolean environment configuration', () => {
-	it('parses literal false strings as false', () => {
+	it('parses false strings as false for schema sync and email TLS', () => {
 		const parsed = configSchema.parse({
 			...baseConfig,
+			DB_SYNCHRONIZE: 'false',
 			EMAIL_SECURE: 'false',
 		});
 
 		expect(parsed.DB_SYNCHRONIZE).toBe(false);
 		expect(parsed.EMAIL_SECURE).toBe(false);
+	});
+
+	it('parses true strings as true for schema sync and email TLS', () => {
+		const parsed = configSchema.parse({
+			...baseConfig,
+			DB_SYNCHRONIZE: 'true',
+			EMAIL_SECURE: 'true',
+		});
+
+		expect(parsed.DB_SYNCHRONIZE).toBe(true);
+		expect(parsed.EMAIL_SECURE).toBe(true);
 	});
 });
 
@@ -92,15 +104,18 @@ describe('banking integration configuration', () => {
 		expect(parsed.BANKING_INTEGRATION_ENABLED).toBe(true);
 	});
 
-	it('allows banking integration to be disabled without a provider private key', () => {
+	it('allows disabled banking without a private provider key', () => {
+		const {ENABLE_BANKING_PRIVATE_KEY_B64: _privateKey, ...withoutPrivateKey} = baseConfig;
 		const parsed = configSchema.parse({
-			...baseConfig,
+			...withoutPrivateKey,
 			BANKING_INTEGRATION_ENABLED: 'false',
-			ENABLE_BANKING_PRIVATE_KEY_B64: undefined,
-			ENABLE_BANKING_PRIVATE_KEY_PATH: undefined,
 		});
 
 		expect(parsed.BANKING_INTEGRATION_ENABLED).toBe(false);
+	});
+
+	it('rejects a private provider key when banking is disabled', () => {
+		expect(() => configSchema.parse({...baseConfig, BANKING_INTEGRATION_ENABLED: 'false'})).toThrow();
 	});
 
 	it('requires a provider private key when banking integration is enabled', () => {
