@@ -1,4 +1,15 @@
-import {IsBoolean, IsEnum, IsIn, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength, MinLength} from 'class-validator';
+import {
+	IsBoolean,
+	IsEnum,
+	IsIn,
+	IsNotEmpty,
+	IsOptional,
+	IsString,
+	IsUUID,
+	Matches,
+	MaxLength,
+	MinLength,
+} from 'class-validator';
 
 import {BANK_TRANSACTION_DIRECTIONS} from '../../bank-transaction-direction';
 import {BANK_TRANSACTION_TYPES} from '../../bank-transaction-type';
@@ -17,6 +28,7 @@ export class BankTransactionRuleDraftDto {
 
 	@IsString()
 	@IsNotEmpty()
+	@Matches(/\S/, {message: 'name must contain a non-whitespace character'})
 	@MinLength(1)
 	@MaxLength(120)
 	name: string;
@@ -29,6 +41,7 @@ export class BankTransactionRuleDraftDto {
 
 	@IsString()
 	@IsNotEmpty()
+	@Matches(/\S/, {message: 'matchText must contain a non-whitespace character'})
 	@MinLength(1)
 	@MaxLength(160)
 	matchText: string;
@@ -44,6 +57,7 @@ export class BankTransactionRuleUpdateDto {
 	@IsOptional()
 	@IsString()
 	@IsNotEmpty()
+	@Matches(/\S/, {message: 'name must contain a non-whitespace character'})
 	@MaxLength(120)
 	name?: string;
 
@@ -58,6 +72,7 @@ export class BankTransactionRuleUpdateDto {
 	@IsOptional()
 	@IsString()
 	@IsNotEmpty()
+	@Matches(/\S/, {message: 'matchText must contain a non-whitespace character'})
 	@MaxLength(160)
 	matchText?: string;
 

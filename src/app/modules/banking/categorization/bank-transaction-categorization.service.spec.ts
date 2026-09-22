@@ -318,6 +318,21 @@ describe('BankTransactionCategorizationService worker', () => {
 		expect(provider.categorizeWithWebSearch).not.toHaveBeenCalled();
 	});
 
+	it.each(['MANUAL', 'RULE'])('does not send a claimed row to AI after it becomes %s', async (source) => {
+		const transaction = createTransaction({id: `claimed-${source.toLowerCase()}-transaction`});
+		const reclassifiedTransaction = createTransaction({
+			id: transaction.id,
+			categorySource: source,
+		});
+		const {service, provider, repository} = createService({rows: [transaction]});
+		repository.find.mockResolvedValueOnce([transaction]).mockResolvedValueOnce([reclassifiedTransaction]);
+
+		await service.processTransactionJob([transaction.id]);
+
+		expect(provider.categorize).not.toHaveBeenCalled();
+		expect(provider.categorizeWithWebSearch).not.toHaveBeenCalled();
+	});
+
 	it('does not send a reclassified row to web fallback after standard categorization', async () => {
 		const transaction = createTransaction({id: 'web-reclassified-transaction'});
 		const reclassifiedTransaction = createTransaction({

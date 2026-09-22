@@ -38,6 +38,7 @@ describe('BankTransactionRuleController', () => {
 			amount: '47.25',
 			totalMatches: 1,
 			existingManualMatches: 0,
+			existingRuleMatches: 0,
 			existingEligibleMatches: 1,
 			conflictingRuleNames: [],
 		});
@@ -51,6 +52,7 @@ describe('BankTransactionRuleController', () => {
 			category: draft.category,
 			active: true,
 			amount: '47.25',
+			bankAccountName: 'Categorization test account',
 		});
 		expect(createResponse.body.appliedToTransactionIds).toEqual([CATEGORIZATION_E2E_AI_TRANSACTION_ID]);
 
@@ -83,5 +85,37 @@ describe('BankTransactionRuleController', () => {
 
 		const deactivatedRule = await agent.delete(`/bank-transaction-rules/${ruleId}`).expect(200);
 		expect(deactivatedRule.body).toMatchObject({id: ruleId, active: false});
+		const reactivatedRule = await agent.patch(`/bank-transaction-rules/${ruleId}`).send({active: true}).expect(200);
+		expect(reactivatedRule.body).toMatchObject({id: ruleId, active: true});
+		await agent.delete(`/bank-transaction-rules/${ruleId}`).expect(200);
+
+		const concurrentDrafts = [
+			{
+				sourceTransactionId: CATEGORIZATION_E2E_AI_TRANSACTION_ID,
+				name: 'Synthetic concurrent card rule A',
+				category: 'FOOD_AND_DRINK',
+				matchField: 'BANK_TRANSACTION_DESCRIPTION',
+				matchText: 'Card purchase',
+			},
+			{
+				sourceTransactionId: CATEGORIZATION_E2E_AI_TRANSACTION_ID,
+				name: 'Synthetic concurrent card rule B',
+				category: 'SHOPPING',
+				matchField: 'BANK_TRANSACTION_DESCRIPTION',
+				matchText: 'Card purchase',
+			},
+		] as const;
+		const concurrentResponses = await Promise.all(
+			concurrentDrafts.map((draft) => agent.post('/bank-transaction-rules').send(draft)),
+		);
+		expect(concurrentResponses.map(({status}) => status).sort()).toEqual([201, 409]);
+
+		const rulesResponse = await agent.get('/bank-transaction-rules').expect(200);
+		expect(rulesResponse.body).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({id: ruleId, bankAccountName: 'Categorization test account'}),
+				expect.objectContaining({name: expect.stringMatching(/^Synthetic concurrent card rule [AB]$/)}),
+			]),
+		);
 	});
 });

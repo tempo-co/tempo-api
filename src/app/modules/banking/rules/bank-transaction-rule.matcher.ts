@@ -1,4 +1,5 @@
 import {type BankTransactionDirection, toBankTransactionDirection} from '../bank-transaction-direction';
+import {BANK_TRANSACTION_TYPES} from '../bank-transaction-type';
 import type {BankTransactionRuleMatchField} from './bank-transaction-rule.types';
 
 export type {BankTransactionRuleMatchField} from './bank-transaction-rule.types';
@@ -45,7 +46,7 @@ function rawMatchValue(
 	field: BankTransactionRuleMatchField,
 ): string | null {
 	if (field === 'REMITTANCE_INFORMATION') return transaction.remittanceInformation;
-	return transaction.bankTransactionDescription ?? transaction.description;
+	return transaction.bankTransactionDescription;
 }
 
 export function matchesBankTransactionRule(
@@ -64,7 +65,11 @@ export function matchesBankTransactionRule(
 ): boolean {
 	if (!rule.active || rule.bankAccountId !== transaction.bankAccountId) return false;
 	if (rule.direction !== toBankTransactionDirection(transaction.creditDebitIndicator)) return false;
-	if (rule.transactionType.toUpperCase() !== (transaction.transactionType ?? '').toUpperCase()) return false;
+	if (
+		rule.transactionType.toUpperCase() !==
+		(transaction.transactionType ?? BANK_TRANSACTION_TYPES.OTHER).toUpperCase()
+	)
+		return false;
 	if (rule.currency.toUpperCase() !== transaction.currency.toUpperCase()) return false;
 	if (normalizeAbsoluteAmount(rule.amount) !== normalizeAbsoluteAmount(transaction.amount)) return false;
 

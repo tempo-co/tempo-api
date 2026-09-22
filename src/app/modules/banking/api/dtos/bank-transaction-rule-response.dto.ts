@@ -8,6 +8,7 @@ import type {
 export class BankTransactionRuleResponseDto {
 	id: string;
 	bankAccountId: string;
+	bankAccountName: string | null;
 	name: string;
 	category: BankTransactionCategory;
 	active: boolean;
@@ -42,6 +43,7 @@ export class BankTransactionRulePreviewResponseDto {
 	matchText: string;
 	totalMatches: number;
 	existingManualMatches: number;
+	existingRuleMatches: number;
 	existingEligibleMatches: number;
 	conflictingRuleNames: string[];
 	matches: BankTransactionRulePreviewTransactionDto[];

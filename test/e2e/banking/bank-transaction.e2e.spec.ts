@@ -774,7 +774,7 @@ describe('BankTransactionController', () => {
 		['an invalid booking date', {'filter[bookingDate][from]': '2026-99-99'}],
 		['a malformed bank account ID', {'filter[bankAccountIds][]': 'not-a-uuid'}],
 		['an unsupported category', {'filter[categories][]': 'NOT_A_CATEGORY'}],
-		['an unsupported categorization source', {'filter[categorySources][]': 'RULE'}],
+		['an unsupported categorization source', {'filter[categorySources][]': 'NOT_A_SOURCE'}],
 		['an unsupported financial event', {'filter[financialEventTypes][]': 'TRANSFER'}],
 	])('rejects %s', async (_case, query) => {
 		await verifiedAgent.get('/bank-transactions').query(query).expect(400);

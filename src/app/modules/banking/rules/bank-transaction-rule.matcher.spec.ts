@@ -48,6 +48,12 @@ describe('bank transaction rule matcher', () => {
 		expect(matchesBankTransactionRule(rule, {...transaction, ...change})).toBe(false);
 	});
 
+	it('treats a missing transaction type as OTHER consistently with rule creation', () => {
+		expect(
+			matchesBankTransactionRule({...rule, transactionType: 'OTHER'}, {...transaction, transactionType: null}),
+		).toBe(true);
+	});
+
 	it('matches remittance information when that is the selected raw field', () => {
 		expect(
 			matchesBankTransactionRule(
@@ -55,6 +61,16 @@ describe('bank transaction rule matcher', () => {
 				{...transaction, bankTransactionDescription: null, remittanceInformation: 'Rent share for September'},
 			),
 		).toBe(true);
+	});
+
+	it('does not substitute the normalized description when the selected raw field is missing', () => {
+		expect(
+			matchesBankTransactionRule(rule, {
+				...transaction,
+				bankTransactionDescription: null,
+				description: 'SEPA transfer to Roommate Example',
+			}),
+		).toBe(false);
 	});
 
 	it('fails closed when multiple active rules match different categories', () => {

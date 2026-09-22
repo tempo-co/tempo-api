@@ -370,7 +370,7 @@ export class BankTransactionCategorizationService {
 
 	private async getActiveClaimedTransactions(batch: readonly ClaimedTransaction[]): Promise<ClaimedTransaction[]> {
 		const currentTransactions = await this.repository.find({
-			select: ['id', 'financialEventType'],
+			select: ['id', 'financialEventType', 'categorySource'],
 			where: {id: In(batch.map(({transaction}) => transaction.id))},
 		});
 		const currentTransactionsById = new Map(
@@ -380,6 +380,8 @@ export class BankTransactionCategorizationService {
 			const currentTransaction = currentTransactionsById.get(transaction.id);
 			return (
 				currentTransaction !== undefined &&
+				currentTransaction.categorySource !== 'MANUAL' &&
+				currentTransaction.categorySource !== 'RULE' &&
 				currentTransaction.financialEventType !== BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE
 			);
 		});
