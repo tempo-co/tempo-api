@@ -93,6 +93,8 @@ if not networks.get('backend', {}).get('internal') or not networks.get('edge', {
     raise SystemExit('staging backend and edge networks must be internal')
 if networks.get('ingress', {}).get('internal'):
     raise SystemExit('staging ingress network must remain externally publishable')
+if networks.get('ingress', {}).get('name') != 'tempo-staging-ingress':
+    raise SystemExit('staging ingress network name is not isolated')
 if set(services['web'].get('networks', {})) != {'edge', 'ingress'}:
     raise SystemExit('staging web must attach to internal edge and ingress networks')
 for service_name in ('postgres', 'redis', 'mailpit', 'api'):
