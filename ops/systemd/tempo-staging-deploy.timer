@@ -1,0 +1,13 @@
+[Unit]
+Description=Poll for approved Tempo staging deployment intents
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=5min
+Persistent=true
+RandomizedDelaySec=30s
+AccuracySec=1min
+Unit=tempo-staging-deploy.service
+
+[Install]
+WantedBy=timers.target

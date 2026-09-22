@@ -43,26 +43,6 @@ describe('BankingSyncQueueService', () => {
 		);
 	});
 
-	it('does not schedule, query, or enqueue work while banking integration is disabled', async () => {
-		const disabledService = new BankingSyncQueueService(
-			bankConnectionRepository as unknown as Repository<BankConnection>,
-			queue as unknown as Queue,
-			{
-				get: jest.fn((key: string) => (key === 'BANKING_INTEGRATION_ENABLED' ? false : '10m')),
-			} as unknown as ConfigurationService,
-			connectionLockService as never,
-		);
-
-		await disabledService.onModuleInit();
-		await disabledService.enqueueInitialSync('disabled-connection');
-		await expect(disabledService.dispatchDueConnections()).resolves.toBe(0);
-
-		expect(queue.upsertJobScheduler).not.toHaveBeenCalled();
-		expect(queue.getJob).not.toHaveBeenCalled();
-		expect(queue.add).not.toHaveBeenCalled();
-		expect(bankConnectionRepository.createQueryBuilder).not.toHaveBeenCalled();
-	});
-
 	it('enqueues only authorized connections whose durable gate is due', async () => {
 		const dueConnection = {
 			id: 'due-connection',

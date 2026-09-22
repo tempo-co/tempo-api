@@ -1,0 +1,25 @@
+[Unit]
+Description=Reconcile the approved Tempo staging image intents
+Wants=network-online.target
+After=network-online.target tempo-staging-docker.service
+Requires=tempo-staging-docker.service
+ConditionPathExists=%h/.config/tempo-staging/github-readonly-token
+ConditionPathExists=%h/.config/tempo-staging/docker-config/config.json
+ConditionPathExists=%h/.config/tempo-staging/staging.compose.yml
+ConditionPathExists=%h/.config/tempo-staging/staging.env
+ConditionPathExists=%h/.local/state/tempo-staging/images.env
+
+[Service]
+Type=oneshot
+TimeoutStartSec=10min
+Environment=HOME=%h
+Environment=XDG_RUNTIME_DIR=%t
+Environment=DOCKER_CONFIG=%h/.config/tempo-staging/docker-config
+ExecStart=%h/.local/bin/tempo-deploy.sh --target staging
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=%h/.config/tempo-staging
+ReadWritePaths=%h/.local/state/tempo-staging
+UMask=0077

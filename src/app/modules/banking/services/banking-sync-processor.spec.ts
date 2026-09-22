@@ -14,6 +14,7 @@ describe('BankingSyncProcessor', () => {
 	let synchronizationService: {synchronizeAutomatically: jest.Mock};
 	let queueService: {
 		dispatchDueConnections: jest.Mock;
+		isIntegrationEnabled: jest.Mock;
 		isSynchronizationDue: jest.Mock;
 	};
 	let processor: BankingSyncProcessor;
@@ -23,6 +24,7 @@ describe('BankingSyncProcessor', () => {
 		synchronizationService = {synchronizeAutomatically: jest.fn().mockResolvedValue(undefined)};
 		queueService = {
 			dispatchDueConnections: jest.fn().mockResolvedValue(0),
+			isIntegrationEnabled: jest.fn().mockReturnValue(true),
 			isSynchronizationDue: jest.fn().mockReturnValue(false),
 		};
 		processor = new BankingSyncProcessor(
