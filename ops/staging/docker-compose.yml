@@ -151,6 +151,7 @@ services:
             - '127.0.0.1:${STAGING_WEB_HOST_PORT:?STAGING_WEB_HOST_PORT must be set}:8080'
         networks:
             - edge
+            - ingress
         depends_on:
             api:
                 condition: service_healthy
@@ -178,3 +179,5 @@ networks:
     edge:
         name: tempo-staging-edge
         internal: true
+    ingress:
+        name: tempo-staging-ingress

@@ -91,6 +91,15 @@ if '/tempo/mailpit/' not in mailpit or '/staging/' in mailpit:
 networks = config.get('networks', {})
 if not networks.get('backend', {}).get('internal') or not networks.get('edge', {}).get('internal'):
     raise SystemExit('staging backend and edge networks must be internal')
+if networks.get('ingress', {}).get('internal'):
+    raise SystemExit('staging ingress network must remain externally publishable')
+if networks.get('ingress', {}).get('name') != 'tempo-staging-ingress':
+    raise SystemExit('staging ingress network name is not isolated')
+if set(services['web'].get('networks', {})) != {'edge', 'ingress'}:
+    raise SystemExit('staging web must attach to internal edge and ingress networks')
+for service_name in ('postgres', 'redis', 'mailpit', 'api'):
+    if 'ingress' in services[service_name].get('networks', {}):
+        raise SystemExit(f'{service_name} must not attach to the staging ingress network')
 if config.get('volumes', {}).get('tempo_staging_postgres_data', {}).get('name') != 'tempo-staging-postgres-data':
     raise SystemExit('staging database volume name is not isolated')
 
