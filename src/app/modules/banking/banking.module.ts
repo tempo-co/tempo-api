@@ -17,6 +17,8 @@ import {BankTransactionFxRate} from './bank-transaction-fx-rate.entity';
 import {BankTransaction} from './bank-transaction.entity';
 import {BankingService} from './banking.service';
 import {BankTransactionCategorizationModule} from './categorization/bank-transaction-categorization.module';
+import {BankTransactionRule} from './rules/bank-transaction-rule.entity';
+import {BankTransactionRuleModule} from './rules/bank-transaction-rule.module';
 import {BankTransactionAmountConversionProcessor} from './services/bank-transaction-amount-conversion.processor';
 import {BankTransactionAmountConversionQueueService} from './services/bank-transaction-amount-conversion.queue.service';
 import {BankTransactionAmountConversionService} from './services/bank-transaction-amount-conversion.service';
@@ -39,6 +41,7 @@ import {FxRateService} from './services/fx-rate.service';
 			BankSyncRun,
 			BankAccountBalance,
 			BankTransaction,
+			BankTransactionRule,
 			BankTransactionFxRate,
 		]),
 		BullModule.registerQueue({name: BANK_CONNECTION_SYNC_QUEUE}),
@@ -47,6 +50,7 @@ import {FxRateService} from './services/fx-rate.service';
 		RedisModule,
 		BankingAuthorizationStateModule,
 		BankTransactionCategorizationModule,
+		BankTransactionRuleModule,
 	],
 	providers: [
 		BankingService,

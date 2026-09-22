@@ -10,6 +10,7 @@ describe('BankTransaction categorization schema', () => {
 		expect(byName.get('category')).toMatchObject({type: 'varchar', length: 32, nullable: true});
 		expect(byName.get('categoryStatus')).toMatchObject({type: 'varchar', length: 16, default: 'PENDING'});
 		expect(byName.get('categorySource')).toMatchObject({type: 'varchar', length: 16, nullable: true});
+		expect(byName.get('categoryRuleId')).toMatchObject({type: 'uuid', nullable: true});
 		expect(byName.get('categoryConfidence')).toMatchObject({
 			type: 'numeric',
 			precision: 4,

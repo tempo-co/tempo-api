@@ -37,6 +37,7 @@ function createQueryBuilder<T extends ObjectLiteral>(): SelectQueryBuilder<T> & 
 } {
 	const queryBuilder = {
 		innerJoinAndSelect: jest.fn().mockReturnThis(),
+		leftJoinAndSelect: jest.fn().mockReturnThis(),
 		innerJoin: jest.fn().mockReturnThis(),
 		where: jest.fn().mockReturnThis(),
 		andWhere: jest.fn().mockReturnThis(),

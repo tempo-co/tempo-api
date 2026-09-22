@@ -141,6 +141,7 @@ export class BankTransactionService {
 			.createQueryBuilder('transaction')
 			.innerJoin('transaction.bankAccount', 'bankAccount')
 			.innerJoin('bankAccount.bankConnection', 'connection')
+			.leftJoinAndSelect('transaction.categoryRule', 'categoryRule')
 			.innerJoin('connection.account', 'account')
 			.where('connection.id = :connectionId', {connectionId})
 			.andWhere('account.id = :accountId', {accountId})
@@ -181,6 +182,7 @@ export class BankTransactionService {
 			category,
 			categoryStatus: 'COMPLETED',
 			categorySource: 'MANUAL',
+			categoryRuleId: null,
 			categoryInputHash: inputHash,
 			categoryAppliedInputHash: inputHash,
 			categoryUpdatedAt: new Date(),
@@ -205,6 +207,7 @@ export class BankTransactionService {
 			.createQueryBuilder('transaction')
 			.innerJoinAndSelect('transaction.bankAccount', 'bankAccount')
 			.innerJoinAndSelect('bankAccount.bankConnection', 'connection')
+			.leftJoinAndSelect('transaction.categoryRule', 'categoryRule')
 			.innerJoin('connection.account', 'account')
 			.where('account.id = :accountId', {accountId});
 	}
@@ -254,6 +257,8 @@ export class BankTransactionService {
 			category: (transaction.category as BankTransactionResponseDto['category']) ?? null,
 			categoryStatus: (transaction.categoryStatus ?? 'PENDING') as BankTransactionResponseDto['categoryStatus'],
 			categorySource: (transaction.categorySource as BankTransactionResponseDto['categorySource']) ?? null,
+			categoryRuleId: transaction.categoryRuleId,
+			categoryRuleName: transaction.categoryRule?.name ?? null,
 			financialEventType: transaction.financialEventType,
 			financialEventSource: transaction.financialEventSource,
 			financialEventRuleVersion: transaction.financialEventRuleVersion,

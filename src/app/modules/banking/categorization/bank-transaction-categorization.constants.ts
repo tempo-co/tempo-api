@@ -12,6 +12,7 @@ export const BANK_TRANSACTION_CATEGORIZATION_MAX_SEARCH_TRACE_ITEMS = 20;
 export const BANK_TRANSACTION_CATEGORIZATION_RESET_VALUES = {
 	category: null,
 	categorySource: null,
+	categoryRuleId: null,
 	categoryConfidence: null,
 	categoryAppliedInputHash: null,
 	categoryProvider: null,

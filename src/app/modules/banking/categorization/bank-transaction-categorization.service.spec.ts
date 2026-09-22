@@ -56,6 +56,7 @@ function createTransaction(overrides: Partial<BankTransaction> = {}): BankTransa
 		category: null,
 		categoryStatus: 'PENDING',
 		categorySource: null,
+		categoryRuleId: null,
 		categoryConfidence: null,
 		categoryInputHash: null,
 		categoryAppliedInputHash: null,
@@ -226,6 +227,17 @@ describe('BankTransactionCategorizationService queue scheduling', () => {
 		expect(queue.addBulk.mock.calls[0][0]).toHaveLength(1);
 		expect(queue.addBulk.mock.calls[0][0][0].data).toEqual({transactionIds: [ordinary.id]});
 	});
+
+	it('does not enqueue rule-applied rows for AI categorization', async () => {
+		const ruleApplied = createTransaction({id: 'rule-transaction', categorySource: 'RULE'});
+		const ordinary = createTransaction({id: 'ordinary-transaction'});
+		const {service, queue} = createService({rows: [ruleApplied, ordinary]});
+
+		await service.enqueueForTransactions([ruleApplied.id, ordinary.id]);
+
+		expect(queue.addBulk).toHaveBeenCalledTimes(1);
+		expect(queue.addBulk.mock.calls[0][0][0].data).toEqual({transactionIds: [ordinary.id]});
+	});
 });
 
 describe('BankTransactionCategorizationService web-search reconciliation', () => {
@@ -256,6 +268,16 @@ describe('BankTransactionCategorizationService web-search reconciliation', () =>
 	});
 });
 describe('BankTransactionCategorizationService worker', () => {
+	it('does not send a rule-applied row to the AI provider', async () => {
+		const transaction = createTransaction({id: 'rule-applied-transaction', categorySource: 'RULE'});
+		const {service, provider} = createService({rows: [transaction]});
+
+		await service.processTransactionJob([transaction.id]);
+
+		expect(provider.categorize).not.toHaveBeenCalled();
+		expect(provider.categorizeWithWebSearch).not.toHaveBeenCalled();
+	});
+
 	it('does not send a stale financial-event job to the provider', async () => {
 		const transaction = createTransaction({
 			id: 'stale-exchange-transaction',

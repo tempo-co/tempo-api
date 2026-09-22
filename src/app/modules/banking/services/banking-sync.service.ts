@@ -5,6 +5,7 @@ import {
 	InternalServerErrorException,
 	Logger,
 	NotFoundException,
+	Optional,
 	ServiceUnavailableException,
 } from '@nestjs/common';
 import {InjectRepository} from '@nestjs/typeorm';
@@ -50,6 +51,7 @@ import {
 	EnableBankingTransactionFetchOptions,
 } from '../enable-banking.types';
 import {BankingEncryptionError} from '../errors/banking-encryption.error';
+import {BankTransactionRuleService} from '../rules/bank-transaction-rule.service';
 import {BankingConnectionLock, BankingConnectionLockService} from './banking-connection-lock.service';
 import {BankingEncryptionService} from './banking-encryption.service';
 import {
@@ -114,6 +116,7 @@ export class BankingSyncService {
 		private readonly connectionLockService: BankingConnectionLockService,
 		private readonly categorizationService: BankTransactionCategorizationService,
 		private readonly configurationService: ConfigurationService,
+		@Optional() private readonly bankTransactionRuleService?: BankTransactionRuleService,
 	) {
 		this.bankingIntegrationEnabled = configurationService.get('BANKING_INTEGRATION_ENABLED') !== false;
 	}
@@ -523,6 +526,8 @@ export class BankingSyncService {
 					}
 				}
 			}
+
+			await this.bankTransactionRuleService?.applyRulesToTransactions(persistedTransactionIds, manager);
 
 			await runRepository.update(
 				{id: run.id},

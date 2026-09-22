@@ -95,7 +95,7 @@ export class BankTransactionCategorizationService {
 		if (uniqueIds.length === 0) return;
 
 		const transactions = await this.repository.find({
-			select: ['id', 'categoryInputHash', 'financialEventType'],
+			select: ['id', 'categoryInputHash', 'categorySource', 'financialEventType'],
 			where: {id: In(uniqueIds)},
 		});
 		const financialEventIds = new Set(
@@ -106,7 +106,8 @@ export class BankTransactionCategorizationService {
 				)
 				.map(({id}) => id),
 		);
-		const categorizationIds = uniqueIds.filter((id) => !financialEventIds.has(id));
+		const ruleIds = new Set(transactions.filter(({categorySource}) => categorySource === 'RULE').map(({id}) => id));
+		const categorizationIds = uniqueIds.filter((id) => !financialEventIds.has(id) && !ruleIds.has(id));
 		if (categorizationIds.length === 0) return;
 		const inputHashes = new Map(transactions.map(({id, categoryInputHash}) => [id, categoryInputHash]));
 		const jobs = [];
@@ -148,7 +149,7 @@ export class BankTransactionCategorizationService {
 
 		for (const id of batchIds) {
 			const transaction = transactionsById.get(id);
-			if (!transaction || this.isFinancialEvent(transaction)) continue;
+			if (!transaction || this.isFinancialEvent(transaction) || transaction.categorySource === 'RULE') continue;
 
 			const input = toBankTransactionCategorizationInput({
 				...transaction,
@@ -156,7 +157,7 @@ export class BankTransactionCategorizationService {
 			});
 			const inputHash = createBankTransactionCategorizationInputHash(input);
 			if (!(await this.refreshInputHashAndResetStaleClassification(transaction, inputHash))) continue;
-			if (transaction.categorySource === 'MANUAL') continue;
+			if (transaction.categorySource === 'MANUAL' || transaction.categorySource === 'RULE') continue;
 
 			if (!this.isClaimable(transaction)) continue;
 			if (await this.claimTransaction(transaction.id, inputHash)) {
@@ -179,6 +180,7 @@ export class BankTransactionCategorizationService {
 				.createQueryBuilder('transaction')
 				.select('transaction.id', 'id')
 				.where(`transaction."categorySource" IS DISTINCT FROM 'MANUAL'`)
+				.andWhere(`transaction."categorySource" IS DISTINCT FROM 'RULE'`)
 				.andWhere('transaction."financialEventType" IS DISTINCT FROM :financialEventType', {
 					financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
 				})
@@ -390,6 +392,7 @@ export class BankTransactionCategorizationService {
 			.set({categoryStatus: 'PROCESSING', categoryUpdatedAt: new Date()})
 			.where('id = :id', {id})
 			.andWhere(`"categorySource" IS DISTINCT FROM 'MANUAL'`)
+			.andWhere(`"categorySource" IS DISTINCT FROM 'RULE'`)
 			.andWhere('"categoryInputHash" = :inputHash', {inputHash})
 			.andWhere('"financialEventType" IS DISTINCT FROM :financialEventType', {
 				financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
@@ -425,6 +428,7 @@ export class BankTransactionCategorizationService {
 			.set(values)
 			.where('id = :id', {id})
 			.andWhere(`"categorySource" IS DISTINCT FROM 'MANUAL'`)
+			.andWhere(`"categorySource" IS DISTINCT FROM 'RULE'`)
 			.andWhere('"categoryInputHash" = :inputHash', {inputHash})
 			.andWhere('"financialEventType" IS DISTINCT FROM :financialEventType', {
 				financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,

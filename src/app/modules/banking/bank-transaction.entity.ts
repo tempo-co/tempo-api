@@ -17,6 +17,7 @@ import type {
 import type {BankTransactionLocation} from './bank-transaction-location';
 import {BankTransactionType} from './bank-transaction-type';
 import type {BankTransactionCategorizationSearchTrace} from './categorization/bank-transaction-categorization.types';
+import {BankTransactionRule} from './rules/bank-transaction-rule.entity';
 
 @Entity('bank_transactions')
 @Index('idx_bank_transactions_account_dedupe', ['bankAccountId', 'dedupeKey'], {unique: true})
@@ -103,6 +104,13 @@ export class BankTransaction {
 
 	@Column({type: 'varchar', length: 16, nullable: true})
 	categorySource: string | null;
+
+	@Column({type: 'uuid', nullable: true})
+	categoryRuleId: string | null;
+
+	@ManyToOne(() => BankTransactionRule, {onDelete: 'SET NULL', nullable: true})
+	@JoinColumn({name: 'categoryRuleId'})
+	categoryRule: BankTransactionRule | null;
 
 	@Column({type: 'numeric', precision: 4, scale: 3, nullable: true})
 	categoryConfidence: string | null;

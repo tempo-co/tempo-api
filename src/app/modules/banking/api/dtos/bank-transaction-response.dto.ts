@@ -32,6 +32,8 @@ export class BankTransactionResponseDto {
 	category: BankTransactionCategory | null;
 	categoryStatus: BankTransactionCategorizationStatus;
 	categorySource: BankTransactionCategorizationSource | null;
+	categoryRuleId: string | null;
+	categoryRuleName: string | null;
 	financialEventType: BankTransactionFinancialEventType | null;
 	financialEventSource: BankTransactionFinancialEventSource | null;
 	financialEventRuleVersion: string | null;

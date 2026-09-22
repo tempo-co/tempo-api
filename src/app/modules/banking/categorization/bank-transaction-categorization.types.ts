@@ -11,7 +11,7 @@ export const BANK_TRANSACTION_CATEGORIZATION_STATUSES = [
 ] as const;
 export type BankTransactionCategorizationStatus = (typeof BANK_TRANSACTION_CATEGORIZATION_STATUSES)[number];
 
-export const BANK_TRANSACTION_CATEGORIZATION_SOURCES = ['AI', 'MANUAL'] as const;
+export const BANK_TRANSACTION_CATEGORIZATION_SOURCES = ['AI', 'MANUAL', 'RULE'] as const;
 export type BankTransactionCategorizationSource = (typeof BANK_TRANSACTION_CATEGORIZATION_SOURCES)[number];
 
 export type BankTransactionCategorizationInput = {
