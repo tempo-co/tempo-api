@@ -29,13 +29,18 @@ export const configSchema = z
 		DB_USERNAME: z.string().min(1),
 		DB_PASSWORD: z.string().min(1),
 		DB_NAME: z.string().min(1),
-		DB_SYNCHRONIZE: z.coerce.boolean(),
+		DB_SYNCHRONIZE: strictBooleanEnvSchema,
 		DB_PGADMIN_PORT: portSchema,
 
 		// --- Session ---
 		SESSION_SECRET: z.string().min(1),
 		SESSION_EXPIRATION: durationSchema,
 		SESSION_REDIS_KEY: z.string().min(1),
+		SESSION_COOKIE_NAME: z.string().min(1).default('session'),
+		SESSION_COOKIE_PATH: z
+			.string()
+			.regex(/^\/[^\s]*$/)
+			.default('/'),
 
 		// --- Redis ---
 		REDIS_URL: z.string().url(),
@@ -54,6 +59,7 @@ export const configSchema = z
 		OPENAI_API_KEY: z.string().min(1).optional(),
 
 		// --- APIs ---
+		BANKING_INTEGRATION_ENABLED: strictBooleanEnvSchema.default(true),
 		ENABLE_BANKING_API_URL: z.string().url(),
 		ENABLE_BANKING_APPLICATION_ID: z.string().min(1),
 		ENABLE_BANKING_PRIVATE_KEY_B64: z.string().min(1).optional(),
@@ -69,7 +75,7 @@ export const configSchema = z
 		// --- Email ---
 		EMAIL_HOST: z.string().min(1),
 		EMAIL_PORT: portSchema,
-		EMAIL_SECURE: z.coerce.boolean().default(false),
+		EMAIL_SECURE: strictBooleanEnvSchema.default(false),
 		EMAIL_UI_PORT: portSchema,
 		EMAIL_UI_URL: z.string().url(),
 		EMAIL_VERIFICATION_EXPIRATION: durationSchema,
@@ -87,11 +93,19 @@ export const configSchema = z
 		const hasPrivateKeyB64 = config.ENABLE_BANKING_PRIVATE_KEY_B64 !== undefined;
 		const hasPrivateKeyPath = config.ENABLE_BANKING_PRIVATE_KEY_PATH !== undefined;
 
-		if (hasPrivateKeyB64 === hasPrivateKeyPath) {
+		if (config.BANKING_INTEGRATION_ENABLED && hasPrivateKeyB64 === hasPrivateKeyPath) {
 			context.addIssue({
 				code: 'custom',
 				path: ['ENABLE_BANKING_PRIVATE_KEY_B64'],
 				message: 'Configure exactly one of ENABLE_BANKING_PRIVATE_KEY_B64 or ENABLE_BANKING_PRIVATE_KEY_PATH.',
+			});
+		}
+
+		if (!config.BANKING_INTEGRATION_ENABLED && (hasPrivateKeyB64 || hasPrivateKeyPath)) {
+			context.addIssue({
+				code: 'custom',
+				path: ['BANKING_INTEGRATION_ENABLED'],
+				message: 'Do not configure an Enable Banking private key when banking integration is disabled.',
 			});
 		}
 

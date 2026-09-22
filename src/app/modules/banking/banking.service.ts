@@ -86,6 +86,7 @@ export class BankingService {
 		accountId: Account['id'],
 		dto: BankConnectionAuthorizeDto,
 	): Promise<{authorizationUrl: string}> {
+		this.ensureIntegrationEnabled();
 		const aspspName = dto.aspspName.trim();
 		const aspspCountry = dto.aspspCountry.toUpperCase();
 		const aspsps = await this.getAspsps(aspspCountry);
@@ -163,6 +164,7 @@ export class BankingService {
 	}
 
 	async findSupportedAspsps(): Promise<BankConnectionAspspResponseDto[]> {
+		this.ensureIntegrationEnabled();
 		const aspsps = await this.getAspsps();
 		const uniqueAspsps = new Map<string, BankConnectionAspspResponseDto>();
 
@@ -314,6 +316,8 @@ export class BankingService {
 	}
 
 	async handleCallback(query: BankConnectionCallbackDto): Promise<BankConnectionCallbackResult> {
+		if (!this.isIntegrationEnabled()) return 'error';
+
 		try {
 			return await this.handleCallbackInternal(query);
 		} catch (error) {
@@ -522,6 +526,14 @@ export class BankingService {
 		} catch (error) {
 			this.logger.warn(`Initial bank synchronization enqueue failed: ${this.getSafeErrorCode(error)}`);
 		}
+	}
+
+	private isIntegrationEnabled(): boolean {
+		return this.configurationService.get?.('BANKING_INTEGRATION_ENABLED') !== false;
+	}
+
+	private ensureIntegrationEnabled(): void {
+		if (!this.isIntegrationEnabled()) throw new ServiceUnavailableException(BANKING_SERVICE_UNAVAILABLE);
 	}
 
 	private async getAspsps(country?: string) {

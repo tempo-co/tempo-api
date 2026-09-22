@@ -26,6 +26,7 @@ const ACTIVE_JOB_STATES = new Set(['active', 'delayed', 'prioritized', 'waiting'
 @Injectable()
 export class BankingSyncQueueService implements OnModuleInit {
 	private readonly logger = new Logger(BankingSyncQueueService.name);
+	private readonly bankingIntegrationEnabled: boolean;
 
 	constructor(
 		@InjectRepository(BankConnection)
@@ -34,10 +35,12 @@ export class BankingSyncQueueService implements OnModuleInit {
 		private readonly queue: Queue<BankConnectionSyncJobData>,
 		private readonly configurationService: ConfigurationService,
 		private readonly connectionLockService: BankingConnectionLockService,
-	) {}
+	) {
+		this.bankingIntegrationEnabled = configurationService.get('BANKING_INTEGRATION_ENABLED') !== false;
+	}
 
 	async onModuleInit(): Promise<void> {
-		if (this.configurationService.get('NODE_ENV') === 'test') return;
+		if (!this.bankingIntegrationEnabled || this.configurationService.get('NODE_ENV') === 'test') return;
 
 		await this.queue.upsertJobScheduler(
 			BANK_CONNECTION_SYNC_SCHEDULER_ID,
@@ -51,10 +54,12 @@ export class BankingSyncQueueService implements OnModuleInit {
 	}
 
 	async enqueueInitialSync(connectionId: BankConnection['id']): Promise<void> {
+		if (!this.bankingIntegrationEnabled) return;
 		await this.enqueueConnectionSync(connectionId, true);
 	}
 
 	async dispatchDueConnections(now = new Date()): Promise<number> {
+		if (!this.bankingIntegrationEnabled) return 0;
 		const staleBefore = new Date(now.getTime() - this.getRunningTimeoutMs());
 		const connections = await this.bankConnectionRepository
 			.createQueryBuilder('connection')
@@ -115,6 +120,8 @@ export class BankingSyncQueueService implements OnModuleInit {
 	}
 
 	private async enqueueConnectionSync(connectionId: string, initial: boolean): Promise<void> {
+		if (!this.bankingIntegrationEnabled) return;
+
 		const jobId = this.getJobId(connectionId);
 		const existingJob = await this.queue.getJob(jobId);
 		if (existingJob) {

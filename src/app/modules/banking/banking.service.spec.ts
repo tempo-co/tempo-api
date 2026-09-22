@@ -1,6 +1,7 @@
 import {createHash} from 'node:crypto';
 import {Repository} from 'typeorm';
 
+import {BANKING_SERVICE_UNAVAILABLE} from './api/constants/banking-messages.constants';
 import {BankConnection} from './bank-connection.entity';
 import {BankingService} from './banking.service';
 import {BankingAuthorizationStateService} from './services/banking-authorization-state.service';
@@ -8,6 +9,32 @@ import {BankingAuthorizationStateService} from './services/banking-authorization
 function hashState(state: string): string {
 	return createHash('sha256').update(state).digest('hex');
 }
+
+describe('BankingService disabled integration', () => {
+	it('blocks provider authorization and callback state consumption when disabled', async () => {
+		const authorizationStateService = {consumeWithStatus: jest.fn()};
+		const service = new BankingService(
+			{} as Repository<BankConnection>,
+			{} as never,
+			{} as never,
+			{} as never,
+			{get: jest.fn().mockReturnValue(false)} as never,
+			{} as never,
+			{} as never,
+			authorizationStateService as unknown as BankingAuthorizationStateService,
+			{} as never,
+			{} as never,
+			{} as never,
+		);
+
+		await expect(service.startAuthorization('account-id', {} as never)).rejects.toThrow(
+			BANKING_SERVICE_UNAVAILABLE,
+		);
+		await expect(service.findSupportedAspsps()).rejects.toThrow(BANKING_SERVICE_UNAVAILABLE);
+		await expect(service.handleCallback({state: 'state', code: 'code'})).resolves.toBe('error');
+		expect(authorizationStateService.consumeWithStatus).not.toHaveBeenCalled();
+	});
+});
 
 describe('BankingService authorization state lifecycle', () => {
 	it('does not acquire the mutation lock before ownership is confirmed', async () => {
