@@ -17,7 +17,7 @@ Tempo API is a NestJS backend for personal-finance accounts, bank connections, b
 - Development Swagger is at `http://localhost:3000/docs` when `PORT=3000`.
 - Configuration is validated by `src/app/core/config/config.schema.ts`. `NODE_ENV` selects `.env.development`, `.env.test`, or `.env.production`; the corresponding `.local` file takes precedence for Nest configuration.
 - `src/app/core/config/config.schema.ts` is the source of truth for required and optional environment variables. Use `.env.development` plus `.env.development.local` for local secrets, and keep credentials out of Git.
-- Optional AI categorization configuration is `AI_CATEGORIZATION_ENABLED` (default `false`), `AI_CATEGORIZATION_PROVIDER` (default `openai`), and `AI_CATEGORIZATION_MODEL` (default `gpt-5.6-luna`). `OPENAI_API_KEY` is required only when OpenAI categorization is enabled; keep it in the deployment secret/environment path, never in Git.
+- Optional AI categorization configuration is `AI_CATEGORIZATION_ENABLED` (default `false`), `AI_CATEGORIZATION_PROVIDER` (default `openai`), and `AI_CATEGORIZATION_MODEL` (default `gpt-6-luna`). `OPENAI_API_KEY` is required only when OpenAI categorization is enabled; keep it in the deployment secret/environment path, never in Git.
 
 ## Build, lint, format, and test
 

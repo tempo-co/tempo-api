@@ -54,7 +54,7 @@ export const configSchema = z
 			.string()
 			.regex(/^[a-z][a-z0-9-]*$/)
 			.default('openai'),
-		AI_CATEGORIZATION_MODEL: z.string().min(1).max(128).default('gpt-5.6-luna'),
+		AI_CATEGORIZATION_MODEL: z.string().min(1).max(128).default('gpt-6-luna'),
 		AI_CATEGORIZATION_WEB_SEARCH_ENABLED: strictBooleanEnvSchema.default(false),
 		OPENAI_API_KEY: z.string().min(1).optional(),
 

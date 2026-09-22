@@ -80,6 +80,14 @@ describe('session cookie configuration', () => {
 	});
 });
 
+describe('AI categorization model configuration', () => {
+	it('defaults to GPT-6 Luna', () => {
+		const parsed = configSchema.parse(baseConfig);
+
+		expect(parsed.AI_CATEGORIZATION_MODEL).toBe('gpt-6-luna');
+	});
+});
+
 describe('categorization web-search configuration', () => {
 	it('defaults the fallback off', () => {
 		const parsed = configSchema.parse(baseConfig);
