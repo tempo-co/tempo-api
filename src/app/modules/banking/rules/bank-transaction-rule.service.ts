@@ -237,6 +237,22 @@ export class BankTransactionRuleService {
 		const [transactions, activeRules] = await Promise.all([
 			this.transactionRepository.find({
 				where: {bankAccountId: source.bankAccountId},
+				select: {
+					id: true,
+					bankAccountId: true,
+					bookingDate: true,
+					valueDate: true,
+					amount: true,
+					currency: true,
+					creditDebitIndicator: true,
+					transactionType: true,
+					bankTransactionDescription: true,
+					remittanceInformation: true,
+					financialEventType: true,
+					category: true,
+					categorySource: true,
+					displayDescription: true,
+				},
 				order: {bookingDate: 'DESC', valueDate: 'DESC', id: 'DESC'},
 			}),
 			this.ruleRepository.find({where: {bankAccountId: source.bankAccountId, active: true}}),
@@ -336,7 +352,6 @@ export class BankTransactionRuleService {
 			currency: transaction.currency,
 			amount: transaction.amount,
 			bankTransactionDescription: transaction.bankTransactionDescription,
-			description: transaction.description,
 			remittanceInformation: transaction.remittanceInformation,
 		};
 	}

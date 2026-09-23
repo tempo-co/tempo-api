@@ -5,7 +5,6 @@ import {
 	InternalServerErrorException,
 	Logger,
 	NotFoundException,
-	Optional,
 	ServiceUnavailableException,
 } from '@nestjs/common';
 import {InjectRepository} from '@nestjs/typeorm';
@@ -116,7 +115,7 @@ export class BankingSyncService {
 		private readonly connectionLockService: BankingConnectionLockService,
 		private readonly categorizationService: BankTransactionCategorizationService,
 		private readonly configurationService: ConfigurationService,
-		@Optional() private readonly bankTransactionRuleService?: BankTransactionRuleService,
+		private readonly bankTransactionRuleService: BankTransactionRuleService,
 	) {
 		this.bankingIntegrationEnabled = configurationService.get('BANKING_INTEGRATION_ENABLED') !== false;
 	}
@@ -527,7 +526,7 @@ export class BankingSyncService {
 				}
 			}
 
-			await this.bankTransactionRuleService?.applyRulesToTransactions(persistedTransactionIds, manager);
+			await this.bankTransactionRuleService.applyRulesToTransactions(persistedTransactionIds, manager);
 
 			await runRepository.update(
 				{id: run.id},

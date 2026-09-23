@@ -139,6 +139,28 @@ describe('BankTransactionRuleService', () => {
 			matchField: 'BANK_TRANSACTION_DESCRIPTION',
 		});
 		expect(result.matches.map(({id}) => id)).toEqual(['source-id', 'ai-id', 'rule-id']);
+		expect(transactionRepository.find).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: {bankAccountId: source.bankAccountId},
+				select: expect.objectContaining({
+					id: true,
+					bankAccountId: true,
+					bookingDate: true,
+					valueDate: true,
+					amount: true,
+					currency: true,
+					creditDebitIndicator: true,
+					transactionType: true,
+					bankTransactionDescription: true,
+					remittanceInformation: true,
+					financialEventType: true,
+					category: true,
+					categorySource: true,
+					displayDescription: true,
+				}),
+			}),
+		);
+		expect(transactionRepository.find.mock.calls[0][0].select).not.toHaveProperty('categorySearchTrace');
 	});
 
 	it('rejects currency-exchange transactions as rule sources', async () => {

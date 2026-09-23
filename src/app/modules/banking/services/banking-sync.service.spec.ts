@@ -15,6 +15,7 @@ import {
 } from '../bank-transaction-financial-event';
 import {BankTransaction} from '../bank-transaction.entity';
 import {BankTransactionCategorizationService} from '../categorization/bank-transaction-categorization.service';
+import type {BankTransactionRuleService} from '../rules/bank-transaction-rule.service';
 import {BankingConnectionLockService} from './banking-connection-lock.service';
 import {BankingEncryptionService} from './banking-encryption.service';
 import {BankingSyncService} from './banking-sync.service';
@@ -33,6 +34,10 @@ function deferred<T>(): Deferred<T> {
 	return {promise, resolve};
 }
 
+function createBankTransactionRuleServiceMock() {
+	return {applyRulesToTransactions: jest.fn().mockResolvedValue([])};
+}
+
 describe('BankingSyncService disabled integration', () => {
 	it('rejects manual sync and skips automatic sync without touching persistence', async () => {
 		const bankConnectionRepository = {findOne: jest.fn()};
@@ -48,6 +53,7 @@ describe('BankingSyncService disabled integration', () => {
 			{
 				get: jest.fn((key: string) => (key === 'BANKING_INTEGRATION_ENABLED' ? false : '6h')),
 			} as unknown as ConfigurationService,
+			createBankTransactionRuleServiceMock() as unknown as BankTransactionRuleService,
 		);
 
 		await expect(service.synchronize('account-id', 'connection-id')).rejects.toThrow(BANKING_SERVICE_UNAVAILABLE);
@@ -151,6 +157,7 @@ describe('BankingSyncService', () => {
 			new BankingConnectionLockService(redisMock as unknown as Redis),
 			categorizationServiceMock as unknown as BankTransactionCategorizationService,
 			{get: jest.fn().mockReturnValue('6h')} as unknown as ConfigurationService,
+			createBankTransactionRuleServiceMock() as unknown as BankTransactionRuleService,
 		);
 
 		bankConnectionRepositoryMock.findOne.mockImplementation(async (options: {where: {account: {id: string}}}) => {
@@ -219,6 +226,7 @@ describe('BankingSyncService synchronization lock', () => {
 	let transactionRepository: TransactionRepository & {findOne: jest.Mock};
 	let bankAccountRepository: {find: jest.Mock; update: jest.Mock};
 	let configurationService: {get: jest.Mock};
+	let bankTransactionRuleServiceMock: ReturnType<typeof createBankTransactionRuleServiceMock>;
 
 	beforeEach(() => {
 		jest.useFakeTimers();
@@ -318,6 +326,7 @@ describe('BankingSyncService synchronization lock', () => {
 		};
 
 		configurationService = {get: jest.fn().mockReturnValue('6h')};
+		bankTransactionRuleServiceMock = createBankTransactionRuleServiceMock();
 		service = new BankingSyncService(
 			bankConnectionRepository as unknown as Repository<BankConnection>,
 			bankAccountRepository as unknown as Repository<BankAccount>,
@@ -328,6 +337,7 @@ describe('BankingSyncService synchronization lock', () => {
 			new BankingConnectionLockService(redis as unknown as Redis),
 			categorizationService as unknown as BankTransactionCategorizationService,
 			configurationService as unknown as ConfigurationService,
+			bankTransactionRuleServiceMock as unknown as BankTransactionRuleService,
 		);
 	});
 
@@ -391,6 +401,10 @@ describe('BankingSyncService synchronization lock', () => {
 			transactionsFetched: 2,
 			transactionsAdded: 1,
 		});
+		expect(bankTransactionRuleServiceMock.applyRulesToTransactions).toHaveBeenCalledWith(
+			['new-transaction-id'],
+			expect.any(Object),
+		);
 		expect(insertQueryBuilder.orIgnore).toHaveBeenCalledTimes(1);
 		expect(insertQueryBuilder.returning).toHaveBeenCalledWith('id');
 		expect(insertQueryBuilder.values).toHaveBeenCalledWith(
@@ -602,6 +616,7 @@ describe('BankingSyncService transaction event persistence', () => {
 			{} as never,
 			{} as never,
 			{get: jest.fn().mockReturnValue('6h')} as never,
+			createBankTransactionRuleServiceMock() as unknown as BankTransactionRuleService,
 		);
 	}
 

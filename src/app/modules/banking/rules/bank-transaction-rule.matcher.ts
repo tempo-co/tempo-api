@@ -1,6 +1,6 @@
-import {type BankTransactionDirection, toBankTransactionDirection} from '../bank-transaction-direction';
+import {toBankTransactionDirection} from '../bank-transaction-direction';
 import {BANK_TRANSACTION_TYPES} from '../bank-transaction-type';
-import type {BankTransactionRuleMatchField} from './bank-transaction-rule.types';
+import type {BankTransactionRuleCondition, BankTransactionRuleMatchField} from './bank-transaction-rule.types';
 
 export type {BankTransactionRuleMatchField} from './bank-transaction-rule.types';
 
@@ -11,19 +11,11 @@ export type BankTransactionRuleMatchInput = {
 	currency: string;
 	amount: string;
 	bankTransactionDescription: string | null;
-	description: string | null;
 	remittanceInformation: string | null;
 };
 
-export type BankTransactionRuleMatcher = {
+export type BankTransactionRuleMatcher = BankTransactionRuleCondition & {
 	id?: string;
-	bankAccountId: string;
-	direction: BankTransactionDirection;
-	transactionType: string;
-	currency: string;
-	amount: string;
-	matchField: BankTransactionRuleMatchField;
-	matchText: string;
 	active: boolean;
 	category?: string;
 };
@@ -89,17 +81,4 @@ export function selectMatchingBankTransactionRule<Rule extends BankTransactionRu
 	);
 	if (categories.size > 1) return null;
 	return matches[0];
-}
-
-export function toBankTransactionRuleMatchInput(transaction: {
-	bankAccountId: string;
-	creditDebitIndicator: string | null;
-	transactionType: string | null;
-	currency: string;
-	amount: string;
-	bankTransactionDescription: string | null;
-	description: string | null;
-	remittanceInformation: string | null;
-}): BankTransactionRuleMatchInput {
-	return transaction;
 }

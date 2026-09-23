@@ -15,7 +15,6 @@ const transaction: BankTransactionRuleMatchInput = {
 	currency: 'EUR',
 	amount: '-693.5000',
 	bankTransactionDescription: 'SEPA transfer to Roommate Example',
-	description: null,
 	remittanceInformation: null,
 };
 
@@ -64,13 +63,13 @@ describe('bank transaction rule matcher', () => {
 	});
 
 	it('does not substitute the normalized description when the selected raw field is missing', () => {
-		expect(
-			matchesBankTransactionRule(rule, {
-				...transaction,
-				bankTransactionDescription: null,
-				description: 'SEPA transfer to Roommate Example',
-			}),
-		).toBe(false);
+		const transactionWithOnlyNormalizedDescription = {
+			...transaction,
+			bankTransactionDescription: null,
+			description: 'SEPA transfer to Roommate Example',
+		};
+
+		expect(matchesBankTransactionRule(rule, transactionWithOnlyNormalizedDescription)).toBe(false);
 	});
 
 	it('fails closed when multiple active rules match different categories', () => {
