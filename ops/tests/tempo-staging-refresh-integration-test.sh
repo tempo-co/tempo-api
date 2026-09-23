@@ -8,9 +8,19 @@ SOCKET="$TMP_DIR/docker.sock"
 trap 'kill "${SOCKET_PID:-}" 2>/dev/null || true; rm -rf "$TMP_DIR"' EXIT
 
 BIN="$TMP_DIR/bin"
-mkdir -p "$BIN" "$TMP_DIR/state" "$TMP_DIR/home/.config/tempo-staging/docker-config" "$TMP_DIR/home/.local/share/tempo-staging/docker"
+mkdir -p "$BIN" "$TMP_DIR/state" "$TMP_DIR/backups" "$TMP_DIR/home/.config/tempo-staging/docker-config" "$TMP_DIR/home/.local/share/tempo-staging/docker"
+chmod 700 "$TMP_DIR/backups"
 printf '%s\n' '{"auths":{"ghcr.io":{"auth":"synthetic"}}}' > "$TMP_DIR/home/.config/tempo-staging/docker-config/config.json"
 chmod 600 "$TMP_DIR/home/.config/tempo-staging/docker-config/config.json"
+printf '%s\n' 'synthetic staging password for integration test' > "$TMP_DIR/home/.config/tempo-staging/staging-login-password"
+chmod 600 "$TMP_DIR/home/.config/tempo-staging/staging-login-password"
+python3 - "$TMP_DIR/backups/tempo-20260920-000000.dump" "$TMP_DIR/backups/tempo-20260921-060000.dump" <<'PY'
+import sys
+from pathlib import Path
+for path in map(Path, sys.argv[1:]):
+    path.write_bytes((f'synthetic archive {path.name}\n'.encode()) * 80)
+PY
+chmod 600 "$TMP_DIR/backups/tempo-20260920-000000.dump" "$TMP_DIR/backups/tempo-20260921-060000.dump"
 
 cat > "$TMP_DIR/staging.env" <<'EOF'
 TEMPO_API_IMAGE=ghcr.io/tempo-co/tempo-api@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -56,12 +66,7 @@ if [[ ${1-} == info ]]; then
     if [[ $* == *SecurityOptions* ]]; then printf 'rootless\n'; else printf '%s\n' "$EXPECTED_STAGING_ROOT"; fi
     exit 0
 fi
-if [[ ${1-} == inspect && $* == *prodpg* ]]; then
-    if [[ $* == *'--format'* ]]; then
-        printf '{"com.docker.compose.project":"tempo-api-production","com.docker.compose.service":"postgres"}\n'
-    fi
-    exit 0
-fi
+
 if [[ ${1-} == cp ]]; then
     exit 0
 fi
@@ -77,10 +82,49 @@ if [[ ${1-} == compose ]]; then
 {"name":"tempo-staging","services":{"api":{"image":"ghcr.io/tempo-co/tempo-api:latest","environment":{"AI_CATEGORIZATION_ENABLED":"false","AI_CATEGORIZATION_WEB_SEARCH_ENABLED":"false","BANKING_INTEGRATION_ENABLED":"false","DB_SYNCHRONIZE":"false","WEB_BASE_URL":"https://staging.example.invalid/tempo"}},"web":{"image":"ghcr.io/tempo-co/tempo-web@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","ports":[{"mode":"ingress","host_ip":"0.0.0.0","target":8080,"published":"8119","protocol":"tcp"}]}},"volumes":{"tempo_staging_postgres_data":{"name":"tempo-staging-postgres-data"}},"networks":{"backend":{"name":"tempo-staging-backend"},"edge":{"name":"tempo-staging-edge"}}}
 JSON
         else
-            cat <<'JSON'
-{"name":"tempo-staging","services":{"postgres":{"image":"postgres@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","volumes":["tempo-staging-postgres-data:/var/lib/postgresql/data"],"networks":["backend"]},"redis":{"image":"redis@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","networks":["backend"]},"mailpit":{"image":"axllent/mailpit@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","networks":["backend","edge"]},"api":{"image":"ghcr.io/tempo-co/tempo-api@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","environment":{"AI_CATEGORIZATION_ENABLED":"false","AI_CATEGORIZATION_WEB_SEARCH_ENABLED":"false","BANKING_INTEGRATION_ENABLED":"false","DB_SYNCHRONIZE":"false","WEB_BASE_URL":"https://staging.example.invalid/tempo"},"networks":["backend","edge"]},"web":{"image":"ghcr.io/tempo-co/tempo-web@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","ports":[{"mode":"ingress","host_ip":"127.0.0.1","target":8080,"published":"8119","protocol":"tcp"}],"networks":["edge","ingress"]}},"volumes":{"tempo_staging_postgres_data":{"name":"tempo-staging-postgres-data"}},"networks":{"backend":{"name":"tempo-staging-backend"},"edge":{"name":"tempo-staging-edge"},"ingress":{"name":"tempo-staging-ingress"}}}
+            rendered_config=$(cat <<'JSON'
+{"name":"tempo-staging","services":{"postgres":{"image":"postgres@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","environment":{"POSTGRES_DB":"tempo_staging"},"volumes":["tempo-staging-postgres-data:/var/lib/postgresql/data"],"networks":["backend"]},"redis":{"image":"redis@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","networks":["backend"]},"mailpit":{"image":"axllent/mailpit@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","networks":["backend","edge"]},"api":{"image":"ghcr.io/tempo-co/tempo-api@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","environment":{"DB_HOST":"postgres","DB_NAME":"tempo_staging","AI_CATEGORIZATION_ENABLED":"false","AI_CATEGORIZATION_WEB_SEARCH_ENABLED":"false","BANKING_INTEGRATION_ENABLED":"false","DB_SYNCHRONIZE":"false","WEB_BASE_URL":"https://staging.example.invalid/tempo"},"networks":["backend","edge"]},"web":{"image":"ghcr.io/tempo-co/tempo-web@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","ports":[{"mode":"ingress","host_ip":"127.0.0.1","target":8080,"published":"8119","protocol":"tcp"}],"networks":["edge","ingress"]}},"volumes":{"tempo_staging_postgres_data":{"name":"tempo-staging-postgres-data"}},"networks":{"backend":{"name":"tempo-staging-backend","internal":true},"edge":{"name":"tempo-staging-edge","internal":true},"ingress":{"name":"tempo-staging-ingress","internal":false}}}
 JSON
+)
+            printf '%s\n' "$rendered_config" | python3 -c '
+import json
+import os
+import sys
+
+config = json.load(sys.stdin)
+services = config["services"]
+api = services["api"]
+postgres = services["postgres"]
+database = os.environ.get("FAKE_STAGING_DB_NAME", "tempo_staging")
+api["environment"]["DB_NAME"] = database
+postgres["environment"]["POSTGRES_DB"] = database
+if os.environ.get("FAKE_BAD_DB_HOST") == "1":
+    api["environment"]["DB_HOST"] = "production-db.internal"
+if os.environ.get("FAKE_BAD_DB_NAME") == "1":
+    api["environment"]["DB_NAME"] = "production_database"
+if os.environ.get("FAKE_DB_HOST_REDIRECT") == "1":
+    api["extra_hosts"] = ["postgres:192.0.2.10"]
+network_case = os.environ.get("FAKE_BAD_NETWORK")
+if network_case == "api-extra-network":
+    api["networks"].append("production-db")
+    config["networks"]["production-db"] = {"name": "tempo-production-db", "external": True}
+elif network_case == "postgres-extra-network":
+    postgres["networks"].append("edge")
+elif network_case == "api-network-alias":
+    api["networks"] = {"backend": {"aliases": ["postgres"]}, "edge": {}}
+elif network_case == "external-backend":
+    config["networks"]["backend"]["external"] = True
+elif network_case == "network-mode":
+    api["network_mode"] = "host"
+json.dump(config, sys.stdout)
+'
         fi
+        exit 0
+    fi
+    if [[ $command_line == *'set-staging-password.js'* ]]; then
+        IFS= read -r received_password || exit 1
+        [[ $received_password == 'synthetic staging password for integration test' ]] || exit 1
+        : > "$FAKE_PASSWORD_STDIN_MARKER"
         exit 0
     fi
     if [[ $command_line == *' ps -q postgres'* ]]; then printf 'pgid\n'; exit 0; fi
@@ -100,10 +144,7 @@ if [[ ${1-} == exec ]]; then
     if [[ $container == pgid && $command_line == *' chown postgres:postgres '* && ${FAKE_PGPASS_CHOWN_FAILURE:-0} == 1 ]]; then
         exit 1
     fi
-    if [[ $container == prodpg && $command_line == *'pg_dump --format=custom'* ]]; then
-        printf 'synthetic-custom-format-dump\n'
-        exit 0
-    fi
+
     if [[ $container == pgid && $command_line == *'psql '* ]]; then
         sql=''
         args=("$@")
@@ -138,14 +179,16 @@ export PATH="$BIN:$PATH"
 export HOME="$TMP_DIR/home"
 export EXPECTED_STAGING_ROOT="$HOME/.local/share/tempo-staging/docker"
 export FAKE_DOCKER_LOG="$TMP_DIR/docker.log"
-export TEMPO_PRODUCTION_POSTGRES_CONTAINER=prodpg
 export TEMPO_STAGING_REFRESH_COMPOSE_FILE="$TMP_DIR/compose.yml"
 export TEMPO_STAGING_REFRESH_ENV_FILE="$TMP_DIR/staging.env"
 export TEMPO_STAGING_REFRESH_STATE_DIR="$TMP_DIR/state"
+export TEMPO_STAGING_REFRESH_BACKUP_DIR="$TMP_DIR/backups"
+export TEMPO_STAGING_LOGIN_PASSWORD_FILE="$TMP_DIR/home/.config/tempo-staging/staging-login-password"
 export TEMPO_STAGING_REFRESH_DOCKER_HOST="unix://$SOCKET"
 export TEMPO_STAGING_REFRESH_WEB_URL=http://127.0.0.1:8119/tempo/
 export TEMPO_STAGING_REFRESH_TEST_MODE=1
 export FAKE_PARTIAL_STOP_MARKER="$TMP_DIR/partial-stop.marker"
+export FAKE_PASSWORD_STDIN_MARKER="$TMP_DIR/password-stdin-verified"
 
 cp "$TMP_DIR/staging.env" "$TMP_DIR/duplicate.env"
 printf 'STAGING_DB_NAME=duplicate_name\n' >> "$TMP_DIR/duplicate.env"
@@ -163,27 +206,113 @@ if TEMPO_STAGING_REFRESH_ENV_FILE="$TMP_DIR/permissive.env" bash "$SCRIPT" valid
     printf 'FAIL: permissive staging env mode was accepted\n' >&2
     exit 1
 fi
-if TEMPO_STAGING_REFRESH_TEST_MODE=0 TEMPO_PRODUCTION_POSTGRES_CONTAINER=other bash "$SCRIPT" validate >/dev/null 2>&1; then
-    printf 'FAIL: production Postgres container override was accepted\n' >&2
+if TEMPO_STAGING_REFRESH_TEST_MODE=0 TEMPO_STAGING_REFRESH_BACKUP_DIR="$TMP_DIR/backups" bash "$SCRIPT" validate >/dev/null 2>&1; then
+    printf 'FAIL: production backup directory override was accepted\n' >&2
     exit 1
 fi
 if FAKE_BAD_POLICY=1 bash "$SCRIPT" validate >/dev/null 2>&1; then
     printf 'FAIL: unsafe rendered staging policy was accepted\n' >&2
     exit 1
 fi
+if FAKE_BAD_DB_HOST=1 bash "$SCRIPT" validate >/dev/null 2>&1; then
+    printf 'FAIL: production database host in rendered staging Compose was accepted\n' >&2
+    exit 1
+fi
+if FAKE_BAD_DB_NAME=1 bash "$SCRIPT" validate >/dev/null 2>&1; then
+    printf 'FAIL: mismatched database name in rendered staging Compose was accepted\n' >&2
+    exit 1
+fi
+if FAKE_DB_HOST_REDIRECT=1 bash "$SCRIPT" validate >/dev/null 2>&1; then
+    printf 'FAIL: external Compose host mapping for staging Postgres was accepted\n' >&2
+    exit 1
+fi
+
+for bad_network in api-extra-network postgres-extra-network api-network-alias external-backend network-mode; do
+    if FAKE_BAD_NETWORK="$bad_network" bash "$SCRIPT" validate >/dev/null 2>&1; then
+        printf 'FAIL: unsafe staging network policy was accepted: %s\n' "$bad_network" >&2
+        exit 1
+    fi
+done
+
+for reserved_database in tempo_staging_refresh tempo_staging_previous tempo_staging_failed postgres template0 template1; do
+    reserved_env="$TMP_DIR/$reserved_database.env"
+    python3 - "$TMP_DIR/staging.env" "$reserved_env" "$reserved_database" <<'PY'
+from pathlib import Path
+import re
+import sys
+source, target, database = map(Path, sys.argv[1:])
+text = source.read_text(encoding='utf-8')
+text, count = re.subn(r'(?m)^STAGING_DB_NAME=.*$', f'STAGING_DB_NAME={database.name}', text)
+if count != 1:
+    raise SystemExit('expected one synthetic staging database name')
+target.write_text(text, encoding='utf-8')
+PY
+    chmod 600 "$reserved_env"
+    : > "$FAKE_DOCKER_LOG"
+    if FAKE_STAGING_DB_NAME="$reserved_database" TEMPO_STAGING_REFRESH_ENV_FILE="$reserved_env" bash "$SCRIPT" refresh --confirm-production-backup-refresh >/dev/null 2>&1; then
+        printf 'FAIL: reserved staging database name %s was accepted\n' "$reserved_database" >&2
+        exit 1
+    fi
+    if grep -E 'compose .* (up|down|stop|start)|CREATE DATABASE|DROP DATABASE|pg_restore|psql ' "$FAKE_DOCKER_LOG" >/dev/null; then
+        printf 'FAIL: reserved staging database name %s reached database operations\n' "$reserved_database" >&2
+        exit 1
+    fi
+done
 
 bash "$SCRIPT" refresh --confirm-production-backup-refresh
 
-if find "$TMP_DIR/state" -type f -name '*.dump' -print -quit | grep -q .; then
-    printf 'FAIL: temporary production dump remains\n' >&2
+[[ -f "$TMP_DIR/backups/tempo-20260920-000000.dump" && -f "$TMP_DIR/backups/tempo-20260921-060000.dump" ]] || \
+    { printf 'FAIL: refresh removed a source backup archive\n' >&2; exit 1; }
+grep -F "cp $TMP_DIR/backups/tempo-20260921-060000.dump" "$FAKE_DOCKER_LOG" >/dev/null || \
+    { printf 'FAIL: refresh did not copy the newest custom-format backup\n' >&2; exit 1; }
+if grep -E 'prodpg|pg_dump|\.sql\.gz' "$FAKE_DOCKER_LOG" >/dev/null; then
+    printf 'FAIL: refresh queried production or used a legacy SQL archive\n' >&2
     exit 1
 fi
-grep -F 'exec prodpg' "$FAKE_DOCKER_LOG" >/dev/null || { printf 'FAIL: production pg_dump was not invoked\n' >&2; exit 1; }
-grep -F 'pg_dump --format=custom' "$FAKE_DOCKER_LOG" >/dev/null || { printf 'FAIL: dump was not custom format\n' >&2; exit 1; }
-grep -F 'pg_restore' "$FAKE_DOCKER_LOG" >/dev/null || { printf 'FAIL: staging pg_restore was not invoked\n' >&2; exit 1; }
+grep -F 'pg_restore --list' "$FAKE_DOCKER_LOG" >/dev/null || { printf 'FAIL: staging pg_restore did not validate the archive\n' >&2; exit 1; }
+grep -F 'pg_restore --exit-on-error --no-owner --no-privileges' "$FAKE_DOCKER_LOG" >/dev/null || \
+    { printf 'FAIL: staging restore did not strip owners and privileges\n' >&2; exit 1; }
+[[ -f $FAKE_PASSWORD_STDIN_MARKER ]] || { printf 'FAIL: staging password was not passed via stdin\n' >&2; exit 1; }
+if grep -F 'synthetic staging password' "$FAKE_DOCKER_LOG" >/dev/null; then
+    printf 'FAIL: staging password appeared in Docker argv/log\n' >&2
+    exit 1
+fi
 grep -F 'redisid' "$FAKE_DOCKER_LOG" | grep -F 'FLUSHALL' >/dev/null || { printf 'FAIL: staging Redis was not flushed\n' >&2; exit 1; }
 if grep -E 'prod(redis|_redis|Redis)' "$FAKE_DOCKER_LOG" >/dev/null; then
     printf 'FAIL: production Redis was touched\n' >&2
+    exit 1
+fi
+: > "$FAKE_DOCKER_LOG"
+chmod 775 "$TMP_DIR/backups"
+if bash "$SCRIPT" refresh --confirm-production-backup-refresh >/dev/null 2>&1; then
+    printf 'FAIL: permissive production backup directory mode was accepted\n' >&2
+    exit 1
+fi
+if grep -E 'compose .* up| cp |CREATE DATABASE|pg_restore' "$FAKE_DOCKER_LOG" >/dev/null; then
+    printf 'FAIL: invalid backup-directory permissions reached database work\n' >&2
+    exit 1
+fi
+chmod 700 "$TMP_DIR/backups"
+: > "$FAKE_DOCKER_LOG"
+chmod 644 "$TMP_DIR/home/.config/tempo-staging/staging-login-password"
+if bash "$SCRIPT" refresh --confirm-production-backup-refresh >/dev/null 2>&1; then
+    printf 'FAIL: permissive staging password file mode was accepted\n' >&2
+    exit 1
+fi
+if grep -E 'compose .* up| cp |CREATE DATABASE|pg_restore' "$FAKE_DOCKER_LOG" >/dev/null; then
+    printf 'FAIL: invalid password-file permissions reached database work\n' >&2
+    exit 1
+fi
+chmod 600 "$TMP_DIR/home/.config/tempo-staging/staging-login-password"
+mkdir -p "$TMP_DIR/no-backups"
+chmod 700 "$TMP_DIR/no-backups"
+: > "$FAKE_DOCKER_LOG"
+if TEMPO_STAGING_REFRESH_BACKUP_DIR="$TMP_DIR/no-backups" bash "$SCRIPT" refresh --confirm-production-backup-refresh >/dev/null 2>&1; then
+    printf 'FAIL: refresh succeeded without a custom-format backup\n' >&2
+    exit 1
+fi
+if grep -E 'compose .* up| cp |CREATE DATABASE|prodpg|pg_dump' "$FAKE_DOCKER_LOG" >/dev/null; then
+    printf 'FAIL: missing-backup refresh touched a database or production\n' >&2
     exit 1
 fi
 : > "$FAKE_DOCKER_LOG"

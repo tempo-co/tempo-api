@@ -94,7 +94,40 @@ if [[ ${1-} == info ]]; then
     exit 0
 fi
 if [[ ${1-} == compose && $* == *' config '* ]]; then
-    printf '%s\n' "{\"services\":{\"api\":{\"environment\":{\"AI_CATEGORIZATION_ENABLED\":\"false\",\"AI_CATEGORIZATION_WEB_SEARCH_ENABLED\":\"false\",\"BANKING_INTEGRATION_ENABLED\":\"false\",\"WEB_BASE_URL\":\"${STAGING_WEB_BASE_URL:-https://staging.example.invalid/tempo}\"}},\"web\":{\"ports\":[{\"mode\":\"ingress\",\"host_ip\":\"127.0.0.1\",\"target\":8080,\"published\":\"8119\",\"protocol\":\"tcp\"}]}},\"volumes\":{}}"
+    python3 - <<'PY'
+import json
+import os
+
+configuration = {
+    "services": {
+        "api": {
+            "environment": {
+                "DB_HOST": "postgres",
+                "DB_NAME": "tempo_staging",
+                "AI_CATEGORIZATION_ENABLED": "false",
+                "AI_CATEGORIZATION_WEB_SEARCH_ENABLED": "false",
+                "BANKING_INTEGRATION_ENABLED": "false",
+                "WEB_BASE_URL": os.environ.get("STAGING_WEB_BASE_URL", "https://staging.example.invalid/tempo"),
+            },
+            "networks": ["backend", "edge"],
+        },
+        "postgres": {"environment": {"POSTGRES_DB": "tempo_staging"}, "networks": ["backend"]},
+        "redis": {"networks": ["backend"]},
+        "mailpit": {"networks": ["backend", "edge"]},
+        "web": {
+            "ports": [{"mode": "ingress", "host_ip": "127.0.0.1", "target": 8080, "published": "8119", "protocol": "tcp"}],
+            "networks": ["edge", "ingress"],
+        },
+    },
+    "volumes": {"tempo_staging_postgres_data": {"name": "tempo-staging-postgres-data"}},
+    "networks": {
+        "backend": {"name": "tempo-staging-backend", "internal": True},
+        "edge": {"name": "tempo-staging-edge", "internal": True},
+        "ingress": {"name": "tempo-staging-ingress", "internal": False},
+    },
+}
+print(json.dumps(configuration))
+PY
     exit 0
 fi
 exit 99

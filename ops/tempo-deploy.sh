@@ -18,6 +18,8 @@ STATE_SCOPE=''
 COMPOSE_FILE=''
 ENV_FILE=''
 STATE_FILE=''
+REFRESH_STATE_FILE=''
+STAGING_REFRESH_SCRIPT=''
 ROLLBACK_FILE=''
 LOCK_FILE=''
 API_CONTAINER=''
@@ -35,6 +37,10 @@ API_IMAGE=''
 WEB_IMAGE=''
 CANDIDATE_API_TAG=''
 CANDIDATE_WEB_TAG=''
+REFRESH_API_SHA=''
+REFRESH_WEB_SHA=''
+REFRESH_API_IMAGE=''
+REFRESH_WEB_IMAGE=''
 CLEANUP_FAILURE=0
 declare -A STATEFUL_IDS=()
 
@@ -107,6 +113,8 @@ configure_target() {
                 ENV_FILE="$test_root/staging.env"
                 PRODUCTION_ORIGIN_HOST_FILE="$HOME/.config/tempo-staging/production-origin-host"
                 STATE_FILE="${TEMPO_DEPLOY_STATE_FILE:-$test_root/staging/images.env}"
+                REFRESH_STATE_FILE="${TEMPO_DEPLOY_TEST_REFRESH_STATE_FILE:-$test_root/staging/refresh-images.env}"
+                STAGING_REFRESH_SCRIPT="${TEMPO_DEPLOY_TEST_REFRESH_SCRIPT:-$test_root/staging-refresh.sh}"
                 LOCK_FILE="$test_root/staging/deploy.lock"
                 TEST_INTENT_DIR=${TEMPO_DEPLOY_TEST_INTENT_DIR:-$test_root/intents}
             else
@@ -114,6 +122,8 @@ configure_target() {
                 ENV_FILE="$HOME/.config/tempo-staging/staging.env"
                 PRODUCTION_ORIGIN_HOST_FILE="$HOME/.config/tempo-staging/production-origin-host"
                 STATE_FILE="$HOME/.local/state/tempo-staging/images.env"
+                REFRESH_STATE_FILE="$HOME/.local/state/tempo-staging/refresh-images.env"
+                STAGING_REFRESH_SCRIPT="$HOME/.config/tempo-staging/tempo-staging-refresh.sh"
                 LOCK_FILE="$HOME/.local/state/tempo-staging/deploy.lock"
                 TEST_INTENT_DIR=''
             fi
@@ -135,6 +145,8 @@ print_config() {
     printf 'COMPOSE_FILE=%s\n' "$COMPOSE_FILE"
     printf 'ENV_FILE=%s\n' "$ENV_FILE"
     printf 'STATE_FILE=%s\n' "$STATE_FILE"
+    printf 'REFRESH_STATE_FILE=%s\n' "$REFRESH_STATE_FILE"
+    printf 'STAGING_REFRESH_SCRIPT=%s\n' "$STAGING_REFRESH_SCRIPT"
     printf 'LOCK_FILE=%s\n' "$LOCK_FILE"
 }
 
@@ -286,22 +298,49 @@ read_state() {
 }
 
 write_state() {
-    local api_sha=$1 web_sha=$2 api_image=$3 web_image=$4 temporary_file
+    local api_sha=$1 web_sha=$2 api_image=$3 web_image=$4 state_file=${5:-$STATE_FILE} temporary_file
     valid_sha "$api_sha" && valid_sha "$web_sha" && \
         valid_image "$API_IMAGE_REPOSITORY" "$api_image" && \
         valid_image "$WEB_IMAGE_REPOSITORY" "$web_image" || return 1
-    mkdir -p "$(dirname "$STATE_FILE")"
-    temporary_file=$(mktemp "${STATE_FILE}.tmp.XXXXXX") || return 1
+    mkdir -p "$(dirname "$state_file")"
+    temporary_file=$(mktemp "${state_file}.tmp.XXXXXX") || return 1
     umask 077
     if ! printf 'TEMPO_API_SHA=%s\nTEMPO_WEB_SHA=%s\nTEMPO_API_IMAGE=%s\nTEMPO_WEB_IMAGE=%s\n' \
         "$api_sha" "$web_sha" "$api_image" "$web_image" > "$temporary_file"; then
         rm -f "$temporary_file"
         return 1
     fi
-    chmod 600 "$temporary_file" && mv -f "$temporary_file" "$STATE_FILE" || {
+    chmod 600 "$temporary_file" && mv -f "$temporary_file" "$state_file" || {
         rm -f "$temporary_file"
         return 1
     }
+}
+
+load_refresh_state() {
+    local current_api_sha=$1 current_web_sha=$2 current_api_image=$3 current_web_image=$4
+    [[ $TARGET == staging ]] || return 0
+    [[ -n $REFRESH_STATE_FILE ]] || die 'staging refresh state path is not configured'
+    [[ ! -L $REFRESH_STATE_FILE ]] || die 'staging refresh state must not be a symlink'
+    if [[ ! -e $REFRESH_STATE_FILE ]]; then
+        write_state "$current_api_sha" "$current_web_sha" "$current_api_image" "$current_web_image" "$REFRESH_STATE_FILE" || \
+            die 'could not initialize staging refresh state'
+        REFRESH_API_SHA=$current_api_sha
+        REFRESH_WEB_SHA=$current_web_sha
+        REFRESH_API_IMAGE=$current_api_image
+        REFRESH_WEB_IMAGE=$current_web_image
+        return 0
+    fi
+    [[ -f $REFRESH_STATE_FILE && -O $REFRESH_STATE_FILE ]] || die 'staging refresh state is missing or not owner-controlled'
+    [[ $(stat -c '%a' "$REFRESH_STATE_FILE") == 600 ]] || die 'staging refresh state must be mode 600'
+    read_state "$REFRESH_STATE_FILE"
+    REFRESH_API_SHA=$API_SHA
+    REFRESH_WEB_SHA=$WEB_SHA
+    REFRESH_API_IMAGE=$API_IMAGE
+    REFRESH_WEB_IMAGE=$WEB_IMAGE
+    API_SHA=$current_api_sha
+    WEB_SHA=$current_web_sha
+    API_IMAGE=$current_api_image
+    WEB_IMAGE=$current_web_image
 }
 
 docker_cli() {
@@ -366,7 +405,9 @@ require_staging_daemon() {
 
 assert_staging_policy() {
     [[ $TARGET == staging ]] || return 0
-    [[ ${TEMPO_DEPLOY_TEST_MODE:-0} == 1 ]] && return 0
+    if [[ ${TEMPO_DEPLOY_TEST_MODE:-0} == 1 && ${TEMPO_DEPLOY_TEST_VALIDATE_POLICY:-0} != 1 ]]; then
+        return 0
+    fi
     local rendered_file
     rendered_file=$(mktemp) || die 'could not create rendered staging Compose file'
     chmod 600 "$rendered_file"
@@ -385,12 +426,78 @@ from urllib.parse import urlsplit
 config = json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
 production_host = sys.argv[2]
 services = config.get('services', {})
-api_env = services.get('api', {}).get('environment', {})
-web_env = services.get('web', {}).get('environment', {})
+required_services = {'postgres', 'redis', 'mailpit', 'api', 'web'}
+if set(services) != required_services:
+    raise SystemExit('staging Compose services are not the approved set')
+for service_name, service in services.items():
+    if service.get('network_mode') or service.get('links'):
+        raise SystemExit(f'{service_name} uses forbidden network routing configuration')
+
+
+def service_environment(name):
+    environment = services.get(name, {}).get('environment', {})
+    if isinstance(environment, list):
+        environment = dict(item.split('=', 1) for item in environment if isinstance(item, str) and '=' in item)
+    if not isinstance(environment, dict):
+        raise SystemExit(f'staging {name} environment is invalid')
+    return environment
+
+
+api = services.get('api', {})
+api_env = service_environment('api')
+postgres_env = service_environment('postgres')
 
 def false_value(value):
     return str(value).lower() == 'false'
 
+expected_networks = {'backend', 'edge', 'ingress'}
+networks = config.get('networks', {})
+if set(networks) != expected_networks:
+    raise SystemExit('staging Compose networks are not the approved set')
+expected_internal = {'backend': True, 'edge': True, 'ingress': False}
+for name, network in networks.items():
+    if not isinstance(network, dict) or network.get('external'):
+        raise SystemExit('staging Compose networks must be project-local')
+    if not str(network.get('name', '')).startswith('tempo-staging-'):
+        raise SystemExit(f'staging network is not isolated: {name}')
+    if network.get('driver') not in (None, 'bridge') or network.get('driver_opts') or network.get('ipam'):
+        raise SystemExit(f'staging network has unsupported routing options: {name}')
+    if bool(network.get('internal', False)) != expected_internal[name]:
+        raise SystemExit(f'staging network isolation is invalid: {name}')
+
+expected_service_networks = {
+    'api': {'backend', 'edge'},
+    'postgres': {'backend'},
+    'redis': {'backend'},
+    'mailpit': {'backend', 'edge'},
+    'web': {'edge', 'ingress'},
+}
+for service_name, expected in expected_service_networks.items():
+    service = services.get(service_name, {})
+    service_networks = service.get('networks', [])
+    if isinstance(service_networks, dict):
+        if any(isinstance(options, dict) and options.get('aliases') for options in service_networks.values()):
+            raise SystemExit(f'{service_name} must not override staging service DNS aliases')
+        actual = set(service_networks)
+    elif isinstance(service_networks, list):
+        actual = set(service_networks)
+    else:
+        raise SystemExit(f'{service_name} network configuration is invalid')
+    if actual != expected:
+        raise SystemExit(f'{service_name} network memberships are not the approved set')
+
+if api_env.get('DB_HOST') != 'postgres':
+    raise SystemExit('staging API database host must be the isolated Postgres service')
+if api.get('extra_hosts') or api.get('links'):
+    raise SystemExit('staging API must not override or link the Postgres hostname')
+database_name = str(api_env.get('DB_NAME', ''))
+if not database_name or database_name != str(postgres_env.get('POSTGRES_DB', '')):
+    raise SystemExit('staging API and Postgres database names do not match')
+if database_name in {
+    'tempo_staging_refresh', 'tempo_staging_previous', 'tempo_staging_failed',
+    'postgres', 'template0', 'template1',
+}:
+    raise SystemExit('staging database name conflicts with a reserved maintenance or refresh database')
 if not false_value(api_env.get('AI_CATEGORIZATION_ENABLED')):
     raise SystemExit('staging AI categorization is not disabled')
 if not false_value(api_env.get('AI_CATEGORIZATION_WEB_SEARCH_ENABLED')):
@@ -803,6 +910,37 @@ verify_rollout() {
         stateful_unchanged
 }
 
+run_staging_refresh() {
+    local api_sha=$1 web_sha=$2 api_image=$3 web_image=$4
+    [[ $TARGET == staging ]] || return 0
+    [[ -f $STAGING_REFRESH_SCRIPT && ! -L $STAGING_REFRESH_SCRIPT && -O $STAGING_REFRESH_SCRIPT && -x $STAGING_REFRESH_SCRIPT ]] || \
+        die 'staging refresh script is missing or not owner-controlled and executable'
+    "$STAGING_REFRESH_SCRIPT" refresh --confirm-production-backup-refresh || {
+        log 'ERROR: staging deployment is healthy but the production-backup refresh failed' >&2
+        return 1
+    }
+    if ! write_state "$api_sha" "$web_sha" "$api_image" "$web_image" "$REFRESH_STATE_FILE"; then
+        log 'ERROR: staging database refresh succeeded but refresh state could not be recorded' >&2
+        return 1
+    fi
+    REFRESH_API_SHA=$api_sha
+    REFRESH_WEB_SHA=$web_sha
+    REFRESH_API_IMAGE=$api_image
+    REFRESH_WEB_IMAGE=$web_image
+    log 'staging PostgreSQL backup refresh completed after healthy image deployment'
+}
+
+retry_pending_staging_refresh() {
+    local api_sha=$1 web_sha=$2 api_image=$3 web_image=$4
+    [[ $TARGET == staging ]] || return 0
+    [[ $REFRESH_API_SHA == "$api_sha" && $REFRESH_WEB_SHA == "$web_sha" && \
+        $REFRESH_API_IMAGE == "$api_image" && $REFRESH_WEB_IMAGE == "$web_image" ]] && return 0
+    log 'retrying pending staging PostgreSQL backup refresh'
+    snapshot_stateful || die 'could not snapshot staging state before pending refresh retry'
+    verify_rollout "$api_image" "$web_image" || die 'staging is not healthy; pending database refresh will wait'
+    run_staging_refresh "$api_sha" "$web_sha" "$api_image" "$web_image"
+}
+
 rollout() {
     [[ $3 != 1 ]] || compose_up "$1" "$2" api || return 1
     [[ $4 != 1 ]] || compose_up "$1" "$2" web || return 1
@@ -876,6 +1014,7 @@ deploy() {
     read_state "$STATE_FILE"
     local current_api_sha=$API_SHA current_web_sha=$WEB_SHA
     local current_api_image=$API_IMAGE current_web_image=$WEB_IMAGE
+    [[ $TARGET != staging ]] || load_refresh_state "$current_api_sha" "$current_web_sha" "$current_api_image" "$current_web_image"
     local stale_api_sha='' stale_web_sha='' stale_api_image='' stale_web_image=''
     local target_api_sha='' target_web_sha='' target_api_image='' target_web_image='' target_api_tag='' target_web_tag=''
     local api_changed=0 web_changed=0 web_recreate=0
@@ -919,6 +1058,9 @@ deploy() {
     [[ $target_api_sha == "$current_api_sha" && $target_api_image == "$current_api_image" ]] || api_changed=1
     [[ $target_web_sha == "$current_web_sha" && $target_web_image == "$current_web_image" ]] || web_changed=1
     if (( api_changed == 0 && web_changed == 0 )); then
+        if [[ $TARGET == staging ]]; then
+            retry_pending_staging_refresh "$current_api_sha" "$current_web_sha" "$current_api_image" "$current_web_image" || return 1
+        fi
         log "no change: API $current_api_sha, web $current_web_sha"
         return 0
     fi
@@ -968,6 +1110,12 @@ deploy() {
             log 'ERROR: rollback did not complete after state write failure' >&2
         fi
         return 1
+    fi
+    if [[ $TARGET == staging ]]; then
+        if ! run_staging_refresh "$target_api_sha" "$target_web_sha" "$target_api_image" "$target_web_image"; then
+            cleanup_staging_tags "$target_api_tag" "$target_web_tag"
+            return 1
+        fi
     fi
     cleanup_staging_tags "$target_api_tag" "$target_web_tag"
     prune_old_image "$API_IMAGE_REPOSITORY" "$stale_api_sha" "$stale_api_image" "$target_api_image" "$target_web_image" "$api_bootstrap_prunable"
