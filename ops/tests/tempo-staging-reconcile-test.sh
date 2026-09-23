@@ -77,8 +77,20 @@ case $command in
             exit 0
         fi
         if [[ ${1:-} == pull ]]; then
-            [[ ${FAIL_PULL:-} != "$2" ]]
-            exit $?
+            [[ ${FAIL_PULL:-} != "$2" ]] || exit 1
+            printf '%s\n' "$2" >> "$PULLED_IMAGE_REFS"
+            exit 0
+        fi
+        if [[ ${1:-} == image && ${2:-} == ls ]]; then
+            for tag in "$API_NEW_TAG" "$WEB_NEW_TAG"; do
+                grep -Fxq -- "$tag" "$PULLED_IMAGE_REFS" || continue
+                grep -Fxq -- "$tag" "$REMOVED_IMAGE_REFS" && continue
+                repository=${tag%:*}; tag_name=${tag##*:}
+                if [[ $repository == *tempo-api ]]; then image=$API_NEW_IMAGE; else image=$WEB_NEW_IMAGE; fi
+                digest=${image##*@}
+                printf '%s|%s|%s\n' "$repository" "$tag_name" "$digest"
+            done
+            exit 0
         fi
         if [[ ${1:-} == inspect ]]; then
             case ${@: -1} in
@@ -160,6 +172,7 @@ EOF
     : > "$FIXTURE/runtime-api"
     : > "$FIXTURE/runtime-web"
 : > "$FIXTURE/removed-image-refs"
+: > "$FIXTURE/pulled-image-refs"
     touch "$FIXTURE/staging.compose.yml" "$FIXTURE/staging.env"
     printf 'STAGING_PUBLIC_URL=https://staging.example.invalid/tempo\n' > "$FIXTURE/staging.env"
     printf 'TEMPO_API_SHA=%s\nTEMPO_WEB_SHA=%s\nTEMPO_API_IMAGE=%s\nTEMPO_WEB_IMAGE=%s\n' \
@@ -170,6 +183,7 @@ EOF
     export DOCKER_LOG="$FIXTURE/docker.log" CURL_LOG="$FIXTURE/curl.log"
     export RUNTIME_API_FILE="$FIXTURE/runtime-api" RUNTIME_WEB_FILE="$FIXTURE/runtime-web"
     export REMOVED_IMAGE_REFS="$FIXTURE/removed-image-refs"
+    export PULLED_IMAGE_REFS="$FIXTURE/pulled-image-refs"
     export REFRESH_LOG TEMPO_DEPLOY_TEST_REFRESH_SCRIPT="$FIXTURE/staging-refresh"
     export TEMPO_DEPLOY_TEST_REFRESH_STATE_FILE="$STATE_DIR/refresh-images.env"
     export CURRENT_API_IMAGE="$API_OLD_IMAGE" CURRENT_WEB_IMAGE="$WEB_OLD_IMAGE"
@@ -328,8 +342,10 @@ run_success_test() {
     assert_contains "$(<"$DOCKER_LOG")" 'up -d --no-deps --force-recreate --wait web'
     assert_contains "$(<"$CURL_LOG")" '/tempo/api/health'
     assert_contains "$(<"$CURL_LOG")" '/tempo/'
-    assert_contains "$(<"$DOCKER_LOG")" "image rm $API_NEW_TAG"
-    assert_contains "$(<"$DOCKER_LOG")" "image rm $WEB_NEW_TAG"
+    local log
+    log=$(<"$DOCKER_LOG")
+    [[ $log != *"image rm $API_NEW_TAG"* ]] || fail 'successful rollout removed the active API staging tag'
+    [[ $log != *"image rm $WEB_NEW_TAG"* ]] || fail 'successful rollout removed the active web staging tag'
     assert_file_contains "$TEMPO_DEPLOY_STATE_FILE" "TEMPO_API_SHA=$SHA_API"
     assert_file_contains "$TEMPO_DEPLOY_STATE_FILE" "TEMPO_WEB_SHA=$SHA_WEB"
     assert_file_contains "$TEMPO_DEPLOY_STATE_FILE" "TEMPO_API_IMAGE=$API_NEW_IMAGE"
@@ -341,19 +357,18 @@ run_success_test() {
     assert_exact "$REFRESH_LOG" 'refresh --confirm-production-backup-refresh'
     assert_file_contains "$TEMPO_DEPLOY_TEST_REFRESH_STATE_FILE" "TEMPO_API_SHA=$SHA_API"
     assert_file_contains "$TEMPO_DEPLOY_TEST_REFRESH_STATE_FILE" "TEMPO_WEB_SHA=$SHA_WEB"
-    local log
-    log=$(<"$DOCKER_LOG")
     [[ $log != *' postgres'* && $log != *' redis'* && $log != *' mailpit'* ]] || fail 'stateful service was targeted'
 }
 
 run_resolution_failure_test() {
     setup_fixture resolution-failure
     write_intents
+    printf '%s\n' "$API_NEW_TAG" > "$PULLED_IMAGE_REFS"
     export FAIL_PULL="$API_NEW_TAG"
     if bash "$SCRIPT" --target staging > "$FIXTURE/output" 2>&1; then
         fail 'failed API image resolution unexpectedly succeeded'
     fi
-    assert_contains "$(<"$DOCKER_LOG")" "image rm $API_NEW_TAG"
+    assert_contains "$(<"$DOCKER_LOG")" "image rm $API_NEW_IMAGE"
 }
 
 run_noop_test() {
