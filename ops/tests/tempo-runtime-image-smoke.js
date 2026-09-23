@@ -11,6 +11,9 @@ const remainingDevDependencies = devDependencies.filter((name) => fs.existsSync(
 
 assert.deepEqual(remainingDevDependencies, [], `Development dependencies remain in runtime image: ${remainingDevDependencies.join(', ')}`);
 
+const bundledEnvFiles = fs.readdirSync('/usr/src/app').filter((name) => name.startsWith('.env'));
+assert.deepEqual(bundledEnvFiles, [], `Runtime image contains dotenv files: ${bundledEnvFiles.join(', ')}`);
+
 const manifest = require('/usr/src/app/package.json');
 assert.deepEqual(Object.keys(manifest.devDependencies ?? {}), [], 'Runtime package.json still declares devDependencies');
 
@@ -56,6 +59,7 @@ for (const dependency of [
 	'@nestjs/typeorm',
 	'@nestjs/terminus',
 	'@nestjs-modules/mailer',
+	'@css-inline/css-inline',
 	'typeorm',
 	'pg',
 	'ioredis',

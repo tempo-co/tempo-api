@@ -122,7 +122,7 @@ jobs:
                   file: coverage/lcov.info
 
     runtime-image-test:
-        name: Runtime image dependencies
+        name: Runtime image
         runs-on: ubuntu-latest
         if: github.event_name == 'pull_request'
         steps:
@@ -131,8 +131,8 @@ jobs:
               with:
                   persist-credentials: false
 
-            - name: Build and smoke-test runtime dependency stage
-              run: docker build --target runtime-dependencies --tag tempo-api-runtime-dependencies:ci .
+            - name: Build and smoke-test the complete runtime image
+              run: docker build --tag tempo-api-runtime:ci .
 
     publish-image:
         name: Publish Docker image to GHCR
