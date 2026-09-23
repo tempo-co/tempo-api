@@ -1,6 +1,8 @@
 import argon2 from 'argon2';
 import {DataSource} from 'typeorm';
 
+import {VERIFIED_ACCOUNT_EMAIL, VERIFIED_ACCOUNT_NAME} from '../../scripts/seed-data/seed.constants';
+
 const REFRESH_DATABASE = 'tempo_staging_refresh';
 
 export function assertStagingDatabaseTarget(databaseName: string | undefined, host: string | undefined): void {
@@ -19,11 +21,13 @@ export async function resetSingleStagingAccountPassword(queryable: Pick<DataSour
 	if (accounts.length !== 1) throw new Error('expected exactly one staging account');
 
 	const passwordHash = await argon2.hash(password);
-	const updated = (await queryable.query(
-		'UPDATE accounts SET password = $1, "updatedAt" = NOW() WHERE id = $2 RETURNING id',
-		[passwordHash, accounts[0].id],
-	)) as Array<{id: string}>;
-	if (updated.length !== 1) throw new Error('password update did not affect exactly one staging account');
+	const [updated, affectedRows] = (await queryable.query(
+		'UPDATE accounts SET password = $1, name = $2, email = $3, "updatedAt" = NOW() WHERE id = $4 RETURNING id',
+		[passwordHash, VERIFIED_ACCOUNT_NAME, VERIFIED_ACCOUNT_EMAIL, accounts[0].id],
+	)) as [Array<{id: string}>, number];
+	if (updated.length !== 1 || affectedRows !== 1) {
+		throw new Error('password update did not affect exactly one staging account');
+	}
 }
 
 async function readStagingPassword() {

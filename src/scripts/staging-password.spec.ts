@@ -1,5 +1,6 @@
 import argon2 from 'argon2';
 
+import {VERIFIED_ACCOUNT_EMAIL, VERIFIED_ACCOUNT_NAME} from '../../scripts/seed-data/seed.constants';
 import {assertStagingDatabaseTarget, resetSingleStagingAccountPassword} from './set-staging-password';
 
 interface QueryCall {
@@ -20,7 +21,10 @@ function fakeQueryable(accountIds: string[], updateRowCount = 1) {
 		calls.push({sql, values});
 		if (sql === 'SELECT id FROM accounts') return accountIds.map((id) => ({id}));
 		if (sql.startsWith('UPDATE accounts SET password = $1')) {
-			return Array.from({length: updateRowCount}, (_, index) => ({id: `updated-account-${index}`}));
+			return [
+				Array.from({length: updateRowCount}, (_, index) => ({id: `updated-account-${index}`})),
+				updateRowCount,
+			];
 		}
 		throw new Error('unexpected SQL in staging password test');
 	});
@@ -38,7 +42,7 @@ describe('staging account password reset', () => {
 		);
 	});
 
-	it('updates the sole account password with an Argon2 hash without changing its identity', async () => {
+	it('resets the password and replaces the sole account identity with the generic staging identity', async () => {
 		const password = 'Synthetic-stage-passphrase-42';
 		const accountId = 'synthetic-account-id';
 		const {queryable, calls} = fakeQueryable([accountId]);
@@ -47,9 +51,12 @@ describe('staging account password reset', () => {
 
 		expect(calls).toHaveLength(2);
 		expect(calls[0].sql).toBe('SELECT id FROM accounts');
-		expect(calls[1].sql).toMatch(/UPDATE accounts SET password = \$1, "updatedAt" = NOW\(\) WHERE id = \$2/);
-		expect(calls[1].values?.[1]).toBe(accountId);
-		expect(calls[1].sql).not.toMatch(/name|email/);
+		expect(calls[1].sql).toContain(
+			'UPDATE accounts SET password = $1, name = $2, email = $3, "updatedAt" = NOW() WHERE id = $4',
+		);
+		expect(calls[1].values?.[1]).toBe(VERIFIED_ACCOUNT_NAME);
+		expect(calls[1].values?.[2]).toBe(VERIFIED_ACCOUNT_EMAIL);
+		expect(calls[1].values?.[3]).toBe(accountId);
 		expect(await argon2.verify(calls[1].values?.[0] as string, password)).toBe(true);
 	});
 
