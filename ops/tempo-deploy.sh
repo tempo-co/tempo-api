@@ -35,8 +35,6 @@ API_SHA=''
 WEB_SHA=''
 API_IMAGE=''
 WEB_IMAGE=''
-CANDIDATE_API_TAG=''
-CANDIDATE_WEB_TAG=''
 REFRESH_API_SHA=''
 REFRESH_WEB_SHA=''
 REFRESH_API_IMAGE=''
@@ -316,6 +314,12 @@ write_state() {
     }
 }
 
+restore_previous_rollback_state() {
+    local api_sha=$1 web_sha=$2 api_image=$3 web_image=$4
+    [[ -n $api_sha ]] || return 0
+    write_state "$api_sha" "$web_sha" "$api_image" "$web_image" "$ROLLBACK_FILE"
+}
+
 load_refresh_state() {
     local current_api_sha=$1 current_web_sha=$2 current_api_image=$3 current_web_image=$4
     [[ $TARGET == staging ]] || return 0
@@ -578,45 +582,42 @@ resolve_production_image() {
 }
 
 cleanup_failed_staging_resolution() {
-    local repository=$1 target_sha=$2 target_image=$3 target_tag=$4 current_image=$5
-    if [[ $TARGET == staging && $target_tag == "$repository":staging-* ]]; then
-        remove_image_ref "$target_tag"
-    fi
-    cleanup_candidate_image "$repository" "$target_sha" "$target_image" "$current_image" ''
+    local repository=$1 target_sha=$2 target_image=$3 target_tag=$4 current_image=$5 rollback_image=$6
+    cleanup_deployment_images_for_repository "$repository" "$current_image" "$rollback_image"
     return 1
 }
 
 resolve_staging_image() {
-    local repository=$1 target_sha=$2 target_image=$3 target_tag=$4 current_sha=$5 current_image=$6
+    local repository=$1 target_sha=$2 target_image=$3 target_tag=$4 current_sha=$5 current_image=$6 rollback_image=$7
     if [[ $target_sha == "$current_sha" && $target_image == "$current_image" ]]; then
         printf '%s\n' "$current_image"
         return 0
     fi
     [[ -n $target_tag ]] || return 1
     if ! docker_cli pull "$target_tag" >/dev/null; then
-        cleanup_failed_staging_resolution "$repository" "$target_sha" "$target_image" "$target_tag" "$current_image"
+        cleanup_failed_staging_resolution "$repository" "$target_sha" "$target_image" "$target_tag" "$current_image" "$rollback_image"
         return 1
     fi
     local tag_repo_digests
     if ! tag_repo_digests=$(docker_cli image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$target_tag"); then
-        cleanup_failed_staging_resolution "$repository" "$target_sha" "$target_image" "$target_tag" "$current_image"
+        cleanup_failed_staging_resolution "$repository" "$target_sha" "$target_image" "$target_tag" "$current_image" "$rollback_image"
         return 1
     fi
     if ! printf '%s\n' "$tag_repo_digests" | grep -Fx -- "$target_image" >/dev/null; then
-        cleanup_failed_staging_resolution "$repository" "$target_sha" "$target_image" "$target_tag" "$current_image"
+        cleanup_failed_staging_resolution "$repository" "$target_sha" "$target_image" "$target_tag" "$current_image" "$rollback_image"
         return 1
     fi
     if ! docker_cli pull "$target_image" >/dev/null; then
-        cleanup_failed_staging_resolution "$repository" "$target_sha" "$target_image" "$target_tag" "$current_image"
+        cleanup_failed_staging_resolution "$repository" "$target_sha" "$target_image" "$target_tag" "$current_image" "$rollback_image"
         return 1
     fi
     local repo_digests
     if ! repo_digests=$(docker_cli image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$target_image"); then
-        cleanup_failed_staging_resolution "$repository" "$target_sha" "$target_image" "$target_tag" "$current_image"
+        cleanup_failed_staging_resolution "$repository" "$target_sha" "$target_image" "$target_tag" "$current_image" "$rollback_image"
         return 1
     fi
     if ! printf '%s\n' "$repo_digests" | grep -Fx -- "$target_image" >/dev/null; then
-        cleanup_failed_staging_resolution "$repository" "$target_sha" "$target_image" "$target_tag" "$current_image"
+        cleanup_failed_staging_resolution "$repository" "$target_sha" "$target_image" "$target_tag" "$current_image" "$rollback_image"
         return 1
     fi
     printf '%s\n' "$target_image"
@@ -958,51 +959,151 @@ remove_image_ref() {
         if docker_cli image inspect "$reference" >/dev/null 2>&1; then
             CLEANUP_FAILURE=1
             log "image reference remains after cleanup: $reference" >&2
+            return 1
         fi
+        return 0
+    fi
+    if ! docker_cli image inspect "$reference" >/dev/null 2>&1; then
         return 0
     fi
     CLEANUP_FAILURE=1
     log "could not remove old image $reference: ${output:-unknown error}" >&2
-}
-
-cleanup_candidate_image() {
-    local repository=$1 sha=$2 image=$3 protected_one=$4 protected_two=$5
-    [[ $sha =~ ^[0-9a-f]{40}$ && $image == "$repository"@sha256:* ]] || return 0
-    [[ $image != "$protected_one" && $image != "$protected_two" ]] || return 0
-    remove_image_ref "$repository:$sha"
-    remove_image_ref "$image"
+    return 1
 }
 
 cleanup_candidate_images() {
-    local api_changed=$1 web_changed=$2 api_sha=$3 api_image=$4 web_sha=$5 web_image=$6
-    local current_api_image=$7 current_web_image=$8 stale_api_image=$9 stale_web_image=${10}
-    [[ $api_changed != 1 ]] || cleanup_candidate_image \
-        "$API_IMAGE_REPOSITORY" "$api_sha" "$api_image" "$current_api_image" "$stale_api_image"
-    [[ $web_changed != 1 ]] || cleanup_candidate_image \
-        "$WEB_IMAGE_REPOSITORY" "$web_sha" "$web_image" "$current_web_image" "$stale_web_image"
-    cleanup_staging_tags "$CANDIDATE_API_TAG" "$CANDIDATE_WEB_TAG"
+    cleanup_deployment_image_refs "$7" "$8" "$9" "${10}"
 }
 
-cleanup_staging_tags() {
-    local api_tag=$1 web_tag=$2
-    [[ $TARGET == staging ]] || return 0
-    [[ -z $api_tag || $api_tag == "$API_IMAGE_REPOSITORY":staging-* ]] || return 0
-    [[ -z $web_tag || $web_tag == "$WEB_IMAGE_REPOSITORY":staging-* ]] || return 0
-    [[ -z $api_tag ]] || remove_image_ref "$api_tag"
-    [[ -z $web_tag ]] || remove_image_ref "$web_tag"
-}
+cleanup_deployment_images_for_repository() {
+    local repository=$1 protected_one=$2 protected_two=$3
+    [[ $TARGET == staging || $TARGET == production ]] || return 0
+    [[ $repository == "$API_IMAGE_REPOSITORY" || $repository == "$WEB_IMAGE_REPOSITORY" ]] || return 0
 
-prune_old_image() {
-    local repository=$1 sha=$2 image=$3 protected_one=$4 protected_two=$5 bootstrap_prunable=$6
-    [[ $image != "$protected_one" && $image != "$protected_two" ]] || return 0
-    if [[ $image == "$repository"@sha256:* ]]; then
-        [[ $sha != bootstrap || $bootstrap_prunable == 1 ]] || return 0
-        remove_image_ref "$repository:$sha"
-        remove_image_ref "$image"
-    elif [[ $TARGET == production && ($image == "$repository":* || ($repository == "$WEB_IMAGE_REPOSITORY" && $image == tempo-api-production-web:latest)) ]]; then
-        [[ $sha != bootstrap || $bootstrap_prunable == 1 ]] || return 0
-        remove_image_ref "$image"
+    local protected_image image_id container_ids container_id image_refs listed_repository listed_tag listed_digest image_ref
+    local repo_digests digest_ref digest_image_id tag
+    local -A protected_ids=() excluded_ids=() seen_refs=() seen_digests=()
+
+    for protected_image in "$protected_one" "$protected_two"; do
+        [[ -n $protected_image ]] || continue
+        if ! image_id=$(docker_cli image inspect --format '{{.Id}}' "$protected_image" 2>/dev/null) || [[ -z $image_id ]]; then
+            CLEANUP_FAILURE=1
+            log "could not inspect protected deployment image $protected_image; skipping $repository cleanup" >&2
+            return 0
+        fi
+        protected_ids[$image_id]=1
+    done
+
+    if ! container_ids=$(docker_cli ps --all --quiet --no-trunc 2>/dev/null); then
+        CLEANUP_FAILURE=1
+        log "could not enumerate deployment containers; skipping $repository cleanup" >&2
+        return 0
     fi
+    while IFS= read -r container_id; do
+        [[ -n $container_id ]] || continue
+        if ! image_id=$(docker_cli inspect --format '{{.Image}}' "$container_id" 2>/dev/null) || [[ -z $image_id ]]; then
+            CLEANUP_FAILURE=1
+            log "could not inspect deployment container $container_id; skipping $repository cleanup" >&2
+            return 0
+        fi
+        protected_ids[$image_id]=1
+    done <<< "$container_ids"
+
+    if ! image_refs=$(docker_cli image ls --all --digests --no-trunc \
+        --format '{{.Repository}}|{{.Tag}}|{{.Digest}}' 2>/dev/null); then
+        CLEANUP_FAILURE=1
+        log "could not enumerate deployment image refs; skipping $repository cleanup" >&2
+        return 0
+    fi
+    while IFS='|' read -r listed_repository listed_tag listed_digest; do
+        [[ $listed_repository == "$repository" && $listed_tag != '<none>' ]] || continue
+        case $TARGET in
+            staging)
+                [[ $listed_tag =~ ^staging-[0-9]+-[0-9a-f]{40}$ ]] && continue
+                ;;
+            production)
+                [[ $listed_tag =~ ^[0-9a-f]{40}$ || $listed_tag == latest ]] && continue
+                ;;
+        esac
+        if ! image_id=$(docker_cli image inspect --format '{{.Id}}' "$repository:$listed_tag" 2>/dev/null) || [[ -z $image_id ]]; then
+            CLEANUP_FAILURE=1
+            log "could not inspect unmanaged image tag $repository:$listed_tag; skipping cleanup" >&2
+            return 0
+        fi
+        excluded_ids[$image_id]=1
+    done <<< "$image_refs"
+
+    while IFS='|' read -r listed_repository listed_tag listed_digest; do
+        if [[ $listed_repository == "$repository" ]]; then
+            if [[ $listed_tag == '<none>' ]]; then
+                [[ $listed_digest =~ ^sha256:[0-9a-f]{64}$ ]] || continue
+                image_ref="$repository@$listed_digest"
+            else
+                tag=$listed_tag
+                case $TARGET in
+                    staging)
+                        [[ $tag =~ ^staging-[0-9]+-[0-9a-f]{40}$ ]] || continue
+                        ;;
+                    production)
+                        [[ $tag =~ ^[0-9a-f]{40}$ || $tag == latest ]] || continue
+                        ;;
+                esac
+                image_ref="$repository:$tag"
+            fi
+        elif [[ $TARGET == production && $repository == "$WEB_IMAGE_REPOSITORY" &&
+            $listed_repository == tempo-api-production-web && $listed_tag == latest ]]; then
+            image_ref=tempo-api-production-web:latest
+        else
+            continue
+        fi
+        [[ -n $image_ref && -z ${seen_refs[$image_ref]+x} ]] || continue
+        seen_refs[$image_ref]=1
+
+        if ! image_id=$(docker_cli image inspect --format '{{.Id}}' "$image_ref" 2>/dev/null) || [[ -z $image_id ]]; then
+            CLEANUP_FAILURE=1
+            log "could not inspect stale deployment image ref $image_ref" >&2
+            continue
+        fi
+        [[ -z ${excluded_ids[$image_id]+x} ]] || continue
+        [[ -z ${protected_ids[$image_id]+x} ]] || continue
+
+        if [[ $listed_tag != '<none>' ]]; then
+            if ! repo_digests=$(docker_cli image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$image_ref" 2>/dev/null); then
+                CLEANUP_FAILURE=1
+                log "could not inspect repository digests for stale deployment image $image_ref" >&2
+                continue
+            fi
+        else
+            repo_digests=$image_ref
+        fi
+        if ! remove_image_ref "$image_ref"; then
+            continue
+        fi
+
+        while IFS= read -r digest_ref; do
+            [[ $digest_ref == "$repository"@sha256:* ]] || continue
+            [[ ${digest_ref#*@sha256:} =~ ^[0-9a-f]{64}$ ]] || continue
+            [[ -z ${seen_digests[$digest_ref]+x} ]] || continue
+            seen_digests[$digest_ref]=1
+            if ! docker_cli image inspect --format '{{.Id}}' "$digest_ref" >/dev/null 2>&1; then
+                continue
+            fi
+            digest_image_id=$(docker_cli image inspect --format '{{.Id}}' "$digest_ref" 2>/dev/null) || continue
+            if [[ $digest_image_id != "$image_id" || -n ${protected_ids[$digest_image_id]+x} ]]; then
+                CLEANUP_FAILURE=1
+                log "skipping image digest with a mismatched or protected ID: $digest_ref" >&2
+                continue
+            fi
+            remove_image_ref "$digest_ref" || true
+        done <<< "$repo_digests"
+    done <<< "$image_refs"
+}
+
+cleanup_deployment_image_refs() {
+    [[ $TARGET == staging || $TARGET == production ]] || return 0
+    local current_api_image=$1 current_web_image=$2 rollback_api_image=$3 rollback_web_image=$4
+    cleanup_deployment_images_for_repository "$API_IMAGE_REPOSITORY" "$current_api_image" "$rollback_api_image"
+    cleanup_deployment_images_for_repository "$WEB_IMAGE_REPOSITORY" "$current_web_image" "$rollback_web_image"
 }
 
 deploy() {
@@ -1017,10 +1118,7 @@ deploy() {
     [[ $TARGET != staging ]] || load_refresh_state "$current_api_sha" "$current_web_sha" "$current_api_image" "$current_web_image"
     local stale_api_sha='' stale_web_sha='' stale_api_image='' stale_web_image=''
     local target_api_sha='' target_web_sha='' target_api_image='' target_web_image='' target_api_tag='' target_web_tag=''
-    local api_changed=0 web_changed=0 web_recreate=0
-    local api_bootstrap_prunable=0 web_bootstrap_prunable=0 staging_env_updated=0
-    CANDIDATE_API_TAG=''
-    CANDIDATE_WEB_TAG=''
+    local api_changed=0 web_changed=0 web_recreate=0 staging_env_updated=0
     CLEANUP_FAILURE=0
 
     if [[ -f $ROLLBACK_FILE ]]; then
@@ -1045,10 +1143,8 @@ deploy() {
         [[ ${#api_values[@]} -eq 3 && ${#web_values[@]} -eq 3 ]] || die 'staging intent resolution returned an invalid shape'
         target_api_sha=${api_values[0]}; target_api_image=${api_values[1]}; target_api_tag=${api_values[2]}
         target_web_sha=${web_values[0]}; target_web_image=${web_values[1]}; target_web_tag=${web_values[2]}
-        CANDIDATE_API_TAG=$target_api_tag
-        CANDIDATE_WEB_TAG=$target_web_tag
-        target_api_image=$(resolve_staging_image "$API_IMAGE_REPOSITORY" "$target_api_sha" "$target_api_image" "$target_api_tag" "$current_api_sha" "$current_api_image") || die 'could not prepare API staging image'
-        target_web_image=$(resolve_staging_image "$WEB_IMAGE_REPOSITORY" "$target_web_sha" "$target_web_image" "$target_web_tag" "$current_web_sha" "$current_web_image") || {
+        target_api_image=$(resolve_staging_image "$API_IMAGE_REPOSITORY" "$target_api_sha" "$target_api_image" "$target_api_tag" "$current_api_sha" "$current_api_image" "$stale_api_image") || die 'could not prepare API staging image'
+        target_web_image=$(resolve_staging_image "$WEB_IMAGE_REPOSITORY" "$target_web_sha" "$target_web_image" "$target_web_tag" "$current_web_sha" "$current_web_image" "$stale_web_image") || {
             cleanup_candidate_images 1 0 "$target_api_sha" "$target_api_image" "$target_web_sha" '' \
                 "$current_api_image" "$current_web_image" "$stale_api_image" "$stale_web_image"
             die 'could not prepare web staging image'
@@ -1061,11 +1157,13 @@ deploy() {
         if [[ $TARGET == staging ]]; then
             retry_pending_staging_refresh "$current_api_sha" "$current_web_sha" "$current_api_image" "$current_web_image" || return 1
         fi
+        cleanup_deployment_image_refs "$current_api_image" "$current_web_image" "$stale_api_image" "$stale_web_image"
+        if (( CLEANUP_FAILURE )); then
+            log 'WARNING: image cleanup is incomplete; the deployment poller will retry' >&2
+        fi
         log "no change: API $current_api_sha, web $current_web_sha"
         return 0
     fi
-    if [[ $current_api_sha != bootstrap ]]; then api_bootstrap_prunable=1; fi
-    if [[ $current_web_sha != bootstrap ]]; then web_bootstrap_prunable=1; fi
     web_recreate=$((api_changed || web_changed))
     log "new target refs: API $target_api_sha, web $target_web_sha"
 
@@ -1074,7 +1172,7 @@ deploy() {
             "$current_api_image" "$current_web_image" "$stale_api_image" "$stale_web_image"
         die 'could not snapshot target stateful containers'
     fi
-    if ! cp "$STATE_FILE" "$ROLLBACK_FILE" || ! chmod 600 "$ROLLBACK_FILE"; then
+    if ! write_state "$current_api_sha" "$current_web_sha" "$current_api_image" "$current_web_image" "$ROLLBACK_FILE"; then
         cleanup_candidate_images "$api_changed" "$web_changed" "$target_api_sha" "$target_api_image" "$target_web_sha" "$target_web_image" \
             "$current_api_image" "$current_web_image" "$stale_api_image" "$stale_web_image"
         die 'could not save rollback state'
@@ -1082,6 +1180,9 @@ deploy() {
 
     if ! rollout "$target_api_image" "$target_web_image" "$api_changed" "$web_recreate"; then
         if rollback "$current_api_image" "$current_web_image" "$api_changed" "$web_recreate"; then
+            if ! restore_previous_rollback_state "$stale_api_sha" "$stale_web_sha" "$stale_api_image" "$stale_web_image"; then
+                log 'ERROR: could not restore the previous rollback image state' >&2
+            fi
             cleanup_candidate_images "$api_changed" "$web_changed" "$target_api_sha" "$target_api_image" "$target_web_sha" "$target_web_image" \
                 "$current_api_image" "$current_web_image" "$stale_api_image" "$stale_web_image"
         else
@@ -1092,6 +1193,9 @@ deploy() {
     if [[ $TARGET == staging ]]; then
         if ! persist_staging_images "$target_api_image" "$target_web_image"; then
             if rollback "$current_api_image" "$current_web_image" "$api_changed" "$web_recreate"; then
+                if ! restore_previous_rollback_state "$stale_api_sha" "$stale_web_sha" "$stale_api_image" "$stale_web_image"; then
+                    log 'ERROR: could not restore the previous rollback image state' >&2
+                fi
                 cleanup_candidate_images "$api_changed" "$web_changed" "$target_api_sha" "$target_api_image" "$target_web_sha" "$target_web_image" \
                     "$current_api_image" "$current_web_image" "$stale_api_image" "$stale_web_image"
             fi
@@ -1104,6 +1208,9 @@ deploy() {
             persist_staging_images "$current_api_image" "$current_web_image" || log 'ERROR: could not restore staging image environment'
         fi
         if rollback "$current_api_image" "$current_web_image" "$api_changed" "$web_recreate"; then
+            if ! restore_previous_rollback_state "$stale_api_sha" "$stale_web_sha" "$stale_api_image" "$stale_web_image"; then
+                log 'ERROR: could not restore the previous rollback image state' >&2
+            fi
             cleanup_candidate_images "$api_changed" "$web_changed" "$target_api_sha" "$target_api_image" "$target_web_sha" "$target_web_image" \
                 "$current_api_image" "$current_web_image" "$stale_api_image" "$stale_web_image"
         else
@@ -1113,15 +1220,16 @@ deploy() {
     fi
     if [[ $TARGET == staging ]]; then
         if ! run_staging_refresh "$target_api_sha" "$target_web_sha" "$target_api_image" "$target_web_image"; then
-            cleanup_staging_tags "$target_api_tag" "$target_web_tag"
+            cleanup_deployment_image_refs "$target_api_image" "$target_web_image" "$current_api_image" "$current_web_image"
+            if (( CLEANUP_FAILURE )); then
+                log 'WARNING: image cleanup is incomplete; the deployment poller will retry' >&2
+            fi
             return 1
         fi
     fi
-    cleanup_staging_tags "$target_api_tag" "$target_web_tag"
-    prune_old_image "$API_IMAGE_REPOSITORY" "$stale_api_sha" "$stale_api_image" "$target_api_image" "$target_web_image" "$api_bootstrap_prunable"
-    prune_old_image "$WEB_IMAGE_REPOSITORY" "$stale_web_sha" "$stale_web_image" "$target_api_image" "$target_web_image" "$web_bootstrap_prunable"
+    cleanup_deployment_image_refs "$target_api_image" "$target_web_image" "$current_api_image" "$current_web_image"
     if (( CLEANUP_FAILURE )); then
-        log 'WARNING: one or more candidate image references need manual cleanup' >&2
+        log 'WARNING: image cleanup is incomplete; the deployment poller will retry' >&2
     fi
     log "deployed API $target_api_sha and web $target_web_sha"
 }
