@@ -60,6 +60,88 @@ describe('boolean environment configuration', () => {
 	});
 });
 
+describe('SMTP configuration', () => {
+	it('keeps Mailpit usable without SMTP credentials', () => {
+		const parsed = configSchema.parse(baseConfig);
+
+		expect(parsed.EMAIL_USERNAME).toBeUndefined();
+		expect(parsed.EMAIL_PASSWORD).toBeUndefined();
+		expect(parsed.EMAIL_REQUIRE_TLS).toBe(false);
+		expect(parsed.EMAIL_FROM).toBeUndefined();
+	});
+
+	it('accepts authenticated Gmail SMTP with required STARTTLS and a configured sender', () => {
+		const parsed = configSchema.parse({
+			...baseConfig,
+			EMAIL_HOST: 'smtp.gmail.com',
+			EMAIL_PORT: '587',
+			EMAIL_SECURE: 'false',
+			EMAIL_REQUIRE_TLS: 'true',
+			EMAIL_USERNAME: 'mailer@example.test',
+			EMAIL_PASSWORD: 'synthetic-app-password',
+			EMAIL_FROM: 'Tempo <mailer@example.test>',
+		});
+
+		expect(parsed.EMAIL_REQUIRE_TLS).toBe(true);
+		expect(parsed.EMAIL_USERNAME).toBe('mailer@example.test');
+		expect(parsed.EMAIL_PASSWORD).toBe('synthetic-app-password');
+		expect(parsed.EMAIL_FROM).toBe('Tempo <mailer@example.test>');
+	});
+
+	it.each([
+		[
+			'missing SMTP credentials',
+			{
+				EMAIL_HOST: 'smtp.gmail.com',
+				EMAIL_PORT: '587',
+				EMAIL_SECURE: 'false',
+				EMAIL_REQUIRE_TLS: 'true',
+				EMAIL_FROM: 'Tempo <mailer@example.test>',
+			},
+		],
+		[
+			'missing required STARTTLS',
+			{
+				EMAIL_HOST: 'smtp.gmail.com',
+				EMAIL_PORT: '587',
+				EMAIL_SECURE: 'false',
+				EMAIL_USERNAME: 'mailer@example.test',
+				EMAIL_PASSWORD: 'synthetic-app-password',
+				EMAIL_FROM: 'Tempo <mailer@example.test>',
+			},
+		],
+		[
+			'using implicit TLS on a different port',
+			{
+				EMAIL_HOST: 'smtp.gmail.com',
+				EMAIL_PORT: '465',
+				EMAIL_SECURE: 'true',
+				EMAIL_REQUIRE_TLS: 'true',
+				EMAIL_USERNAME: 'mailer@example.test',
+				EMAIL_PASSWORD: 'synthetic-app-password',
+				EMAIL_FROM: 'Tempo <mailer@example.test>',
+			},
+		],
+		[
+			'missing a configured sender',
+			{
+				EMAIL_HOST: 'smtp.gmail.com',
+				EMAIL_PORT: '587',
+				EMAIL_SECURE: 'false',
+				EMAIL_REQUIRE_TLS: 'true',
+				EMAIL_USERNAME: 'mailer@example.test',
+				EMAIL_PASSWORD: 'synthetic-app-password',
+			},
+		],
+	])('rejects Gmail SMTP when %s', (_description, emailConfig) => {
+		expect(configSchema.safeParse({...baseConfig, ...emailConfig}).success).toBe(false);
+	});
+
+	it('rejects incomplete credentials for any SMTP host', () => {
+		expect(configSchema.safeParse({...baseConfig, EMAIL_USERNAME: 'mailer@example.test'}).success).toBe(false);
+	});
+});
+
 describe('session cookie configuration', () => {
 	it('defaults to the production cookie contract', () => {
 		const parsed = configSchema.parse(baseConfig);

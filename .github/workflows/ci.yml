@@ -84,6 +84,7 @@ jobs:
             - name: Test production and staging deployment contracts
               run: |
                   bash ops/tests/tempo-production-deploy-test.sh
+                  bash ops/tests/tempo-production-compose-test.sh
                   bash ops/tests/tempo-staging-poller-test.sh
                   bash ops/tests/tempo-staging-reconcile-test.sh
                   bash ops/tests/tempo-staging-compose-test.sh
