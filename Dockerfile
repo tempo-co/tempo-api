@@ -21,7 +21,7 @@ RUN apk add --no-cache curl libstdc++ \
 WORKDIR /usr/src/app
 
 COPY --chown=node:node package*.json ./
-RUN npm ci && apk del .build-deps
+RUN npm ci --omit=dev && apk del .build-deps
 
 COPY --from=builder --chown=node:node /usr/src/app/dist ./dist
 
