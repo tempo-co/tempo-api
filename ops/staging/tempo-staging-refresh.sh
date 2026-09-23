@@ -12,7 +12,8 @@ readonly DEFAULT_ENV_FILE="$SCRIPT_DIR/staging.env"
 readonly DEFAULT_STATE_DIR="${HOME}/.local/state/tempo-staging"
 readonly DEFAULT_DOCKER_SOCKET="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/tempo-staging/docker.sock"
 readonly DEFAULT_DOCKER_CONFIG="$HOME/.config/tempo-staging/docker-config"
-readonly PRODUCTION_POSTGRES_CONTAINER="${TEMPO_PRODUCTION_POSTGRES_CONTAINER:-tempo-api-production-postgres-1}"
+readonly DEFAULT_BACKUP_DIR="$HOME/backups/tempo"
+readonly DEFAULT_STAGING_PASSWORD_FILE="$HOME/.config/tempo-staging/staging-login-password"
 readonly STAGING_POSTGRES_VOLUME='tempo-staging-postgres-data'
 readonly REFRESH_DATABASE='tempo_staging_refresh'
 readonly PREVIOUS_DATABASE='tempo_staging_previous'
@@ -21,6 +22,8 @@ readonly FAILED_DATABASE='tempo_staging_failed'
 COMPOSE_FILE=${TEMPO_STAGING_REFRESH_COMPOSE_FILE:-$DEFAULT_COMPOSE_FILE}
 ENV_FILE=${TEMPO_STAGING_REFRESH_ENV_FILE:-$DEFAULT_ENV_FILE}
 STATE_DIR=${TEMPO_STAGING_REFRESH_STATE_DIR:-$DEFAULT_STATE_DIR}
+BACKUP_DIR=${TEMPO_STAGING_REFRESH_BACKUP_DIR:-$DEFAULT_BACKUP_DIR}
+STAGING_PASSWORD_FILE=${TEMPO_STAGING_LOGIN_PASSWORD_FILE:-$DEFAULT_STAGING_PASSWORD_FILE}
 DOCKER_HOST_VALUE=${TEMPO_STAGING_REFRESH_DOCKER_HOST:-unix://$DEFAULT_DOCKER_SOCKET}
 DOCKER_CONFIG_VALUE=${TEMPO_STAGING_REFRESH_DOCKER_CONFIG:-$DEFAULT_DOCKER_CONFIG}
 STAGING_WEB_URL=${TEMPO_STAGING_REFRESH_WEB_URL:-http://127.0.0.1:8119/tempo/}
@@ -122,6 +125,11 @@ load_staging_database_config() {
         fail 'staging database values are incomplete'
     validate_identifier "$STAGING_DB_USERNAME" STAGING_DB_USERNAME
     validate_identifier "$STAGING_DB_NAME" STAGING_DB_NAME
+    if [[ $STAGING_DB_NAME == "$REFRESH_DATABASE" || $STAGING_DB_NAME == "$PREVIOUS_DATABASE" || $STAGING_DB_NAME == "$FAILED_DATABASE" ||
+          $STAGING_DB_NAME == postgres || $STAGING_DB_NAME == template0 || $STAGING_DB_NAME == template1 ]]; then
+        fail 'staging database name conflicts with a reserved maintenance, refresh, or rollback database'
+        return 1
+    fi
 }
 
 validate_staging_origin() {
@@ -169,6 +177,8 @@ check_paths() {
     if [[ ${TEMPO_STAGING_REFRESH_TEST_MODE:-0} != 1 ]]; then
         [[ $COMPOSE_FILE == "$DEFAULT_COMPOSE_FILE" ]] || fail 'staging Compose override is only allowed in test mode'
         [[ $ENV_FILE == "$DEFAULT_ENV_FILE" ]] || fail 'staging env override is only allowed in test mode'
+        [[ $BACKUP_DIR == "$DEFAULT_BACKUP_DIR" ]] || fail 'production backup directory override is only allowed in test mode'
+        [[ $STAGING_PASSWORD_FILE == "$DEFAULT_STAGING_PASSWORD_FILE" ]] || fail 'staging password file override is only allowed in test mode'
     fi
     mkdir -p "$STATE_DIR"
     chmod 700 "$STATE_DIR"
@@ -186,13 +196,14 @@ assert_staging_policy() {
         rm -f -- "$rendered_file"
         return "$status"
     fi
-    python3 - "$rendered_file" <<'PY' || status=$?
+    python3 - "$rendered_file" "$STAGING_DB_NAME" <<'PY' || status=$?
 import json
 import re
 import sys
 from pathlib import Path
 
 config = json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
+expected_database = sys.argv[2]
 if config.get('name') != 'tempo-staging':
     raise SystemExit('staging Compose project name is not fixed')
 services = config.get('services', {})
@@ -208,6 +219,12 @@ if isinstance(environment, list):
 def value(name):
     return str(environment.get(name, '')).lower()
 
+if value('DB_HOST') != 'postgres':
+    raise SystemExit('staging API database host must be the isolated Postgres service')
+if api.get('extra_hosts') or api.get('links'):
+    raise SystemExit('staging API must not override or link the Postgres hostname')
+if str(environment.get('DB_NAME', '')) != expected_database:
+    raise SystemExit('staging API database name does not match the configured staging database')
 if value('AI_CATEGORIZATION_ENABLED') != 'false':
     raise SystemExit('staging AI categorization must be disabled')
 if value('AI_CATEGORIZATION_WEB_SEARCH_ENABLED') != 'false':
@@ -245,12 +262,40 @@ volumes = config.get('volumes', {})
 postgres_volume = volumes.get('tempo_staging_postgres_data', {})
 if not str(postgres_volume.get('name', '')).startswith('tempo-staging-'):
     raise SystemExit('staging Postgres volume is not isolated')
+expected_networks = {'backend', 'edge', 'ingress'}
 networks = config.get('networks', {})
-for network_name in ('backend', 'edge', 'ingress'):
-    if not str(networks.get(network_name, {}).get('name', '')).startswith('tempo-staging-'):
-        raise SystemExit(f'staging network is not isolated: {network_name}')
-if networks.get('ingress', {}).get('internal'):
-    raise SystemExit('staging ingress network must remain externally publishable')
+if set(networks) != expected_networks:
+    raise SystemExit('staging Compose networks are not the approved set')
+expected_internal = {'backend': True, 'edge': True, 'ingress': False}
+for name, network in networks.items():
+    if not isinstance(network, dict) or network.get('external'):
+        raise SystemExit('staging Compose networks must be project-local')
+    if not str(network.get('name', '')).startswith('tempo-staging-'):
+        raise SystemExit(f'staging network is not isolated: {name}')
+    if network.get('driver') not in (None, 'bridge') or network.get('driver_opts') or network.get('ipam'):
+        raise SystemExit(f'staging network has unsupported routing options: {name}')
+    if bool(network.get('internal', False)) != expected_internal[name]:
+        raise SystemExit(f'staging network isolation is invalid: {name}')
+
+expected_service_networks = {
+    'api': {'backend', 'edge'},
+    'postgres': {'backend'},
+    'redis': {'backend'},
+    'mailpit': {'backend', 'edge'},
+    'web': {'edge', 'ingress'},
+}
+for service_name, expected in expected_service_networks.items():
+    service_networks = services[service_name].get('networks', [])
+    if isinstance(service_networks, dict):
+        if any(isinstance(options, dict) and options.get('aliases') for options in service_networks.values()):
+            raise SystemExit(f'{service_name} must not override staging service DNS aliases')
+        actual = set(service_networks)
+    elif isinstance(service_networks, list):
+        actual = set(service_networks)
+    else:
+        raise SystemExit(f'{service_name} network configuration is invalid')
+    if actual != expected:
+        raise SystemExit(f'{service_name} network memberships are not the approved set')
 
 ports = []
 for service_name, service in services.items():
@@ -266,13 +311,6 @@ for service_name, service in services.items():
         ports.append(port)
 if len(ports) != 1:
     raise SystemExit('staging must publish exactly one web port')
-if not {'backend', 'edge'} <= set(api.get('networks', [])):
-    raise SystemExit('staging API networks are incomplete')
-if set(services['web'].get('networks', [])) != {'edge', 'ingress'}:
-    raise SystemExit('staging web networks are not isolated')
-for service_name in ('postgres', 'redis', 'mailpit', 'api'):
-    if 'ingress' in services[service_name].get('networks', []):
-        raise SystemExit(f'{service_name} must not attach to the staging ingress network')
 PY
     rm -f -- "$rendered_file"
     return "$status"
@@ -317,10 +355,6 @@ docker_cli() {
 
 compose_cli() {
     docker_cli compose --project-name "$PROJECT_NAME" --file "$COMPOSE_FILE" --env-file "$ENV_FILE" "$@"
-}
-
-production_docker_cli() {
-    env -u DOCKER_CONFIG -u DOCKER_CONTEXT DOCKER_HOST=unix:///var/run/docker.sock docker "$@"
 }
 
 pg_container() {
@@ -396,6 +430,12 @@ run_api_command() {
         api "$@"
 }
 
+run_api_command_with_stdin() {
+    local database=$1 input_file=$2
+    shift 2
+    compose_cli run --rm --no-deps -i -T -e "DB_NAME=$database" -e 'DB_SYNCHRONIZE=false' api "$@" < "$input_file"
+}
+
 copy_dump_into_staging() {
     local id
     id=$(pg_container)
@@ -451,37 +491,41 @@ clear_staging_redis() {
     docker_cli exec "$redis_id" redis-cli FLUSHALL >/dev/null
 }
 
-validate_production_postgres_source() {
-    if [[ ${TEMPO_STAGING_REFRESH_TEST_MODE:-0} == 1 ]]; then
-        return 0
-    fi
-    [[ -z ${TEMPO_PRODUCTION_POSTGRES_CONTAINER+x} ]] || fail 'production Postgres container override is only allowed in test mode'
-    local labels image
-    labels=$(production_docker_cli inspect --format '{{json .Config.Labels}}' "$PRODUCTION_POSTGRES_CONTAINER") || \
-        fail 'production Postgres container metadata could not be inspected'
-    python3 - "$labels" <<'PY'
-import json
-import sys
-labels = json.loads(sys.argv[1])
-if labels.get('com.docker.compose.project') != 'tempo-api-production' or labels.get('com.docker.compose.service') != 'postgres':
-    raise SystemExit('production Postgres source is not the approved Compose service')
-PY
-    image=$(production_docker_cli inspect --format '{{.Config.Image}}' "$PRODUCTION_POSTGRES_CONTAINER") || \
-        fail 'production Postgres image could not be inspected'
-    [[ $image == postgres:* ]] || fail 'production source image is not PostgreSQL'
+validate_refresh_inputs() {
+    [[ -d $BACKUP_DIR && ! -L $BACKUP_DIR && -O $BACKUP_DIR ]] || fail 'production backup directory must be an owner-controlled directory'
+    [[ $(stat -c '%a' "$BACKUP_DIR") == 700 ]] || fail 'production backup directory must be mode 700'
+    [[ -f $STAGING_PASSWORD_FILE && ! -L $STAGING_PASSWORD_FILE && -O $STAGING_PASSWORD_FILE ]] || fail 'staging login password file must be owner-controlled'
+    [[ $(stat -c '%a' "$STAGING_PASSWORD_FILE") == 600 ]] || fail 'staging login password file must be mode 600'
+    [[ -s $STAGING_PASSWORD_FILE ]] || fail 'staging login password file is empty'
+    (( $(stat -c '%s' "$STAGING_PASSWORD_FILE") <= 256 )) || fail 'staging login password file is too large'
 }
 
-prepare_production_dump() {
-    validate_production_postgres_source
-    mkdir -p "$STATE_DIR/refresh-dumps"
-    chmod 700 "$STATE_DIR/refresh-dumps"
-    DUMP_FILE=$(mktemp "$STATE_DIR/refresh-dumps/tempo-production-XXXXXX.dump")
-    chmod 600 "$DUMP_FILE"
-    production_docker_cli inspect "$PRODUCTION_POSTGRES_CONTAINER" >/dev/null
-    production_docker_cli exec "$PRODUCTION_POSTGRES_CONTAINER" sh -ceu \
-        'pg_dump --format=custom --no-owner --no-privileges -U "${POSTGRES_USER:?}" -d "${POSTGRES_DB:?}"' \
-        > "$DUMP_FILE"
-    [[ -s $DUMP_FILE ]] || fail 'production PostgreSQL dump is empty'
+select_local_production_backup() {
+    DUMP_FILE=$(python3 - "$BACKUP_DIR" <<'PY'
+import os
+import re
+import stat
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+if root.is_symlink() or not root.is_dir():
+    raise SystemExit('production backup directory is missing or unsafe')
+root_stat = root.stat()
+if root_stat.st_uid != os.geteuid() or stat.S_IMODE(root_stat.st_mode) != 0o700:
+    raise SystemExit('production backup directory is not owner-controlled with mode 700')
+pattern = re.compile(r'tempo-\d{8}-\d{6}\.dump')
+candidates = sorted((path for path in root.iterdir() if pattern.fullmatch(path.name)), key=lambda path: path.name)
+if not candidates:
+    raise SystemExit('no custom-format production backup is available')
+latest = candidates[-1]
+latest_stat = latest.lstat()
+if not stat.S_ISREG(latest_stat.st_mode) or latest_stat.st_uid != os.geteuid() or stat.S_IMODE(latest_stat.st_mode) != 0o600 or latest_stat.st_size == 0:
+    raise SystemExit('latest custom-format production backup is not owner-controlled with mode 600')
+print(latest)
+PY
+) || fail 'could not select the latest local custom-format production backup'
+    [[ -n $DUMP_FILE ]] || fail 'latest local custom-format production backup was not selected'
 }
 
 prepare_refresh_database() {
@@ -494,6 +538,7 @@ prepare_refresh_database() {
     run_api_command "$REFRESH_DATABASE" node dist/scripts/schema.js
     sanitize_database
     assert_sanitized
+    run_api_command_with_stdin "$REFRESH_DATABASE" "$STAGING_PASSWORD_FILE" node dist/src/scripts/set-staging-password.js
 }
 
 prepare_seed_database() {
@@ -562,9 +607,6 @@ swap_database_and_verify() {
 
 cleanup_refresh_artifacts() {
     local status=0
-    if [[ -n $DUMP_FILE && -e $DUMP_FILE ]]; then
-        if ! rm -f -- "$DUMP_FILE"; then status=1; fi
-    fi
     if [[ -n $DUMP_CONTAINER_PATH ]]; then
         local id
         id=$(pg_container 2>/dev/null || true)
@@ -611,21 +653,19 @@ validate_common() {
     check_paths
     load_staging_database_config
     [[ -r $PRODUCTION_ORIGIN_HOST_FILE ]] || fail "production origin metadata is missing or unreadable: $PRODUCTION_ORIGIN_HOST_FILE"
-    if [[ ${TEMPO_STAGING_REFRESH_TEST_MODE:-0} != 1 ]]; then
-        [[ -z ${TEMPO_PRODUCTION_POSTGRES_CONTAINER+x} ]] || fail 'production Postgres container override is only allowed in test mode'
-    fi
     validate_staging_origin
     assert_staging_policy
 }
 
 run_refresh() {
     validate_common
+    validate_refresh_inputs
+    select_local_production_backup
     require_runtime
     exec {lock_fd}>"$STATE_DIR/refresh.lock"
     flock -n "$lock_fd" || fail 'another staging refresh is already running'
     trap on_exit EXIT
     ensure_dependencies
-    prepare_production_dump
     prepare_refresh_database
     swap_database_and_verify
     REFRESH_SUCCEEDED=1
