@@ -30,7 +30,6 @@ export class BankTransactionRulePreviewTransactionDto {
 	displayDescription: string;
 	category: BankTransactionCategory | null;
 	categorySource: BankTransactionCategorizationSource | null;
-	isManual: boolean;
 }
 
 export class BankTransactionRulePreviewResponseDto {

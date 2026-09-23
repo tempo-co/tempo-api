@@ -139,6 +139,9 @@ describe('BankTransactionRuleService', () => {
 			matchField: 'BANK_TRANSACTION_DESCRIPTION',
 		});
 		expect(result.matches.map(({id}) => id)).toEqual(['source-id', 'ai-id', 'rule-id']);
+		expect(result.matches).toEqual(
+			expect.arrayContaining([expect.objectContaining({id: 'source-id', categorySource: 'MANUAL'})]),
+		);
 		expect(transactionRepository.find).toHaveBeenCalledWith(
 			expect.objectContaining({
 				where: {bankAccountId: source.bankAccountId},

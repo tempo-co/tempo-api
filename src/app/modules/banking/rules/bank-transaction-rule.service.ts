@@ -391,7 +391,6 @@ export class BankTransactionRuleService {
 			category: (transaction.category as BankTransactionRulePreviewTransactionDto['category']) ?? null,
 			categorySource:
 				(transaction.categorySource as BankTransactionRulePreviewTransactionDto['categorySource']) ?? null,
-			isManual: transaction.categorySource === 'MANUAL',
 		};
 	}
 
