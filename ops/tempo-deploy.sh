@@ -27,6 +27,7 @@ WEB_CONTAINER=''
 POSTGRES_CONTAINER=''
 REDIS_CONTAINER=''
 MAILPIT_CONTAINER=''
+STATEFUL_CONTAINERS=()
 API_ROUTE_URL=''
 WEB_ROUTE_URL=''
 TEST_INTENT_DIR=''
@@ -77,7 +78,7 @@ configure_target() {
             WEB_CONTAINER='tempo-api-production-web-1'
             POSTGRES_CONTAINER='tempo-api-production-postgres-1'
             REDIS_CONTAINER='tempo-api-production-redis-1'
-            MAILPIT_CONTAINER='tempo-api-production-mailpit-1'
+            MAILPIT_CONTAINER=''
             API_ROUTE_URL='http://127.0.0.1:8080/tempo/api/health'
             WEB_ROUTE_URL='http://127.0.0.1:8080/tempo/'
             if [[ ${TEMPO_DEPLOY_TEST_MODE:-0} == 1 ]]; then
@@ -131,6 +132,10 @@ configure_target() {
             ;;
     esac
 
+    STATEFUL_CONTAINERS=("$POSTGRES_CONTAINER" "$REDIS_CONTAINER")
+    if [[ $TARGET == staging ]]; then
+        STATEFUL_CONTAINERS+=("$MAILPIT_CONTAINER")
+    fi
     ROLLBACK_FILE="${STATE_FILE}.rollback"
 }
 
@@ -896,14 +901,14 @@ PY
 
 snapshot_stateful() {
     local container
-    for container in "$POSTGRES_CONTAINER" "$REDIS_CONTAINER" "$MAILPIT_CONTAINER"; do
+    for container in "${STATEFUL_CONTAINERS[@]}"; do
         STATEFUL_IDS[$container]=$(docker_cli inspect --format '{{.Id}}' "$container") || return 1
     done
 }
 
 stateful_unchanged() {
     local container
-    for container in "$POSTGRES_CONTAINER" "$REDIS_CONTAINER" "$MAILPIT_CONTAINER"; do
+    for container in "${STATEFUL_CONTAINERS[@]}"; do
         [[ $(docker_cli inspect --format '{{.Id}}' "$container") == "${STATEFUL_IDS[$container]}" ]] || {
             log "ERROR: stateful container changed: $container" >&2
             return 1
