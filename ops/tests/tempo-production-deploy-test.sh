@@ -51,7 +51,7 @@ assert_no_stateful_compose() {
 
 setup_fixture() {
     FIXTURE=$TMP_DIR/fixture-$1; BIN=$FIXTURE/bin; STATE_DIR=$FIXTURE/state
-    unset FAIL_PULL FAIL_COMPOSE_ONCE PRODUCTION_SWEEP_TEST EXTRA_IMAGE_REFS FAIL_IMAGE_RM_ONCE FAIL_IMAGE_RM_MARKER DEPLOY_TARGET
+    unset FAIL_PULL FAIL_COMPOSE_ONCE PRODUCTION_SWEEP_TEST EXTRA_IMAGE_REFS FAIL_IMAGE_RM_ONCE FAIL_IMAGE_RM_MARKER DEPLOY_TARGET DOCKER_CONFIG
     unset FAKE_PRODUCTION_COMPOSE_OWNER_UID FAKE_PRODUCTION_COMPOSE_MODE
     mkdir -p "$BIN" "$STATE_DIR"
     cat > "$BIN/fake" <<'EOF'
@@ -77,7 +77,7 @@ case $command in
         else printf '%s\trefs/heads/main\n' "$TEST_WEB_SHA"; fi ;;
 curl) printf '%s\n' "$*" >> "$CURL_LOG" ;;
 docker)
-    printf '%s\n' "$*" >> "$DOCKER_LOG"
+    printf '%s (DOCKER_CONFIG=%s)\n' "$*" "${DOCKER_CONFIG-<unset>}" >> "$DOCKER_LOG"
     if [[ ${1:-} == ps ]]; then
         if [[ ${PRODUCTION_SWEEP_TEST:-0} == 1 ]]; then
             printf '%s\n' active-api-container active-web-container stopped-stale-web-container
@@ -276,6 +276,15 @@ run_initialize_test() {
     assert_contains "$TEMPO_DEPLOY_STATE_FILE.rollback" 'TEMPO_WEB_SHA=bootstrap'
     local log; log=$(<"$DOCKER_LOG")
     [[ $log != *' pull '* && $log != *compose* ]] || fail 'initialization changed application containers'
+}
+
+run_production_docker_config_test() {
+    setup_fixture production-docker-config
+    set_target; write_active_state
+    export DOCKER_CONFIG="$FIXTURE/service-docker-config"
+    mkdir -p "$DOCKER_CONFIG"
+    run_deploy
+    assert_contains "$DOCKER_LOG" "DOCKER_CONFIG=$DOCKER_CONFIG"
 }
 
 run_bootstrap_cleanup_test() {
@@ -525,5 +534,5 @@ run_rollback_test() {
     assert_no_stateful_compose
 }
 
-run_initialize_test; run_bootstrap_cleanup_test; run_noop_test; run_root_owned_compose_test; run_root_owned_zero_mode_compose_test; run_group_writable_root_compose_rejected_test; run_world_writable_root_compose_rejected_test; run_malformed_root_compose_mode_rejected_test; run_foreign_owned_compose_rejected_test; run_staging_rejects_root_owned_compose_test; run_production_cleanup_retry_test; run_failed_pull_test; run_failed_pull_cleanup_test; run_failed_rollout_cleanup_test; run_success_test; run_api_only_test; run_api_only_rollback_test; run_web_only_test; run_rollback_test
+run_initialize_test; run_production_docker_config_test; run_bootstrap_cleanup_test; run_noop_test; run_root_owned_compose_test; run_root_owned_zero_mode_compose_test; run_group_writable_root_compose_rejected_test; run_world_writable_root_compose_rejected_test; run_malformed_root_compose_mode_rejected_test; run_foreign_owned_compose_rejected_test; run_staging_rejects_root_owned_compose_test; run_production_cleanup_retry_test; run_failed_pull_test; run_failed_pull_cleanup_test; run_failed_rollout_cleanup_test; run_success_test; run_api_only_test; run_api_only_rollback_test; run_web_only_test; run_rollback_test
 printf 'PASS: tempo production deploy script tests\n'
