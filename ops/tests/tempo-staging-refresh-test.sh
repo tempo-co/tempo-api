@@ -26,9 +26,12 @@ import sys
 
 text = Path(sys.argv[1]).read_text(encoding='utf-8')
 required = {
-    'pg_dump': 'local production PostgreSQL dump',
-    '--format=custom': 'seekable custom-format dump',
-    'pg_restore': 'temporary PostgreSQL restore',
+    r'tempo-\d{8}-\d{6}\.dump': 'custom-format local backup naming contract',
+    'TEMPO_STAGING_REFRESH_BACKUP_DIR': 'host-local backup directory selection',
+    'pg_restore --list': 'custom-format archive validation',
+    '--no-owner --no-privileges': 'owner/ACL-neutral staging restore',
+    'STAGING_PASSWORD_FILE': 'host-only staging password file',
+    'set-staging-password.js': 'staging-only account password replacement',
     '--confirm-production-backup-refresh': 'production refresh confirmation',
     '--confirm-seeded-reset': 'seed reset confirmation',
     'bank_connections': 'provider-state sanitization',
@@ -42,7 +45,6 @@ required = {
     'AI_CATEGORIZATION_ENABLED': 'AI configuration guard',
     'BANKING_INTEGRATION_ENABLED': 'banking configuration guard',
     'OPENAI_API_KEY': 'AI credential exclusion',
-    'PRODUCTION_POSTGRES_CONTAINER': 'fixed production PostgreSQL source',
     'tempo-staging-postgres-data': 'isolated staging volume guard',
 }
 for needle, label in required.items():
@@ -50,6 +52,9 @@ for needle, label in required.items():
         raise SystemExit(f'missing {label}: {needle}')
 
 for forbidden in (
+    'pg_dump',
+    'PRODUCTION_POSTGRES_CONTAINER',
+    'production_docker_cli',
     'PRODUCTION_REDIS_CONTAINER',
     'tempo-staging-deploy.sh',
     'tempo-staging-ssh-deploy.sh',

@@ -84,6 +84,7 @@ jobs:
             - name: Test production and staging deployment contracts
               run: |
                   bash ops/tests/tempo-production-deploy-test.sh
+                  bash ops/tests/tempo-production-compose-test.sh
                   bash ops/tests/tempo-staging-poller-test.sh
                   bash ops/tests/tempo-staging-reconcile-test.sh
                   bash ops/tests/tempo-staging-compose-test.sh
@@ -120,6 +121,19 @@ jobs:
               with:
                   github-token: ${{ secrets.GITHUB_TOKEN }}
                   file: coverage/lcov.info
+
+    runtime-image-test:
+        name: Runtime image
+        runs-on: ubuntu-latest
+        if: github.event_name == 'pull_request'
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+              with:
+                  persist-credentials: false
+
+            - name: Build and smoke-test the complete runtime image
+              run: docker build --tag tempo-api-runtime:ci .
 
     publish-image:
         name: Publish Docker image to GHCR

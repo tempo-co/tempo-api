@@ -18,6 +18,8 @@ STATE_SCOPE=''
 COMPOSE_FILE=''
 ENV_FILE=''
 STATE_FILE=''
+REFRESH_STATE_FILE=''
+STAGING_REFRESH_SCRIPT=''
 ROLLBACK_FILE=''
 LOCK_FILE=''
 API_CONTAINER=''
@@ -25,6 +27,7 @@ WEB_CONTAINER=''
 POSTGRES_CONTAINER=''
 REDIS_CONTAINER=''
 MAILPIT_CONTAINER=''
+STATEFUL_CONTAINERS=()
 API_ROUTE_URL=''
 WEB_ROUTE_URL=''
 TEST_INTENT_DIR=''
@@ -33,8 +36,10 @@ API_SHA=''
 WEB_SHA=''
 API_IMAGE=''
 WEB_IMAGE=''
-CANDIDATE_API_TAG=''
-CANDIDATE_WEB_TAG=''
+REFRESH_API_SHA=''
+REFRESH_WEB_SHA=''
+REFRESH_API_IMAGE=''
+REFRESH_WEB_IMAGE=''
 CLEANUP_FAILURE=0
 declare -A STATEFUL_IDS=()
 
@@ -73,7 +78,7 @@ configure_target() {
             WEB_CONTAINER='tempo-api-production-web-1'
             POSTGRES_CONTAINER='tempo-api-production-postgres-1'
             REDIS_CONTAINER='tempo-api-production-redis-1'
-            MAILPIT_CONTAINER='tempo-api-production-mailpit-1'
+            MAILPIT_CONTAINER=''
             API_ROUTE_URL='http://127.0.0.1:8080/tempo/api/health'
             WEB_ROUTE_URL='http://127.0.0.1:8080/tempo/'
             if [[ ${TEMPO_DEPLOY_TEST_MODE:-0} == 1 ]]; then
@@ -107,6 +112,8 @@ configure_target() {
                 ENV_FILE="$test_root/staging.env"
                 PRODUCTION_ORIGIN_HOST_FILE="$HOME/.config/tempo-staging/production-origin-host"
                 STATE_FILE="${TEMPO_DEPLOY_STATE_FILE:-$test_root/staging/images.env}"
+                REFRESH_STATE_FILE="${TEMPO_DEPLOY_TEST_REFRESH_STATE_FILE:-$test_root/staging/refresh-images.env}"
+                STAGING_REFRESH_SCRIPT="${TEMPO_DEPLOY_TEST_REFRESH_SCRIPT:-$test_root/staging-refresh.sh}"
                 LOCK_FILE="$test_root/staging/deploy.lock"
                 TEST_INTENT_DIR=${TEMPO_DEPLOY_TEST_INTENT_DIR:-$test_root/intents}
             else
@@ -114,6 +121,8 @@ configure_target() {
                 ENV_FILE="$HOME/.config/tempo-staging/staging.env"
                 PRODUCTION_ORIGIN_HOST_FILE="$HOME/.config/tempo-staging/production-origin-host"
                 STATE_FILE="$HOME/.local/state/tempo-staging/images.env"
+                REFRESH_STATE_FILE="$HOME/.local/state/tempo-staging/refresh-images.env"
+                STAGING_REFRESH_SCRIPT="$HOME/.config/tempo-staging/tempo-staging-refresh.sh"
                 LOCK_FILE="$HOME/.local/state/tempo-staging/deploy.lock"
                 TEST_INTENT_DIR=''
             fi
@@ -123,6 +132,10 @@ configure_target() {
             ;;
     esac
 
+    STATEFUL_CONTAINERS=("$POSTGRES_CONTAINER" "$REDIS_CONTAINER")
+    if [[ $TARGET == staging ]]; then
+        STATEFUL_CONTAINERS+=("$MAILPIT_CONTAINER")
+    fi
     ROLLBACK_FILE="${STATE_FILE}.rollback"
 }
 
@@ -135,6 +148,8 @@ print_config() {
     printf 'COMPOSE_FILE=%s\n' "$COMPOSE_FILE"
     printf 'ENV_FILE=%s\n' "$ENV_FILE"
     printf 'STATE_FILE=%s\n' "$STATE_FILE"
+    printf 'REFRESH_STATE_FILE=%s\n' "$REFRESH_STATE_FILE"
+    printf 'STAGING_REFRESH_SCRIPT=%s\n' "$STAGING_REFRESH_SCRIPT"
     printf 'LOCK_FILE=%s\n' "$LOCK_FILE"
 }
 
@@ -157,7 +172,7 @@ PY
 
 need_commands() {
     local command
-    for command in curl docker flock mktemp awk cp chmod mv rm mkdir dirname python3; do
+    for command in curl docker flock mktemp awk cp chmod mv rm mkdir dirname python3 stat; do
         command -v "$command" >/dev/null 2>&1 || die "required command is missing: $command"
     done
     if [[ $TARGET == production ]]; then
@@ -286,29 +301,62 @@ read_state() {
 }
 
 write_state() {
-    local api_sha=$1 web_sha=$2 api_image=$3 web_image=$4 temporary_file
+    local api_sha=$1 web_sha=$2 api_image=$3 web_image=$4 state_file=${5:-$STATE_FILE} temporary_file
     valid_sha "$api_sha" && valid_sha "$web_sha" && \
         valid_image "$API_IMAGE_REPOSITORY" "$api_image" && \
         valid_image "$WEB_IMAGE_REPOSITORY" "$web_image" || return 1
-    mkdir -p "$(dirname "$STATE_FILE")"
-    temporary_file=$(mktemp "${STATE_FILE}.tmp.XXXXXX") || return 1
+    mkdir -p "$(dirname "$state_file")"
+    temporary_file=$(mktemp "${state_file}.tmp.XXXXXX") || return 1
     umask 077
     if ! printf 'TEMPO_API_SHA=%s\nTEMPO_WEB_SHA=%s\nTEMPO_API_IMAGE=%s\nTEMPO_WEB_IMAGE=%s\n' \
         "$api_sha" "$web_sha" "$api_image" "$web_image" > "$temporary_file"; then
         rm -f "$temporary_file"
         return 1
     fi
-    chmod 600 "$temporary_file" && mv -f "$temporary_file" "$STATE_FILE" || {
+    chmod 600 "$temporary_file" && mv -f "$temporary_file" "$state_file" || {
         rm -f "$temporary_file"
         return 1
     }
+}
+
+restore_previous_rollback_state() {
+    local api_sha=$1 web_sha=$2 api_image=$3 web_image=$4
+    [[ -n $api_sha ]] || return 0
+    write_state "$api_sha" "$web_sha" "$api_image" "$web_image" "$ROLLBACK_FILE"
+}
+
+load_refresh_state() {
+    local current_api_sha=$1 current_web_sha=$2 current_api_image=$3 current_web_image=$4
+    [[ $TARGET == staging ]] || return 0
+    [[ -n $REFRESH_STATE_FILE ]] || die 'staging refresh state path is not configured'
+    [[ ! -L $REFRESH_STATE_FILE ]] || die 'staging refresh state must not be a symlink'
+    if [[ ! -e $REFRESH_STATE_FILE ]]; then
+        write_state "$current_api_sha" "$current_web_sha" "$current_api_image" "$current_web_image" "$REFRESH_STATE_FILE" || \
+            die 'could not initialize staging refresh state'
+        REFRESH_API_SHA=$current_api_sha
+        REFRESH_WEB_SHA=$current_web_sha
+        REFRESH_API_IMAGE=$current_api_image
+        REFRESH_WEB_IMAGE=$current_web_image
+        return 0
+    fi
+    [[ -f $REFRESH_STATE_FILE && -O $REFRESH_STATE_FILE ]] || die 'staging refresh state is missing or not owner-controlled'
+    [[ $(stat -c '%a' "$REFRESH_STATE_FILE") == 600 ]] || die 'staging refresh state must be mode 600'
+    read_state "$REFRESH_STATE_FILE"
+    REFRESH_API_SHA=$API_SHA
+    REFRESH_WEB_SHA=$WEB_SHA
+    REFRESH_API_IMAGE=$API_IMAGE
+    REFRESH_WEB_IMAGE=$WEB_IMAGE
+    API_SHA=$current_api_sha
+    WEB_SHA=$current_web_sha
+    API_IMAGE=$current_api_image
+    WEB_IMAGE=$current_web_image
 }
 
 docker_cli() {
     if [[ $TARGET == staging ]]; then
         env -u DOCKER_CONTEXT DOCKER_CONFIG="$DOCKER_CONFIG_VALUE" DOCKER_HOST="$DOCKER_HOST_VALUE" docker "$@"
     else
-        env -u DOCKER_CONTEXT -u DOCKER_CONFIG DOCKER_HOST="$DOCKER_HOST_VALUE" docker "$@"
+        env -u DOCKER_CONTEXT DOCKER_HOST="$DOCKER_HOST_VALUE" docker "$@"
     fi
 }
 
@@ -317,9 +365,17 @@ compose_cli() {
 }
 
 require_target_files() {
+    local compose_owner compose_mode
     [[ -r $COMPOSE_FILE ]] || die "Compose file is missing or unreadable: $COMPOSE_FILE"
     [[ ! -L $COMPOSE_FILE ]] || die 'Compose file must not be a symlink'
-    [[ -O $COMPOSE_FILE ]] || die 'Compose file must be owned by the deployment user'
+    compose_owner=$(stat -c '%u' "$COMPOSE_FILE") || die 'could not inspect Compose file owner'
+    if [[ $TARGET == production && $compose_owner == 0 ]]; then
+        compose_mode=$(stat -c '%a' "$COMPOSE_FILE") || die 'could not inspect production Compose file permissions'
+        [[ $compose_mode =~ ^[0-7]{1,4}$ ]] || die 'could not parse production Compose file permissions'
+        (( (8#$compose_mode & 18) == 0 )) || die 'root-owned production Compose file must not be group/world writable'
+    elif [[ $compose_owner != "$EUID" ]]; then
+        die 'Compose file must be owned by the deployment user (or root for production)'
+    fi
     [[ -r $ENV_FILE ]] || die "environment file is missing or unreadable: $ENV_FILE"
     [[ ! -L $ENV_FILE ]] || die 'environment file must not be a symlink'
     [[ -O $ENV_FILE ]] || die 'environment file must be owned by the deployment user'
@@ -366,7 +422,9 @@ require_staging_daemon() {
 
 assert_staging_policy() {
     [[ $TARGET == staging ]] || return 0
-    [[ ${TEMPO_DEPLOY_TEST_MODE:-0} == 1 ]] && return 0
+    if [[ ${TEMPO_DEPLOY_TEST_MODE:-0} == 1 && ${TEMPO_DEPLOY_TEST_VALIDATE_POLICY:-0} != 1 ]]; then
+        return 0
+    fi
     local rendered_file
     rendered_file=$(mktemp) || die 'could not create rendered staging Compose file'
     chmod 600 "$rendered_file"
@@ -385,12 +443,78 @@ from urllib.parse import urlsplit
 config = json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
 production_host = sys.argv[2]
 services = config.get('services', {})
-api_env = services.get('api', {}).get('environment', {})
-web_env = services.get('web', {}).get('environment', {})
+required_services = {'postgres', 'redis', 'mailpit', 'api', 'web'}
+if set(services) != required_services:
+    raise SystemExit('staging Compose services are not the approved set')
+for service_name, service in services.items():
+    if service.get('network_mode') or service.get('links'):
+        raise SystemExit(f'{service_name} uses forbidden network routing configuration')
+
+
+def service_environment(name):
+    environment = services.get(name, {}).get('environment', {})
+    if isinstance(environment, list):
+        environment = dict(item.split('=', 1) for item in environment if isinstance(item, str) and '=' in item)
+    if not isinstance(environment, dict):
+        raise SystemExit(f'staging {name} environment is invalid')
+    return environment
+
+
+api = services.get('api', {})
+api_env = service_environment('api')
+postgres_env = service_environment('postgres')
 
 def false_value(value):
     return str(value).lower() == 'false'
 
+expected_networks = {'backend', 'edge', 'ingress'}
+networks = config.get('networks', {})
+if set(networks) != expected_networks:
+    raise SystemExit('staging Compose networks are not the approved set')
+expected_internal = {'backend': True, 'edge': True, 'ingress': False}
+for name, network in networks.items():
+    if not isinstance(network, dict) or network.get('external'):
+        raise SystemExit('staging Compose networks must be project-local')
+    if not str(network.get('name', '')).startswith('tempo-staging-'):
+        raise SystemExit(f'staging network is not isolated: {name}')
+    if network.get('driver') not in (None, 'bridge') or network.get('driver_opts') or network.get('ipam'):
+        raise SystemExit(f'staging network has unsupported routing options: {name}')
+    if bool(network.get('internal', False)) != expected_internal[name]:
+        raise SystemExit(f'staging network isolation is invalid: {name}')
+
+expected_service_networks = {
+    'api': {'backend', 'edge'},
+    'postgres': {'backend'},
+    'redis': {'backend'},
+    'mailpit': {'backend', 'edge'},
+    'web': {'edge', 'ingress'},
+}
+for service_name, expected in expected_service_networks.items():
+    service = services.get(service_name, {})
+    service_networks = service.get('networks', [])
+    if isinstance(service_networks, dict):
+        if any(isinstance(options, dict) and options.get('aliases') for options in service_networks.values()):
+            raise SystemExit(f'{service_name} must not override staging service DNS aliases')
+        actual = set(service_networks)
+    elif isinstance(service_networks, list):
+        actual = set(service_networks)
+    else:
+        raise SystemExit(f'{service_name} network configuration is invalid')
+    if actual != expected:
+        raise SystemExit(f'{service_name} network memberships are not the approved set')
+
+if api_env.get('DB_HOST') != 'postgres':
+    raise SystemExit('staging API database host must be the isolated Postgres service')
+if api.get('extra_hosts') or api.get('links'):
+    raise SystemExit('staging API must not override or link the Postgres hostname')
+database_name = str(api_env.get('DB_NAME', ''))
+if not database_name or database_name != str(postgres_env.get('POSTGRES_DB', '')):
+    raise SystemExit('staging API and Postgres database names do not match')
+if database_name in {
+    'tempo_staging_refresh', 'tempo_staging_previous', 'tempo_staging_failed',
+    'postgres', 'template0', 'template1',
+}:
+    raise SystemExit('staging database name conflicts with a reserved maintenance or refresh database')
 if not false_value(api_env.get('AI_CATEGORIZATION_ENABLED')):
     raise SystemExit('staging AI categorization is not disabled')
 if not false_value(api_env.get('AI_CATEGORIZATION_WEB_SEARCH_ENABLED')):
@@ -471,45 +595,42 @@ resolve_production_image() {
 }
 
 cleanup_failed_staging_resolution() {
-    local repository=$1 target_sha=$2 target_image=$3 target_tag=$4 current_image=$5
-    if [[ $TARGET == staging && $target_tag == "$repository":staging-* ]]; then
-        remove_image_ref "$target_tag"
-    fi
-    cleanup_candidate_image "$repository" "$target_sha" "$target_image" "$current_image" ''
+    local repository=$1 target_sha=$2 target_image=$3 target_tag=$4 current_image=$5 rollback_image=$6
+    cleanup_deployment_images_for_repository "$repository" "$current_image" "$rollback_image"
     return 1
 }
 
 resolve_staging_image() {
-    local repository=$1 target_sha=$2 target_image=$3 target_tag=$4 current_sha=$5 current_image=$6
+    local repository=$1 target_sha=$2 target_image=$3 target_tag=$4 current_sha=$5 current_image=$6 rollback_image=$7
     if [[ $target_sha == "$current_sha" && $target_image == "$current_image" ]]; then
         printf '%s\n' "$current_image"
         return 0
     fi
     [[ -n $target_tag ]] || return 1
     if ! docker_cli pull "$target_tag" >/dev/null; then
-        cleanup_failed_staging_resolution "$repository" "$target_sha" "$target_image" "$target_tag" "$current_image"
+        cleanup_failed_staging_resolution "$repository" "$target_sha" "$target_image" "$target_tag" "$current_image" "$rollback_image"
         return 1
     fi
     local tag_repo_digests
     if ! tag_repo_digests=$(docker_cli image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$target_tag"); then
-        cleanup_failed_staging_resolution "$repository" "$target_sha" "$target_image" "$target_tag" "$current_image"
+        cleanup_failed_staging_resolution "$repository" "$target_sha" "$target_image" "$target_tag" "$current_image" "$rollback_image"
         return 1
     fi
     if ! printf '%s\n' "$tag_repo_digests" | grep -Fx -- "$target_image" >/dev/null; then
-        cleanup_failed_staging_resolution "$repository" "$target_sha" "$target_image" "$target_tag" "$current_image"
+        cleanup_failed_staging_resolution "$repository" "$target_sha" "$target_image" "$target_tag" "$current_image" "$rollback_image"
         return 1
     fi
     if ! docker_cli pull "$target_image" >/dev/null; then
-        cleanup_failed_staging_resolution "$repository" "$target_sha" "$target_image" "$target_tag" "$current_image"
+        cleanup_failed_staging_resolution "$repository" "$target_sha" "$target_image" "$target_tag" "$current_image" "$rollback_image"
         return 1
     fi
     local repo_digests
     if ! repo_digests=$(docker_cli image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$target_image"); then
-        cleanup_failed_staging_resolution "$repository" "$target_sha" "$target_image" "$target_tag" "$current_image"
+        cleanup_failed_staging_resolution "$repository" "$target_sha" "$target_image" "$target_tag" "$current_image" "$rollback_image"
         return 1
     fi
     if ! printf '%s\n' "$repo_digests" | grep -Fx -- "$target_image" >/dev/null; then
-        cleanup_failed_staging_resolution "$repository" "$target_sha" "$target_image" "$target_tag" "$current_image"
+        cleanup_failed_staging_resolution "$repository" "$target_sha" "$target_image" "$target_tag" "$current_image" "$rollback_image"
         return 1
     fi
     printf '%s\n' "$target_image"
@@ -780,14 +901,14 @@ PY
 
 snapshot_stateful() {
     local container
-    for container in "$POSTGRES_CONTAINER" "$REDIS_CONTAINER" "$MAILPIT_CONTAINER"; do
+    for container in "${STATEFUL_CONTAINERS[@]}"; do
         STATEFUL_IDS[$container]=$(docker_cli inspect --format '{{.Id}}' "$container") || return 1
     done
 }
 
 stateful_unchanged() {
     local container
-    for container in "$POSTGRES_CONTAINER" "$REDIS_CONTAINER" "$MAILPIT_CONTAINER"; do
+    for container in "${STATEFUL_CONTAINERS[@]}"; do
         [[ $(docker_cli inspect --format '{{.Id}}' "$container") == "${STATEFUL_IDS[$container]}" ]] || {
             log "ERROR: stateful container changed: $container" >&2
             return 1
@@ -801,6 +922,37 @@ verify_rollout() {
     curl --fail --silent --show-error --max-time 15 --retry 2 --retry-delay 1 --output /dev/null "$API_ROUTE_URL" && \
         curl --fail --silent --show-error --max-time 15 --retry 2 --retry-delay 1 --output /dev/null "$WEB_ROUTE_URL" && \
         stateful_unchanged
+}
+
+run_staging_refresh() {
+    local api_sha=$1 web_sha=$2 api_image=$3 web_image=$4
+    [[ $TARGET == staging ]] || return 0
+    [[ -f $STAGING_REFRESH_SCRIPT && ! -L $STAGING_REFRESH_SCRIPT && -O $STAGING_REFRESH_SCRIPT && -x $STAGING_REFRESH_SCRIPT ]] || \
+        die 'staging refresh script is missing or not owner-controlled and executable'
+    "$STAGING_REFRESH_SCRIPT" refresh --confirm-production-backup-refresh || {
+        log 'ERROR: staging deployment is healthy but the production-backup refresh failed' >&2
+        return 1
+    }
+    if ! write_state "$api_sha" "$web_sha" "$api_image" "$web_image" "$REFRESH_STATE_FILE"; then
+        log 'ERROR: staging database refresh succeeded but refresh state could not be recorded' >&2
+        return 1
+    fi
+    REFRESH_API_SHA=$api_sha
+    REFRESH_WEB_SHA=$web_sha
+    REFRESH_API_IMAGE=$api_image
+    REFRESH_WEB_IMAGE=$web_image
+    log 'staging PostgreSQL backup refresh completed after healthy image deployment'
+}
+
+retry_pending_staging_refresh() {
+    local api_sha=$1 web_sha=$2 api_image=$3 web_image=$4
+    [[ $TARGET == staging ]] || return 0
+    [[ $REFRESH_API_SHA == "$api_sha" && $REFRESH_WEB_SHA == "$web_sha" && \
+        $REFRESH_API_IMAGE == "$api_image" && $REFRESH_WEB_IMAGE == "$web_image" ]] && return 0
+    log 'retrying pending staging PostgreSQL backup refresh'
+    snapshot_stateful || die 'could not snapshot staging state before pending refresh retry'
+    verify_rollout "$api_image" "$web_image" || die 'staging is not healthy; pending database refresh will wait'
+    run_staging_refresh "$api_sha" "$web_sha" "$api_image" "$web_image"
 }
 
 rollout() {
@@ -820,51 +972,151 @@ remove_image_ref() {
         if docker_cli image inspect "$reference" >/dev/null 2>&1; then
             CLEANUP_FAILURE=1
             log "image reference remains after cleanup: $reference" >&2
+            return 1
         fi
+        return 0
+    fi
+    if ! docker_cli image inspect "$reference" >/dev/null 2>&1; then
         return 0
     fi
     CLEANUP_FAILURE=1
     log "could not remove old image $reference: ${output:-unknown error}" >&2
-}
-
-cleanup_candidate_image() {
-    local repository=$1 sha=$2 image=$3 protected_one=$4 protected_two=$5
-    [[ $sha =~ ^[0-9a-f]{40}$ && $image == "$repository"@sha256:* ]] || return 0
-    [[ $image != "$protected_one" && $image != "$protected_two" ]] || return 0
-    remove_image_ref "$repository:$sha"
-    remove_image_ref "$image"
+    return 1
 }
 
 cleanup_candidate_images() {
-    local api_changed=$1 web_changed=$2 api_sha=$3 api_image=$4 web_sha=$5 web_image=$6
-    local current_api_image=$7 current_web_image=$8 stale_api_image=$9 stale_web_image=${10}
-    [[ $api_changed != 1 ]] || cleanup_candidate_image \
-        "$API_IMAGE_REPOSITORY" "$api_sha" "$api_image" "$current_api_image" "$stale_api_image"
-    [[ $web_changed != 1 ]] || cleanup_candidate_image \
-        "$WEB_IMAGE_REPOSITORY" "$web_sha" "$web_image" "$current_web_image" "$stale_web_image"
-    cleanup_staging_tags "$CANDIDATE_API_TAG" "$CANDIDATE_WEB_TAG"
+    cleanup_deployment_image_refs "$7" "$8" "$9" "${10}"
 }
 
-cleanup_staging_tags() {
-    local api_tag=$1 web_tag=$2
-    [[ $TARGET == staging ]] || return 0
-    [[ -z $api_tag || $api_tag == "$API_IMAGE_REPOSITORY":staging-* ]] || return 0
-    [[ -z $web_tag || $web_tag == "$WEB_IMAGE_REPOSITORY":staging-* ]] || return 0
-    [[ -z $api_tag ]] || remove_image_ref "$api_tag"
-    [[ -z $web_tag ]] || remove_image_ref "$web_tag"
-}
+cleanup_deployment_images_for_repository() {
+    local repository=$1 protected_one=$2 protected_two=$3
+    [[ $TARGET == staging || $TARGET == production ]] || return 0
+    [[ $repository == "$API_IMAGE_REPOSITORY" || $repository == "$WEB_IMAGE_REPOSITORY" ]] || return 0
 
-prune_old_image() {
-    local repository=$1 sha=$2 image=$3 protected_one=$4 protected_two=$5 bootstrap_prunable=$6
-    [[ $image != "$protected_one" && $image != "$protected_two" ]] || return 0
-    if [[ $image == "$repository"@sha256:* ]]; then
-        [[ $sha != bootstrap || $bootstrap_prunable == 1 ]] || return 0
-        remove_image_ref "$repository:$sha"
-        remove_image_ref "$image"
-    elif [[ $TARGET == production && ($image == "$repository":* || ($repository == "$WEB_IMAGE_REPOSITORY" && $image == tempo-api-production-web:latest)) ]]; then
-        [[ $sha != bootstrap || $bootstrap_prunable == 1 ]] || return 0
-        remove_image_ref "$image"
+    local protected_image image_id container_ids container_id image_refs listed_repository listed_tag listed_digest image_ref
+    local repo_digests digest_ref digest_image_id tag
+    local -A protected_ids=() excluded_ids=() seen_refs=() seen_digests=()
+
+    for protected_image in "$protected_one" "$protected_two"; do
+        [[ -n $protected_image ]] || continue
+        if ! image_id=$(docker_cli image inspect --format '{{.Id}}' "$protected_image" 2>/dev/null) || [[ -z $image_id ]]; then
+            CLEANUP_FAILURE=1
+            log "could not inspect protected deployment image $protected_image; skipping $repository cleanup" >&2
+            return 0
+        fi
+        protected_ids[$image_id]=1
+    done
+
+    if ! container_ids=$(docker_cli ps --all --quiet --no-trunc 2>/dev/null); then
+        CLEANUP_FAILURE=1
+        log "could not enumerate deployment containers; skipping $repository cleanup" >&2
+        return 0
     fi
+    while IFS= read -r container_id; do
+        [[ -n $container_id ]] || continue
+        if ! image_id=$(docker_cli inspect --format '{{.Image}}' "$container_id" 2>/dev/null) || [[ -z $image_id ]]; then
+            CLEANUP_FAILURE=1
+            log "could not inspect deployment container $container_id; skipping $repository cleanup" >&2
+            return 0
+        fi
+        protected_ids[$image_id]=1
+    done <<< "$container_ids"
+
+    if ! image_refs=$(docker_cli image ls --all --digests --no-trunc \
+        --format '{{.Repository}}|{{.Tag}}|{{.Digest}}' 2>/dev/null); then
+        CLEANUP_FAILURE=1
+        log "could not enumerate deployment image refs; skipping $repository cleanup" >&2
+        return 0
+    fi
+    while IFS='|' read -r listed_repository listed_tag listed_digest; do
+        [[ $listed_repository == "$repository" && $listed_tag != '<none>' ]] || continue
+        case $TARGET in
+            staging)
+                [[ $listed_tag =~ ^staging-[0-9]+-[0-9a-f]{40}$ ]] && continue
+                ;;
+            production)
+                [[ $listed_tag =~ ^[0-9a-f]{40}$ || $listed_tag == latest ]] && continue
+                ;;
+        esac
+        if ! image_id=$(docker_cli image inspect --format '{{.Id}}' "$repository:$listed_tag" 2>/dev/null) || [[ -z $image_id ]]; then
+            CLEANUP_FAILURE=1
+            log "could not inspect unmanaged image tag $repository:$listed_tag; skipping cleanup" >&2
+            return 0
+        fi
+        excluded_ids[$image_id]=1
+    done <<< "$image_refs"
+
+    while IFS='|' read -r listed_repository listed_tag listed_digest; do
+        if [[ $listed_repository == "$repository" ]]; then
+            if [[ $listed_tag == '<none>' ]]; then
+                [[ $listed_digest =~ ^sha256:[0-9a-f]{64}$ ]] || continue
+                image_ref="$repository@$listed_digest"
+            else
+                tag=$listed_tag
+                case $TARGET in
+                    staging)
+                        [[ $tag =~ ^staging-[0-9]+-[0-9a-f]{40}$ ]] || continue
+                        ;;
+                    production)
+                        [[ $tag =~ ^[0-9a-f]{40}$ || $tag == latest ]] || continue
+                        ;;
+                esac
+                image_ref="$repository:$tag"
+            fi
+        elif [[ $TARGET == production && $repository == "$WEB_IMAGE_REPOSITORY" &&
+            $listed_repository == tempo-api-production-web && $listed_tag == latest ]]; then
+            image_ref=tempo-api-production-web:latest
+        else
+            continue
+        fi
+        [[ -n $image_ref && -z ${seen_refs[$image_ref]+x} ]] || continue
+        seen_refs[$image_ref]=1
+
+        if ! image_id=$(docker_cli image inspect --format '{{.Id}}' "$image_ref" 2>/dev/null) || [[ -z $image_id ]]; then
+            CLEANUP_FAILURE=1
+            log "could not inspect stale deployment image ref $image_ref" >&2
+            continue
+        fi
+        [[ -z ${excluded_ids[$image_id]+x} ]] || continue
+        [[ -z ${protected_ids[$image_id]+x} ]] || continue
+
+        if [[ $listed_tag != '<none>' ]]; then
+            if ! repo_digests=$(docker_cli image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$image_ref" 2>/dev/null); then
+                CLEANUP_FAILURE=1
+                log "could not inspect repository digests for stale deployment image $image_ref" >&2
+                continue
+            fi
+        else
+            repo_digests=$image_ref
+        fi
+        if ! remove_image_ref "$image_ref"; then
+            continue
+        fi
+
+        while IFS= read -r digest_ref; do
+            [[ $digest_ref == "$repository"@sha256:* ]] || continue
+            [[ ${digest_ref#*@sha256:} =~ ^[0-9a-f]{64}$ ]] || continue
+            [[ -z ${seen_digests[$digest_ref]+x} ]] || continue
+            seen_digests[$digest_ref]=1
+            if ! docker_cli image inspect --format '{{.Id}}' "$digest_ref" >/dev/null 2>&1; then
+                continue
+            fi
+            digest_image_id=$(docker_cli image inspect --format '{{.Id}}' "$digest_ref" 2>/dev/null) || continue
+            if [[ $digest_image_id != "$image_id" || -n ${protected_ids[$digest_image_id]+x} ]]; then
+                CLEANUP_FAILURE=1
+                log "skipping image digest with a mismatched or protected ID: $digest_ref" >&2
+                continue
+            fi
+            remove_image_ref "$digest_ref" || true
+        done <<< "$repo_digests"
+    done <<< "$image_refs"
+}
+
+cleanup_deployment_image_refs() {
+    [[ $TARGET == staging || $TARGET == production ]] || return 0
+    local current_api_image=$1 current_web_image=$2 rollback_api_image=$3 rollback_web_image=$4
+    cleanup_deployment_images_for_repository "$API_IMAGE_REPOSITORY" "$current_api_image" "$rollback_api_image"
+    cleanup_deployment_images_for_repository "$WEB_IMAGE_REPOSITORY" "$current_web_image" "$rollback_web_image"
 }
 
 deploy() {
@@ -876,12 +1128,10 @@ deploy() {
     read_state "$STATE_FILE"
     local current_api_sha=$API_SHA current_web_sha=$WEB_SHA
     local current_api_image=$API_IMAGE current_web_image=$WEB_IMAGE
+    [[ $TARGET != staging ]] || load_refresh_state "$current_api_sha" "$current_web_sha" "$current_api_image" "$current_web_image"
     local stale_api_sha='' stale_web_sha='' stale_api_image='' stale_web_image=''
     local target_api_sha='' target_web_sha='' target_api_image='' target_web_image='' target_api_tag='' target_web_tag=''
-    local api_changed=0 web_changed=0 web_recreate=0
-    local api_bootstrap_prunable=0 web_bootstrap_prunable=0 staging_env_updated=0
-    CANDIDATE_API_TAG=''
-    CANDIDATE_WEB_TAG=''
+    local api_changed=0 web_changed=0 web_recreate=0 staging_env_updated=0
     CLEANUP_FAILURE=0
 
     if [[ -f $ROLLBACK_FILE ]]; then
@@ -906,10 +1156,8 @@ deploy() {
         [[ ${#api_values[@]} -eq 3 && ${#web_values[@]} -eq 3 ]] || die 'staging intent resolution returned an invalid shape'
         target_api_sha=${api_values[0]}; target_api_image=${api_values[1]}; target_api_tag=${api_values[2]}
         target_web_sha=${web_values[0]}; target_web_image=${web_values[1]}; target_web_tag=${web_values[2]}
-        CANDIDATE_API_TAG=$target_api_tag
-        CANDIDATE_WEB_TAG=$target_web_tag
-        target_api_image=$(resolve_staging_image "$API_IMAGE_REPOSITORY" "$target_api_sha" "$target_api_image" "$target_api_tag" "$current_api_sha" "$current_api_image") || die 'could not prepare API staging image'
-        target_web_image=$(resolve_staging_image "$WEB_IMAGE_REPOSITORY" "$target_web_sha" "$target_web_image" "$target_web_tag" "$current_web_sha" "$current_web_image") || {
+        target_api_image=$(resolve_staging_image "$API_IMAGE_REPOSITORY" "$target_api_sha" "$target_api_image" "$target_api_tag" "$current_api_sha" "$current_api_image" "$stale_api_image") || die 'could not prepare API staging image'
+        target_web_image=$(resolve_staging_image "$WEB_IMAGE_REPOSITORY" "$target_web_sha" "$target_web_image" "$target_web_tag" "$current_web_sha" "$current_web_image" "$stale_web_image") || {
             cleanup_candidate_images 1 0 "$target_api_sha" "$target_api_image" "$target_web_sha" '' \
                 "$current_api_image" "$current_web_image" "$stale_api_image" "$stale_web_image"
             die 'could not prepare web staging image'
@@ -919,11 +1167,16 @@ deploy() {
     [[ $target_api_sha == "$current_api_sha" && $target_api_image == "$current_api_image" ]] || api_changed=1
     [[ $target_web_sha == "$current_web_sha" && $target_web_image == "$current_web_image" ]] || web_changed=1
     if (( api_changed == 0 && web_changed == 0 )); then
+        if [[ $TARGET == staging ]]; then
+            retry_pending_staging_refresh "$current_api_sha" "$current_web_sha" "$current_api_image" "$current_web_image" || return 1
+        fi
+        cleanup_deployment_image_refs "$current_api_image" "$current_web_image" "$stale_api_image" "$stale_web_image"
+        if (( CLEANUP_FAILURE )); then
+            log 'WARNING: image cleanup is incomplete; the deployment poller will retry' >&2
+        fi
         log "no change: API $current_api_sha, web $current_web_sha"
         return 0
     fi
-    if [[ $current_api_sha != bootstrap ]]; then api_bootstrap_prunable=1; fi
-    if [[ $current_web_sha != bootstrap ]]; then web_bootstrap_prunable=1; fi
     web_recreate=$((api_changed || web_changed))
     log "new target refs: API $target_api_sha, web $target_web_sha"
 
@@ -932,7 +1185,7 @@ deploy() {
             "$current_api_image" "$current_web_image" "$stale_api_image" "$stale_web_image"
         die 'could not snapshot target stateful containers'
     fi
-    if ! cp "$STATE_FILE" "$ROLLBACK_FILE" || ! chmod 600 "$ROLLBACK_FILE"; then
+    if ! write_state "$current_api_sha" "$current_web_sha" "$current_api_image" "$current_web_image" "$ROLLBACK_FILE"; then
         cleanup_candidate_images "$api_changed" "$web_changed" "$target_api_sha" "$target_api_image" "$target_web_sha" "$target_web_image" \
             "$current_api_image" "$current_web_image" "$stale_api_image" "$stale_web_image"
         die 'could not save rollback state'
@@ -940,6 +1193,9 @@ deploy() {
 
     if ! rollout "$target_api_image" "$target_web_image" "$api_changed" "$web_recreate"; then
         if rollback "$current_api_image" "$current_web_image" "$api_changed" "$web_recreate"; then
+            if ! restore_previous_rollback_state "$stale_api_sha" "$stale_web_sha" "$stale_api_image" "$stale_web_image"; then
+                log 'ERROR: could not restore the previous rollback image state' >&2
+            fi
             cleanup_candidate_images "$api_changed" "$web_changed" "$target_api_sha" "$target_api_image" "$target_web_sha" "$target_web_image" \
                 "$current_api_image" "$current_web_image" "$stale_api_image" "$stale_web_image"
         else
@@ -950,6 +1206,9 @@ deploy() {
     if [[ $TARGET == staging ]]; then
         if ! persist_staging_images "$target_api_image" "$target_web_image"; then
             if rollback "$current_api_image" "$current_web_image" "$api_changed" "$web_recreate"; then
+                if ! restore_previous_rollback_state "$stale_api_sha" "$stale_web_sha" "$stale_api_image" "$stale_web_image"; then
+                    log 'ERROR: could not restore the previous rollback image state' >&2
+                fi
                 cleanup_candidate_images "$api_changed" "$web_changed" "$target_api_sha" "$target_api_image" "$target_web_sha" "$target_web_image" \
                     "$current_api_image" "$current_web_image" "$stale_api_image" "$stale_web_image"
             fi
@@ -962,6 +1221,9 @@ deploy() {
             persist_staging_images "$current_api_image" "$current_web_image" || log 'ERROR: could not restore staging image environment'
         fi
         if rollback "$current_api_image" "$current_web_image" "$api_changed" "$web_recreate"; then
+            if ! restore_previous_rollback_state "$stale_api_sha" "$stale_web_sha" "$stale_api_image" "$stale_web_image"; then
+                log 'ERROR: could not restore the previous rollback image state' >&2
+            fi
             cleanup_candidate_images "$api_changed" "$web_changed" "$target_api_sha" "$target_api_image" "$target_web_sha" "$target_web_image" \
                 "$current_api_image" "$current_web_image" "$stale_api_image" "$stale_web_image"
         else
@@ -969,11 +1231,18 @@ deploy() {
         fi
         return 1
     fi
-    cleanup_staging_tags "$target_api_tag" "$target_web_tag"
-    prune_old_image "$API_IMAGE_REPOSITORY" "$stale_api_sha" "$stale_api_image" "$target_api_image" "$target_web_image" "$api_bootstrap_prunable"
-    prune_old_image "$WEB_IMAGE_REPOSITORY" "$stale_web_sha" "$stale_web_image" "$target_api_image" "$target_web_image" "$web_bootstrap_prunable"
+    if [[ $TARGET == staging ]]; then
+        if ! run_staging_refresh "$target_api_sha" "$target_web_sha" "$target_api_image" "$target_web_image"; then
+            cleanup_deployment_image_refs "$target_api_image" "$target_web_image" "$current_api_image" "$current_web_image"
+            if (( CLEANUP_FAILURE )); then
+                log 'WARNING: image cleanup is incomplete; the deployment poller will retry' >&2
+            fi
+            return 1
+        fi
+    fi
+    cleanup_deployment_image_refs "$target_api_image" "$target_web_image" "$current_api_image" "$current_web_image"
     if (( CLEANUP_FAILURE )); then
-        log 'WARNING: one or more candidate image references need manual cleanup' >&2
+        log 'WARNING: image cleanup is incomplete; the deployment poller will retry' >&2
     fi
     log "deployed API $target_api_sha and web $target_web_sha"
 }

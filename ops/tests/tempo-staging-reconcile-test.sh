@@ -53,8 +53,10 @@ setup_fixture() {
     BIN=$FIXTURE/bin
     INTENTS=$FIXTURE/intents
     STATE_DIR=$FIXTURE/state
-    mkdir -p "$BIN" "$INTENTS" "$STATE_DIR"
-    unset FAIL_PULL FAIL_COMPOSE_ONCE
+    mkdir -p "$BIN" "$INTENTS" "$STATE_DIR" "$FIXTURE/home/.config/tempo-staging"
+    unset FAIL_PULL FAIL_COMPOSE_ONCE FAIL_REFRESH TEMPO_DEPLOY_TEST_VALIDATE_POLICY
+    export HOME="$FIXTURE/home"
+    printf 'production.example.invalid\n' > "$HOME/.config/tempo-staging/production-origin-host"
 
     cat > "$BIN/fake" <<'EOF'
 #!/usr/bin/env bash
@@ -75,8 +77,20 @@ case $command in
             exit 0
         fi
         if [[ ${1:-} == pull ]]; then
-            [[ ${FAIL_PULL:-} != "$2" ]]
-            exit $?
+            [[ ${FAIL_PULL:-} != "$2" ]] || exit 1
+            printf '%s\n' "$2" >> "$PULLED_IMAGE_REFS"
+            exit 0
+        fi
+        if [[ ${1:-} == image && ${2:-} == ls ]]; then
+            for tag in "$API_NEW_TAG" "$WEB_NEW_TAG"; do
+                grep -Fxq -- "$tag" "$PULLED_IMAGE_REFS" || continue
+                grep -Fxq -- "$tag" "$REMOVED_IMAGE_REFS" && continue
+                repository=${tag%:*}; tag_name=${tag##*:}
+                if [[ $repository == *tempo-api ]]; then image=$API_NEW_IMAGE; else image=$WEB_NEW_IMAGE; fi
+                digest=${image##*@}
+                printf '%s|%s|%s\n' "$repository" "$tag_name" "$digest"
+            done
+            exit 0
         fi
         if [[ ${1:-} == inspect ]]; then
             case ${@: -1} in
@@ -106,6 +120,10 @@ case $command in
             exit 0
         fi
         if [[ ${1:-} == compose ]]; then
+            if [[ $* == *' config --format json' ]]; then
+                cat "$TEMPO_DEPLOY_TEST_COMPOSE_CONFIG_FILE"
+                exit 0
+            fi
             service=${@: -1}
             args=("$@")
             candidate=''
@@ -138,11 +156,23 @@ EOF
     ln -s fake "$BIN/docker"
     chmod +x "$BIN/fake"
 
+    REFRESH_LOG="$FIXTURE/refresh.log"
+    : > "$REFRESH_LOG"
+    cat > "$FIXTURE/staging-refresh" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+[[ $(wc -l < "$CURL_LOG") -ge 2 ]] || exit 1
+printf '%s\n' "$*" >> "$REFRESH_LOG"
+[[ ${FAIL_REFRESH:-0} != 1 ]]
+EOF
+    chmod +x "$FIXTURE/staging-refresh"
+
     : > "$FIXTURE/docker.log"
     : > "$FIXTURE/curl.log"
     : > "$FIXTURE/runtime-api"
     : > "$FIXTURE/runtime-web"
 : > "$FIXTURE/removed-image-refs"
+: > "$FIXTURE/pulled-image-refs"
     touch "$FIXTURE/staging.compose.yml" "$FIXTURE/staging.env"
     printf 'STAGING_PUBLIC_URL=https://staging.example.invalid/tempo\n' > "$FIXTURE/staging.env"
     printf 'TEMPO_API_SHA=%s\nTEMPO_WEB_SHA=%s\nTEMPO_API_IMAGE=%s\nTEMPO_WEB_IMAGE=%s\n' \
@@ -153,6 +183,9 @@ EOF
     export DOCKER_LOG="$FIXTURE/docker.log" CURL_LOG="$FIXTURE/curl.log"
     export RUNTIME_API_FILE="$FIXTURE/runtime-api" RUNTIME_WEB_FILE="$FIXTURE/runtime-web"
     export REMOVED_IMAGE_REFS="$FIXTURE/removed-image-refs"
+    export PULLED_IMAGE_REFS="$FIXTURE/pulled-image-refs"
+    export REFRESH_LOG TEMPO_DEPLOY_TEST_REFRESH_SCRIPT="$FIXTURE/staging-refresh"
+    export TEMPO_DEPLOY_TEST_REFRESH_STATE_FILE="$STATE_DIR/refresh-images.env"
     export CURRENT_API_IMAGE="$API_OLD_IMAGE" CURRENT_WEB_IMAGE="$WEB_OLD_IMAGE"
     export API_NEW_TAG WEB_NEW_TAG API_NEW_IMAGE WEB_NEW_IMAGE
     export STAGING_DOCKER_ROOT="$FIXTURE/docker-root"
@@ -191,6 +224,114 @@ EOF
 EOF
 }
 
+write_staging_policy_config() {
+    local scenario=$1
+    TEMPO_DEPLOY_TEST_COMPOSE_CONFIG_FILE="$FIXTURE/staging-policy.json"
+    python3 - "$TEMPO_DEPLOY_TEST_COMPOSE_CONFIG_FILE" "$scenario" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+scenario = sys.argv[2]
+api = {
+    'environment': {
+        'DB_HOST': 'postgres',
+        'DB_NAME': 'tempo_staging',
+        'DB_SYNCHRONIZE': 'false',
+        'AI_CATEGORIZATION_ENABLED': 'false',
+        'AI_CATEGORIZATION_WEB_SEARCH_ENABLED': 'false',
+        'BANKING_INTEGRATION_ENABLED': 'false',
+        'WEB_BASE_URL': 'https://staging.example.invalid/tempo',
+    },
+    'networks': ['backend', 'edge'],
+}
+postgres = {'environment': {'POSTGRES_DB': 'tempo_staging'}, 'networks': ['backend']}
+redis = {'networks': ['backend']}
+mailpit = {'networks': ['backend', 'edge']}
+web = {
+    'environment': {},
+    'ports': [{
+        'mode': 'ingress',
+        'host_ip': '127.0.0.1',
+        'target': 8080,
+        'published': '8119',
+        'protocol': 'tcp',
+    }],
+    'networks': ['edge', 'ingress'],
+}
+networks = {
+    'backend': {'name': 'tempo-staging-backend', 'internal': True},
+    'edge': {'name': 'tempo-staging-edge', 'internal': True},
+    'ingress': {'name': 'tempo-staging-ingress', 'internal': False},
+}
+if scenario == 'production-host':
+    api['environment']['DB_HOST'] = 'production-db.internal'
+elif scenario == 'host-redirect':
+    api['extra_hosts'] = ['postgres:192.0.2.10']
+elif scenario == 'mismatched-name':
+    api['environment']['DB_NAME'] = 'another_staging_database'
+elif scenario == 'api-extra-network':
+    api['networks'].append('production-db')
+    networks['production-db'] = {'name': 'tempo-production-db-network', 'external': True}
+elif scenario == 'postgres-extra-network':
+    postgres['networks'].append('edge')
+elif scenario == 'api-network-alias':
+    api['networks'] = {'backend': {'aliases': ['postgres']}, 'edge': {}}
+elif scenario == 'external-backend':
+    networks['backend']['external'] = True
+elif scenario == 'network-mode':
+    api['network_mode'] = 'host'
+elif scenario.startswith('reserved-'):
+    database = {
+        'reserved-refresh': 'tempo_staging_refresh',
+        'reserved-previous': 'tempo_staging_previous',
+        'reserved-failed': 'tempo_staging_failed',
+        'reserved-postgres': 'postgres',
+        'reserved-template0': 'template0',
+        'reserved-template1': 'template1',
+    }[scenario]
+    api['environment']['DB_NAME'] = database
+    postgres['environment']['POSTGRES_DB'] = database
+
+config = {
+    'services': {
+        'api': api,
+        'postgres': postgres,
+        'redis': redis,
+        'mailpit': mailpit,
+        'web': web,
+    },
+    'volumes': {'tempo_staging_postgres_data': {'name': 'tempo-staging-postgres-data'}},
+    'networks': networks,
+}
+path.write_text(json.dumps(config), encoding='utf-8')
+PY
+    export TEMPO_DEPLOY_TEST_COMPOSE_CONFIG_FILE
+    export TEMPO_DEPLOY_TEST_VALIDATE_POLICY=1
+}
+
+run_staging_database_preflight_test() {
+    local scenario
+    for scenario in production-host host-redirect mismatched-name api-extra-network postgres-extra-network api-network-alias external-backend network-mode reserved-refresh reserved-previous reserved-failed reserved-postgres reserved-template0 reserved-template1; do
+        setup_fixture "preflight-$scenario"
+        write_intents
+        write_staging_policy_config "$scenario"
+        if bash "$SCRIPT" --target staging > "$FIXTURE/output" 2>&1; then
+            fail "unsafe rendered staging DB policy unexpectedly succeeded: $scenario"
+        fi
+        assert_no_docker_mutation "unsafe staging DB policy reached a Docker mutation: $scenario"
+        [[ ! -s $CURL_LOG ]] || fail "unsafe staging DB policy reached health checks: $scenario"
+        [[ ! -s $REFRESH_LOG ]] || fail "unsafe staging DB policy reached refresh: $scenario"
+    done
+
+    setup_fixture preflight-valid
+    write_intents
+    write_staging_policy_config valid
+    bash "$SCRIPT" --target staging
+    assert_exact "$REFRESH_LOG" 'refresh --confirm-production-backup-refresh'
+}
+
 run_success_test() {
     setup_fixture success
     write_intents
@@ -201,8 +342,10 @@ run_success_test() {
     assert_contains "$(<"$DOCKER_LOG")" 'up -d --no-deps --force-recreate --wait web'
     assert_contains "$(<"$CURL_LOG")" '/tempo/api/health'
     assert_contains "$(<"$CURL_LOG")" '/tempo/'
-    assert_contains "$(<"$DOCKER_LOG")" "image rm $API_NEW_TAG"
-    assert_contains "$(<"$DOCKER_LOG")" "image rm $WEB_NEW_TAG"
+    local log
+    log=$(<"$DOCKER_LOG")
+    [[ $log != *"image rm $API_NEW_TAG"* ]] || fail 'successful rollout removed the active API staging tag'
+    [[ $log != *"image rm $WEB_NEW_TAG"* ]] || fail 'successful rollout removed the active web staging tag'
     assert_file_contains "$TEMPO_DEPLOY_STATE_FILE" "TEMPO_API_SHA=$SHA_API"
     assert_file_contains "$TEMPO_DEPLOY_STATE_FILE" "TEMPO_WEB_SHA=$SHA_WEB"
     assert_file_contains "$TEMPO_DEPLOY_STATE_FILE" "TEMPO_API_IMAGE=$API_NEW_IMAGE"
@@ -211,19 +354,21 @@ run_success_test() {
     assert_file_contains "$FIXTURE/staging.env" "TEMPO_WEB_IMAGE=$WEB_NEW_IMAGE"
     assert_exact "$RUNTIME_API_FILE" "$API_NEW_IMAGE"
     assert_exact "$RUNTIME_WEB_FILE" "$WEB_NEW_IMAGE"
-    local log
-    log=$(<"$DOCKER_LOG")
+    assert_exact "$REFRESH_LOG" 'refresh --confirm-production-backup-refresh'
+    assert_file_contains "$TEMPO_DEPLOY_TEST_REFRESH_STATE_FILE" "TEMPO_API_SHA=$SHA_API"
+    assert_file_contains "$TEMPO_DEPLOY_TEST_REFRESH_STATE_FILE" "TEMPO_WEB_SHA=$SHA_WEB"
     [[ $log != *' postgres'* && $log != *' redis'* && $log != *' mailpit'* ]] || fail 'stateful service was targeted'
 }
 
 run_resolution_failure_test() {
     setup_fixture resolution-failure
     write_intents
+    printf '%s\n' "$API_NEW_TAG" > "$PULLED_IMAGE_REFS"
     export FAIL_PULL="$API_NEW_TAG"
     if bash "$SCRIPT" --target staging > "$FIXTURE/output" 2>&1; then
         fail 'failed API image resolution unexpectedly succeeded'
     fi
-    assert_contains "$(<"$DOCKER_LOG")" "image rm $API_NEW_TAG"
+    assert_contains "$(<"$DOCKER_LOG")" "image rm $API_NEW_IMAGE"
 }
 
 run_noop_test() {
@@ -237,6 +382,33 @@ EOF
     bash "$SCRIPT" --target staging
     assert_no_docker_mutation 'staging no-op performed a Docker mutation'
     [[ ! -s $CURL_LOG ]] || fail 'staging no-op invoked route checks'
+    [[ ! -s $REFRESH_LOG ]] || fail 'staging no-op triggered a production-data refresh'
+    assert_file_contains "$TEMPO_DEPLOY_TEST_REFRESH_STATE_FILE" "TEMPO_API_SHA=$SHA_OLD"
+    bash "$SCRIPT" --target staging
+    [[ ! -s $REFRESH_LOG ]] || fail 'repeated staging no-op triggered a production-data refresh'
+}
+
+run_refresh_retry_test() {
+    setup_fixture refresh-retry
+    write_intents
+    export FAIL_REFRESH=1
+    if bash "$SCRIPT" --target staging > "$FIXTURE/first-output" 2>&1; then
+        fail 'failed production-data refresh unexpectedly succeeded'
+    fi
+    assert_exact "$REFRESH_LOG" 'refresh --confirm-production-backup-refresh'
+    assert_file_contains "$TEMPO_DEPLOY_STATE_FILE" "TEMPO_API_SHA=$SHA_API"
+    if grep -F "TEMPO_API_SHA=$SHA_API" "$TEMPO_DEPLOY_TEST_REFRESH_STATE_FILE" >/dev/null; then
+        fail 'failed refresh was marked complete'
+    fi
+
+    unset FAIL_REFRESH
+    : > "$DOCKER_LOG"
+    : > "$CURL_LOG"
+    bash "$SCRIPT" --target staging
+    [[ $(wc -l < "$REFRESH_LOG") -eq 2 ]] || fail 'pending refresh was not retried exactly once'
+    assert_file_contains "$TEMPO_DEPLOY_TEST_REFRESH_STATE_FILE" "TEMPO_API_SHA=$SHA_API"
+    [[ $(<"$DOCKER_LOG") != *' pull '* && $(<"$DOCKER_LOG") != *' up '* ]] || \
+        fail 'refresh retry redeployed an unchanged image'
 }
 
 run_failed_intent_test() {
@@ -258,8 +430,10 @@ PY
     assert_no_docker_mutation 'invalid intent reached a Docker mutation'
 }
 
+run_staging_database_preflight_test
 run_success_test
 run_resolution_failure_test
 run_noop_test
+run_refresh_retry_test
 run_failed_intent_test
 printf 'PASS: tempo staging image reconciliation\n'

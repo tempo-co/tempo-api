@@ -40,13 +40,55 @@ API_IMAGE=ghcr.io/tempo-co/tempo-api@sha256:$(printf '1%.0s' {1..64})
 WEB_IMAGE=ghcr.io/tempo-co/tempo-web@sha256:$(printf '2%.0s' {1..64})
 API_TAG=ghcr.io/tempo-co/tempo-api:staging-401-$API_SHA
 WEB_TAG=ghcr.io/tempo-co/tempo-web:staging-402-$WEB_SHA
+ROLLBACK_API_SHA=$(printf 'e%.0s' {1..40})
+ROLLBACK_WEB_SHA=$(printf 'f%.0s' {1..40})
+ROLLBACK_API_IMAGE=ghcr.io/tempo-co/tempo-api@sha256:$(printf '3%.0s' {1..64})
+ROLLBACK_WEB_IMAGE=ghcr.io/tempo-co/tempo-web@sha256:$(printf '4%.0s' {1..64})
+ROLLBACK_API_TAG=ghcr.io/tempo-co/tempo-api:staging-400-$ROLLBACK_API_SHA
+ROLLBACK_WEB_TAG=ghcr.io/tempo-co/tempo-web:staging-399-$ROLLBACK_WEB_SHA
+STALE_API_SHA=$(printf '8%.0s' {1..40})
+STALE_WEB_SHA=$(printf '9%.0s' {1..40})
+STALE_API_IMAGE=ghcr.io/tempo-co/tempo-api@sha256:$(printf '5%.0s' {1..64})
+STALE_WEB_IMAGE=ghcr.io/tempo-co/tempo-web@sha256:$(printf '6%.0s' {1..64})
+STALE_API_TAG=ghcr.io/tempo-co/tempo-api:staging-398-$STALE_API_SHA
+STALE_WEB_TAG=ghcr.io/tempo-co/tempo-web:staging-397-$STALE_WEB_SHA
+UNMANAGED_API_IMAGE=ghcr.io/tempo-co/tempo-api@sha256:$(printf '7%.0s' {1..64})
+UNMANAGED_API_TAG=ghcr.io/tempo-co/tempo-api:latest
+API_CURRENT_ID=sha256:$(printf 'a%.0s' {1..64})
+WEB_CURRENT_ID=sha256:$(printf 'b%.0s' {1..64})
+API_ROLLBACK_ID=sha256:$(printf 'c%.0s' {1..64})
+WEB_ROLLBACK_ID=sha256:$(printf 'd%.0s' {1..64})
+API_STALE_ID=sha256:$(printf 'e%.0s' {1..64})
+WEB_STALE_ID=sha256:$(printf 'f%.0s' {1..64})
+UNMANAGED_API_ID=sha256:$(printf '7%.0s' {1..64})
 cat > "$HOME_FIXTURE/.local/state/tempo-staging/images.env" <<EOF
 TEMPO_API_SHA=$API_SHA
 TEMPO_WEB_SHA=$WEB_SHA
 TEMPO_API_IMAGE=$API_IMAGE
 TEMPO_WEB_IMAGE=$WEB_IMAGE
 EOF
-cp "$HOME_FIXTURE/.local/state/tempo-staging/images.env" "$HOME_FIXTURE/.local/state/tempo-staging/images.env.rollback"
+cat > "$HOME_FIXTURE/.local/state/tempo-staging/images.env.rollback" <<EOF
+TEMPO_API_SHA=$ROLLBACK_API_SHA
+TEMPO_WEB_SHA=$ROLLBACK_WEB_SHA
+TEMPO_API_IMAGE=$ROLLBACK_API_IMAGE
+TEMPO_WEB_IMAGE=$ROLLBACK_WEB_IMAGE
+EOF
+IMAGE_STATE=$TMP_DIR/docker-images.json
+cat > "$IMAGE_STATE" <<EOF
+{"images":[
+  {"id":"$API_CURRENT_ID","tags":["$API_TAG"],"digests":["$API_IMAGE"]},
+  {"id":"$WEB_CURRENT_ID","tags":["$WEB_TAG"],"digests":["$WEB_IMAGE"]},
+  {"id":"$API_ROLLBACK_ID","tags":["$ROLLBACK_API_TAG"],"digests":["$ROLLBACK_API_IMAGE"]},
+  {"id":"$WEB_ROLLBACK_ID","tags":["$ROLLBACK_WEB_TAG"],"digests":["$ROLLBACK_WEB_IMAGE"]},
+  {"id":"$API_STALE_ID","tags":["$STALE_API_TAG"],"digests":["$STALE_API_IMAGE"]},
+  {"id":"$WEB_STALE_ID","tags":["$STALE_WEB_TAG"],"digests":["$STALE_WEB_IMAGE"]},
+  {"id":"$UNMANAGED_API_ID","tags":["$UNMANAGED_API_TAG"],"digests":["$UNMANAGED_API_IMAGE"]}
+],"containers":[
+  {"id":"active-api-container","image":"$API_CURRENT_ID"},
+  {"id":"active-web-container","image":"$WEB_CURRENT_ID"},
+  {"id":"stopped-container-retaining-web-image","image":"$WEB_STALE_ID"}
+]}
+EOF
 
 cat > "$BIN/curl" <<'EOF'
 #!/usr/bin/env bash
@@ -93,8 +135,167 @@ if [[ ${1-} == info ]]; then
     if [[ $* == *SecurityOptions* ]]; then printf '["name=rootless"]\n'; else printf '%s\n' "$EXPECTED_ROOT"; fi
     exit 0
 fi
+if [[ ${1-} == ps ]]; then
+    python3 - "$IMAGE_STATE" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+state = json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
+for container in state['containers']:
+    print(container['id'])
+PY
+    exit 0
+fi
+if [[ ${1-} == inspect ]]; then
+    format=${3-}
+    target=${@: -1}
+    python3 - "$IMAGE_STATE" "$format" "$target" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path, format_string, target = sys.argv[1:]
+state = json.loads(Path(path).read_text(encoding='utf-8'))
+for container in state['containers']:
+    if container['id'] == target:
+        if format_string == '{{.Image}}':
+            print(container['image'])
+        elif format_string == '{{.Id}}':
+            print(container['id'])
+        raise SystemExit(0)
+raise SystemExit(1)
+PY
+    exit $?
+fi
+if [[ ${1-} == image && ${2-} == ls ]]; then
+    python3 - "$IMAGE_STATE" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+state = json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
+for image in state['images']:
+    for tag in image['tags']:
+        repository, tag_name = tag.rsplit(':', 1)
+        digest = next((item.split('@', 1)[1] for item in image['digests'] if item.startswith(f'{repository}@')), '<none>')
+        print(f'{repository}|{tag_name}|{digest}')
+    if not image['tags']:
+        for digest in image['digests']:
+            repository, digest_value = digest.split('@', 1)
+            print(f'{repository}|<none>|{digest_value}')
+PY
+    exit 0
+fi
+if [[ ${1-} == image && ${2-} == inspect ]]; then
+    format=''
+    args=("$@")
+    for ((index = 0; index < ${#args[@]}; index += 1)); do
+        if [[ ${args[index]} == --format ]]; then format=${args[index + 1]}; fi
+    done
+    target=${args[${#args[@]}-1]}
+    python3 - "$IMAGE_STATE" "$format" "$target" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path, format_string, target = sys.argv[1:]
+state = json.loads(Path(path).read_text(encoding='utf-8'))
+for image in state['images']:
+    if target in image['tags'] or target in image['digests']:
+        if '.RepoDigests' in format_string:
+            print('\n'.join(image['digests']))
+        elif '.Id' in format_string:
+            print(image['id'])
+        else:
+            print(image['id'])
+        raise SystemExit(0)
+raise SystemExit(1)
+PY
+    exit $?
+fi
+if [[ ${1-} == image && ${2-} == tag ]]; then
+    python3 - "$IMAGE_STATE" "${3-}" "${4-}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path, image_id, tag = sys.argv[1:]
+state = json.loads(Path(path).read_text(encoding='utf-8'))
+for image in state['images']:
+    if image['id'] == image_id:
+        if tag not in image['tags']:
+            image['tags'].append(tag)
+        Path(path).write_text(json.dumps(state), encoding='utf-8')
+        raise SystemExit(0)
+raise SystemExit(1)
+PY
+    exit $?
+fi
+if [[ ${1-} == image && ${2-} == rm ]]; then
+    reference=${3-}
+    if [[ ${FAIL_IMAGE_RM_ONCE:-} == "$reference" && ! -e $FAIL_IMAGE_RM_MARKER ]]; then
+        : > "$FAIL_IMAGE_RM_MARKER"
+        printf 'synthetic one-time image removal failure: %s\n' "$reference" >&2
+        exit 1
+    fi
+    python3 - "$IMAGE_STATE" "$reference" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path, reference = sys.argv[1:]
+state = json.loads(Path(path).read_text(encoding='utf-8'))
+for image in state['images']:
+    if reference in image['tags'] or reference in image['digests']:
+        if any(container['image'] == image['id'] for container in state['containers']):
+            print(f'image is referenced by a container: {reference}', file=sys.stderr)
+            raise SystemExit(1)
+        image['tags'] = [tag for tag in image['tags'] if tag != reference]
+        image['digests'] = [digest for digest in image['digests'] if digest != reference]
+        state['images'] = [entry for entry in state['images'] if entry['tags'] or entry['digests']]
+        Path(path).write_text(json.dumps(state), encoding='utf-8')
+        raise SystemExit(0)
+print(f'no such image: {reference}', file=sys.stderr)
+raise SystemExit(1)
+PY
+    exit $?
+fi
 if [[ ${1-} == compose && $* == *' config '* ]]; then
-    printf '%s\n' "{\"services\":{\"api\":{\"environment\":{\"AI_CATEGORIZATION_ENABLED\":\"false\",\"AI_CATEGORIZATION_WEB_SEARCH_ENABLED\":\"false\",\"BANKING_INTEGRATION_ENABLED\":\"false\",\"WEB_BASE_URL\":\"${STAGING_WEB_BASE_URL:-https://staging.example.invalid/tempo}\"}},\"web\":{\"ports\":[{\"mode\":\"ingress\",\"host_ip\":\"127.0.0.1\",\"target\":8080,\"published\":\"8119\",\"protocol\":\"tcp\"}]}},\"volumes\":{}}"
+    python3 - <<'PY'
+import json
+import os
+
+configuration = {
+    "services": {
+        "api": {
+            "environment": {
+                "DB_HOST": "postgres",
+                "DB_NAME": "tempo_staging",
+                "AI_CATEGORIZATION_ENABLED": "false",
+                "AI_CATEGORIZATION_WEB_SEARCH_ENABLED": "false",
+                "BANKING_INTEGRATION_ENABLED": "false",
+                "WEB_BASE_URL": os.environ.get("STAGING_WEB_BASE_URL", "https://staging.example.invalid/tempo"),
+            },
+            "networks": ["backend", "edge"],
+        },
+        "postgres": {"environment": {"POSTGRES_DB": "tempo_staging"}, "networks": ["backend"]},
+        "redis": {"networks": ["backend"]},
+        "mailpit": {"networks": ["backend", "edge"]},
+        "web": {
+            "ports": [{"mode": "ingress", "host_ip": "127.0.0.1", "target": 8080, "published": "8119", "protocol": "tcp"}],
+            "networks": ["edge", "ingress"],
+        },
+    },
+    "volumes": {"tempo_staging_postgres_data": {"name": "tempo-staging-postgres-data"}},
+    "networks": {
+        "backend": {"name": "tempo-staging-backend", "internal": True},
+        "edge": {"name": "tempo-staging-edge", "internal": True},
+        "ingress": {"name": "tempo-staging-ingress", "internal": False},
+    },
+}
+print(json.dumps(configuration))
+PY
     exit 0
 fi
 exit 99
@@ -113,7 +314,10 @@ EOF
 export HOME="$HOME_FIXTURE" XDG_RUNTIME_DIR="$RUNTIME_DIR" PATH="$BIN:$PATH"
 export EXPECTED_ROOT="$HOME_FIXTURE/.local/share/tempo-staging/docker"
 export CURL_LOG="$TMP_DIR/curl.log" DOCKER_LOG="$TMP_DIR/docker.log"
+export IMAGE_STATE
 export API_INTENT WEB_INTENT API_SHA WEB_SHA DISPATCH_API_SHA DISPATCH_WEB_SHA
+FAIL_IMAGE_RM_MARKER=$TMP_DIR/image-rm-failed-once
+export FAIL_IMAGE_RM_ONCE="$STALE_API_IMAGE" FAIL_IMAGE_RM_MARKER
 : > "$CURL_LOG"
 : > "$DOCKER_LOG"
 
@@ -128,7 +332,47 @@ assert_no_docker_mutation() {
         exit 1
     fi
 }
-assert_no_docker_mutation
+assert_no_deployment_actions() {
+    if grep -Eq '(^| )(pull|up|down|restart|stop|start|exec)( |$)' "$DOCKER_LOG"; then
+        printf 'FAIL: no-op staging poll pulled or recreated a service\n' >&2
+        exit 1
+    fi
+}
+assert_image_reference() {
+    python3 - "$IMAGE_STATE" "$1" "$2" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path, reference, expectation = sys.argv[1:]
+state = json.loads(Path(path).read_text(encoding='utf-8'))
+exists = any(reference in image['tags'] or reference in image['digests'] for image in state['images'])
+if exists != (expectation == 'present'):
+    raise SystemExit(f'{reference} was unexpectedly {"present" if exists else "absent"}')
+PY
+}
+assert_no_deployment_actions
+assert_image_reference "$API_TAG" present
+assert_image_reference "$WEB_TAG" present
+assert_image_reference "$ROLLBACK_API_TAG" present
+assert_image_reference "$ROLLBACK_WEB_TAG" present
+assert_image_reference "$API_IMAGE" present
+assert_image_reference "$WEB_IMAGE" present
+assert_image_reference "$ROLLBACK_API_IMAGE" present
+assert_image_reference "$ROLLBACK_WEB_IMAGE" present
+assert_image_reference "$STALE_API_TAG" absent
+assert_image_reference "$STALE_API_IMAGE" present
+assert_image_reference "$STALE_WEB_TAG" present
+assert_image_reference "$STALE_WEB_IMAGE" present
+assert_image_reference "$UNMANAGED_API_TAG" present
+assert_image_reference "$UNMANAGED_API_IMAGE" present
+[[ -f $FAIL_IMAGE_RM_MARKER ]] || { printf 'FAIL: stale digest removal failure was not injected\n' >&2; exit 1; }
+
+: > "$DOCKER_LOG"
+bash "$SCRIPT" --target staging
+assert_no_deployment_actions
+assert_image_reference "$STALE_API_TAG" absent
+assert_image_reference "$STALE_API_IMAGE" absent
 
 chmod 644 "$HOME_FIXTURE/.config/tempo-staging/staging.env"
 : > "$DOCKER_LOG"

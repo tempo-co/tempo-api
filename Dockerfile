@@ -13,22 +13,36 @@ COPY test/ ./test/
 COPY nest-cli.json ./
 RUN npm run build
 
-FROM node:22-alpine AS runtime
+FROM node:22-alpine AS runtime-dependencies
 
-RUN apk add --no-cache curl libstdc++ \
+RUN apk add --no-cache libstdc++ \
     && apk add --no-cache --virtual .build-deps python3 make g++
 
 WORKDIR /usr/src/app
 
-COPY --chown=node:node package*.json ./
-RUN npm ci && apk del .build-deps
+COPY package*.json ./
+RUN node -e 'require("node:fs").writeFileSync("/tmp/dev-dependencies.json", JSON.stringify(Object.keys(require("./package.json").devDependencies)))' \
+    && npm pkg delete devDependencies \
+    && npm install --package-lock-only --ignore-scripts \
+    && npm ci --omit=dev --omit=peer \
+    && apk del .build-deps
 
 COPY --from=builder --chown=node:node /usr/src/app/dist ./dist
-
 COPY --chown=node:node tsconfig.json ./tsconfig.json
 
+FROM node:22-alpine AS runtime
+
+RUN apk add --no-cache curl libstdc++
+
+WORKDIR /usr/src/app
+
+COPY --from=runtime-dependencies --chown=node:node /usr/src/app/ ./
 COPY --chown=node:node .env.test .env.test
 COPY --chown=node:node .env.development .env.development
+COPY --from=runtime-dependencies /tmp/dev-dependencies.json /tmp/dev-dependencies.json
+COPY ops/tests/tempo-runtime-image-smoke.js /tmp/runtime-image-smoke.js
+RUN node /tmp/runtime-image-smoke.js \
+    && rm /tmp/dev-dependencies.json /tmp/runtime-image-smoke.js
 
 USER node
 

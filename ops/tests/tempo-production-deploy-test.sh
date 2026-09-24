@@ -8,11 +8,25 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 
 SHA_A=$(printf 'a%.0s' {1..40}); SHA_B=$(printf 'b%.0s' {1..40})
 SHA_C=$(printf 'c%.0s' {1..40}); SHA_D=$(printf 'd%.0s' {1..40})
+SHA_E=$(printf 'e%.0s' {1..40}); SHA_F=$(printf 'f%.0s' {1..40})
 API_OLD_IMAGE=ghcr.io/tempo-co/tempo-api@sha256:1111111111111111111111111111111111111111111111111111111111111111
 WEB_OLD_IMAGE=tempo-api-production-web:latest
+API_STALE_IMAGE=ghcr.io/tempo-co/tempo-api@sha256:7777777777777777777777777777777777777777777777777777777777777777
+WEB_STALE_IMAGE=ghcr.io/tempo-co/tempo-web@sha256:8888888888888888888888888888888888888888888888888888888888888888
+API_IMAGE_REPOSITORY=ghcr.io/tempo-co/tempo-api
+WEB_IMAGE_REPOSITORY=ghcr.io/tempo-co/tempo-web
+WEB_LOCAL_ALIAS=tempo-api-production-web:latest
 WEB_RUNNING_IMAGE=tempo-api-production-web
+PROD_STAGING_API_TAG=ghcr.io/tempo-co/tempo-api:staging-123-$SHA_E
+PROD_ARBITRARY_API_TAG=ghcr.io/tempo-co/tempo-api:release-candidate
+export SHA_A SHA_B SHA_C SHA_D SHA_E SHA_F API_IMAGE_REPOSITORY WEB_IMAGE_REPOSITORY WEB_LOCAL_ALIAS
+PROD_STALE_API_TAG=ghcr.io/tempo-co/tempo-api:$SHA_E
+PROD_STALE_WEB_TAG=ghcr.io/tempo-co/tempo-web:$SHA_F
+export API_OLD_IMAGE API_STALE_IMAGE WEB_STALE_IMAGE PROD_STALE_API_TAG PROD_STALE_WEB_TAG WEB_OLD_IMAGE
 API_NEW_DIGEST=$(printf '3%.0s' {1..64})
 WEB_NEW_DIGEST=$(printf '4%.0s' {1..64})
+API_NEXT_DIGEST=$(printf '5%.0s' {1..64})
+WEB_NEXT_DIGEST=$(printf '6%.0s' {1..64})
 
 fail() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
 
@@ -37,36 +51,143 @@ assert_no_stateful_compose() {
 
 setup_fixture() {
     FIXTURE=$TMP_DIR/fixture-$1; BIN=$FIXTURE/bin; STATE_DIR=$FIXTURE/state
-    unset FAIL_PULL FAIL_COMPOSE_ONCE
+    unset FAIL_PULL FAIL_COMPOSE_ONCE FAIL_MAILPIT_INSPECT PRODUCTION_SWEEP_TEST EXTRA_IMAGE_REFS FAIL_IMAGE_RM_ONCE FAIL_IMAGE_RM_MARKER DEPLOY_TARGET DOCKER_CONFIG
+    unset FAKE_PRODUCTION_COMPOSE_OWNER_UID FAKE_PRODUCTION_COMPOSE_MODE
     mkdir -p "$BIN" "$STATE_DIR"
     cat > "$BIN/fake" <<'EOF'
 #!/usr/bin/env bash
 set -Eeuo pipefail
 command=${0##*/}
+image_id_for_ref() {
+    case ${1-} in
+        "$PROD_STALE_API_TAG"|"$API_STALE_IMAGE") printf 'stale-api-image-id\n' ;;
+        "$PROD_STALE_WEB_TAG"|"$WEB_STALE_IMAGE") printf 'stale-web-image-id\n' ;;
+        "$API_OLD_IMAGE"|"$API_IMAGE_REPOSITORY:latest") printf 'old-api-image-id\n' ;;
+        "$WEB_OLD_IMAGE"|"$WEB_LOCAL_ALIAS") printf 'old-web-image-id\n' ;;
+        "$API_IMAGE_REPOSITORY:$TEST_API_SHA"|"$API_IMAGE_REPOSITORY@sha256:${TEST_API_DIGEST:-}") printf 'candidate-api-image-id\n' ;;
+        "$WEB_IMAGE_REPOSITORY:$TEST_WEB_SHA"|"$WEB_IMAGE_REPOSITORY@sha256:${TEST_WEB_DIGEST:-}") printf 'candidate-web-image-id\n' ;;
+        *tempo-web*) printf 'active-web-image-id\n' ;;
+        *tempo-api*) printf 'active-api-image-id\n' ;;
+        *) printf 'unmanaged-image-id\n' ;;
+    esac
+}
 case $command in
     git)
         if [[ $* == *tempo-api* ]]; then printf '%s\trefs/heads/main\n' "$TEST_API_SHA"
         else printf '%s\trefs/heads/main\n' "$TEST_WEB_SHA"; fi ;;
-    curl) printf '%s\n' "$*" >> "$CURL_LOG" ;;
-    docker)
-        printf '%s\n' "$*" >> "$DOCKER_LOG"
-        if [[ ${1:-} == pull ]]; then [[ ${FAIL_PULL:-} != "$2" ]]; exit $?; fi
-        if [[ ${1:-} == image && ${2:-} == inspect ]]; then
-            if [[ ${@: -1} == *tempo-api* ]]; then printf 'ghcr.io/tempo-co/tempo-api@sha256:%s\n' "$TEST_API_DIGEST"
-            else printf 'ghcr.io/tempo-co/tempo-web@sha256:%s\n' "$TEST_WEB_DIGEST"; fi
-            exit 0
+curl) printf '%s\n' "$*" >> "$CURL_LOG" ;;
+docker)
+    printf '%s (DOCKER_CONFIG=%s)\n' "$*" "${DOCKER_CONFIG-<unset>}" >> "$DOCKER_LOG"
+    if [[ ${1:-} == ps ]]; then
+        if [[ ${PRODUCTION_SWEEP_TEST:-0} == 1 ]]; then
+            printf '%s\n' active-api-container active-web-container stopped-stale-web-container
         fi
-        if [[ ${1:-} == inspect ]]; then
-            case ${@: -1} in
-                tempo-api-production-api-1) [[ -s $RUNTIME_API_FILE ]] && printf '%s\n' "$(<"$RUNTIME_API_FILE")" || printf '%s\n' "$TEST_CURRENT_API_IMAGE" ;;
-                tempo-api-production-web-1) [[ -s $RUNTIME_WEB_FILE ]] && printf '%s\n' "$(<"$RUNTIME_WEB_FILE")" || printf '%s\n' "$TEST_CURRENT_WEB_IMAGE" ;;
-                tempo-api-production-postgres-1) printf 'postgres-id\n' ;;
-                tempo-api-production-redis-1) printf 'redis-id\n' ;;
-                tempo-api-production-mailpit-1) printf 'mailpit-id\n' ;;
-                *) printf 'unknown-id\n' ;;
-            esac
-            exit 0
+        exit 0
+    fi
+    if [[ ${1:-} == pull ]]; then
+        [[ ${FAIL_PULL:-} != "$2" ]] || exit 1
+        python3 - "$REMOVED_IMAGE_REFS" "$2" <<'PY'
+import sys
+from pathlib import Path
+
+path, reference = Path(sys.argv[1]), sys.argv[2]
+items = path.read_text(encoding='utf-8').splitlines() if path.exists() else []
+path.write_text(''.join(f'{item}\n' for item in items if item != reference), encoding='utf-8')
+PY
+        exit 0
+    fi
+    if [[ ${1:-} == image && ${2:-} == ls ]]; then
+        if [[ -n ${EXTRA_IMAGE_REFS:-} ]]; then
+            python3 - "$REMOVED_IMAGE_REFS" <<'PY'
+import os
+import sys
+from pathlib import Path
+
+removed = set(Path(sys.argv[1]).read_text(encoding='utf-8').splitlines())
+api_repo = os.environ['API_IMAGE_REPOSITORY']
+web_repo = os.environ['WEB_IMAGE_REPOSITORY']
+images = {
+    os.environ['PROD_STALE_API_TAG']: os.environ['API_STALE_IMAGE'],
+    os.environ['PROD_STALE_WEB_TAG']: os.environ['WEB_STALE_IMAGE'],
+    f"{api_repo}:latest": os.environ['API_OLD_IMAGE'],
+    f"{api_repo}:{os.environ['SHA_A']}": os.environ['API_OLD_IMAGE'],
+    os.environ['WEB_LOCAL_ALIAS']: '',
+}
+api_sha = os.environ.get('TEST_API_SHA')
+api_digest = os.environ.get('TEST_API_DIGEST')
+web_sha = os.environ.get('TEST_WEB_SHA')
+web_digest = os.environ.get('TEST_WEB_DIGEST')
+if api_sha and api_digest:
+    images[f"{api_repo}:{api_sha}"] = f"{api_repo}@sha256:{api_digest}"
+if web_sha and web_digest:
+    images[f"{web_repo}:{web_sha}"] = f"{web_repo}@sha256:{web_digest}"
+for reference in os.environ['EXTRA_IMAGE_REFS'].splitlines():
+    if not reference:
+        continue
+    repository, tag = reference.rsplit(':', 1)
+    digest = images.get(reference, '')
+    if reference in removed:
+        if digest and digest not in removed:
+            print(f"{repository}|<none>|{digest.split('@', 1)[1]}")
+    else:
+        digest_value = digest.split('@', 1)[1] if digest else '<none>'
+        print(f"{repository}|{tag}|{digest_value}")
+PY
         fi
+        exit 0
+    fi
+    if [[ ${1:-} == image && ${2:-} == inspect ]]; then
+        target=${@: -1}; format=''; args=("$@")
+        for ((index = 0; index < ${#args[@]}; index += 1)); do
+            if [[ ${args[index]} == --format ]]; then format=${args[index + 1]}; fi
+        done
+        if [[ $format != '{{.Id}}' && -f $REMOVED_IMAGE_REFS ]] && grep -Fxq -- "$target" "$REMOVED_IMAGE_REFS"; then exit 1; fi
+        case $format in
+            '{{.Id}}') image_id_for_ref "$target" ;;
+            *RepoDigests*)
+                case $target in
+                    "$PROD_STALE_API_TAG"|"$API_STALE_IMAGE") printf '%s\n' "$API_STALE_IMAGE" ;;
+                    "$PROD_STALE_WEB_TAG"|"$WEB_STALE_IMAGE") printf '%s\n' "$WEB_STALE_IMAGE" ;;
+                    "$API_OLD_IMAGE"|"$API_IMAGE_REPOSITORY:latest") printf '%s\n' "$API_OLD_IMAGE" ;;
+                    "$WEB_OLD_IMAGE"|"$WEB_LOCAL_ALIAS") : ;;
+                    "$API_IMAGE_REPOSITORY:$TEST_API_SHA") printf '%s\n' "$API_IMAGE_REPOSITORY@sha256:${TEST_API_DIGEST:-}" ;;
+                    "$WEB_IMAGE_REPOSITORY:$TEST_WEB_SHA") printf '%s\n' "$WEB_IMAGE_REPOSITORY@sha256:${TEST_WEB_DIGEST:-}" ;;
+                    *tempo-api*) printf 'ghcr.io/tempo-co/tempo-api@sha256:%s\n' "${TEST_API_DIGEST:-}" ;;
+                    *) printf 'ghcr.io/tempo-co/tempo-web@sha256:%s\n' "${TEST_WEB_DIGEST:-}" ;;
+                esac ;;
+            *)
+                if [[ $target == *tempo-api/tempo-api* ]]; then printf 'ghcr.io/tempo-co/tempo-api@sha256:%s\n' "$TEST_API_DIGEST"
+                else printf 'ghcr.io/tempo-co/tempo-web@sha256:%s\n' "$TEST_WEB_DIGEST"; fi ;;
+        esac
+        exit 0
+    fi
+    if [[ ${1:-} == inspect ]]; then
+            format=${3-}; target=${@: -1}
+            if [[ $format == '{{.Image}}' ]]; then
+                case $target in
+                    active-api-container)
+                        [[ -s $RUNTIME_API_FILE ]] && image_ref=$(<"$RUNTIME_API_FILE") || image_ref=$TEST_CURRENT_API_IMAGE
+                        image_id_for_ref "$image_ref" ;;
+                    active-web-container)
+                        [[ -s $RUNTIME_WEB_FILE ]] && image_ref=$(<"$RUNTIME_WEB_FILE") || image_ref=$TEST_CURRENT_WEB_IMAGE
+                        image_id_for_ref "$image_ref" ;;
+                    stopped-stale-web-container) image_id_for_ref "$WEB_STALE_IMAGE" ;;
+                    *) printf 'unknown-image-id\n' ;;
+                esac
+            else
+                case $target in
+                    tempo-api-production-api-1) [[ -s $RUNTIME_API_FILE ]] && printf '%s\n' "$(<"$RUNTIME_API_FILE")" || printf '%s\n' "$TEST_CURRENT_API_IMAGE" ;;
+                    tempo-api-production-web-1) [[ -s $RUNTIME_WEB_FILE ]] && printf '%s\n' "$(<"$RUNTIME_WEB_FILE")" || printf '%s\n' "$TEST_CURRENT_WEB_IMAGE" ;;
+                    tempo-api-production-postgres-1) printf 'postgres-id\n' ;;
+                    tempo-api-production-redis-1) printf 'redis-id\n' ;;
+                    tempo-api-production-mailpit-1)
+                        [[ ${FAIL_MAILPIT_INSPECT:-0} != 1 ]] || exit 1
+                        printf 'mailpit-id\n' ;;
+                    *) printf 'unknown-id\n' ;;
+                esac
+            fi
+            exit 0
+    fi
         if [[ ${1:-} == compose ]]; then
             [[ -z ${TEMPO_API_IMAGE+x} && -z ${TEMPO_WEB_IMAGE+x} ]] || exit 2
             service=${@: -1}; args=("$@"); candidate=''
@@ -87,18 +208,42 @@ case $command in
             [[ $service != web ]] || printf '%s\n' "$web_image" > "$RUNTIME_WEB_FILE"
             exit 0
         fi
-        [[ ${1:-} == image && ${2:-} == rm ]] || exit 0 ;;
+        if [[ ${1:-} == image && ${2:-} == rm ]]; then
+            reference=${3:-}
+            if [[ ${FAIL_IMAGE_RM_ONCE:-} == "$reference" && ! -e $FAIL_IMAGE_RM_MARKER ]]; then
+                : > "$FAIL_IMAGE_RM_MARKER"
+                printf 'synthetic one-time image removal failure: %s\n' "$reference" >&2
+                exit 1
+            fi
+            printf '%s\n' "$reference" >> "$REMOVED_IMAGE_REFS"
+            exit 0
+        fi
+        exit 0 ;;
 esac
 EOF
     ln -s fake "$BIN/git"; ln -s fake "$BIN/curl"; ln -s fake "$BIN/docker"
     chmod +x "$BIN/fake"
+    cat > "$BIN/stat" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+if [[ ${FAKE_PRODUCTION_COMPOSE_OWNER_UID:-} && ${3-} == "$TEMPO_DEPLOY_COMPOSE_FILE" ]]; then
+    case ${2-} in
+        %u) printf '%s\n' "$FAKE_PRODUCTION_COMPOSE_OWNER_UID"; exit 0 ;;
+        %a) printf '%s\n' "${FAKE_PRODUCTION_COMPOSE_MODE:-644}"; exit 0 ;;
+    esac
+fi
+exec /usr/bin/stat "$@"
+EOF
+    chmod +x "$BIN/stat"
     : > "$FIXTURE/docker.log"; : > "$FIXTURE/curl.log"
+    : > "$FIXTURE/removed-image-refs"
     : > "$FIXTURE/runtime-api"; : > "$FIXTURE/runtime-web"
-    touch "$FIXTURE/production.compose.yml" "$FIXTURE/production.env"
+    touch "$FIXTURE/production.compose.yml" "$FIXTURE/production.env" "$FIXTURE/staging.compose.yml" "$FIXTURE/staging.env"
     export PATH="$BIN:$PATH" DOCKER_LOG="$FIXTURE/docker.log" CURL_LOG="$FIXTURE/curl.log"
     export TEMPO_DEPLOY_TEST_MODE=1 TEMPO_DEPLOY_TEST_ROOT="$FIXTURE"
     export RUNTIME_API_FILE="$FIXTURE/runtime-api" RUNTIME_WEB_FILE="$FIXTURE/runtime-web"
     export COMPOSE_FAILURE_MARKER="$FIXTURE/compose-failed"
+    export REMOVED_IMAGE_REFS="$FIXTURE/removed-image-refs"
     export TEMPO_DEPLOY_COMPOSE_FILE="$FIXTURE/production.compose.yml"
     export TEMPO_DEPLOY_STATE_FILE="$STATE_DIR/images.env" TEMPO_DEPLOY_LOCK_FILE="$STATE_DIR/deploy.lock"
     export TEMPO_PRODUCTION_ENV_FILE="$FIXTURE/production.env"
@@ -120,7 +265,7 @@ set_target() {
 }
 
 run_deploy() {
-    bash "$SCRIPT" --target production "$@"
+    bash "$SCRIPT" --target "${DEPLOY_TARGET:-production}" "$@"
 }
 
 run_initialize_test() {
@@ -135,11 +280,21 @@ run_initialize_test() {
     [[ $log != *' pull '* && $log != *compose* ]] || fail 'initialization changed application containers'
 }
 
+run_production_docker_config_test() {
+    setup_fixture production-docker-config
+    set_target; write_active_state
+    export DOCKER_CONFIG="$FIXTURE/service-docker-config"
+    mkdir -p "$DOCKER_CONFIG"
+    run_deploy
+    assert_contains "$DOCKER_LOG" "DOCKER_CONFIG=$DOCKER_CONFIG"
+}
+
 run_bootstrap_cleanup_test() {
     setup_fixture bootstrap-cleanup
     TEST_CURRENT_API_IMAGE=ghcr.io/tempo-co/tempo-api:latest; TEST_CURRENT_WEB_IMAGE=$WEB_RUNNING_IMAGE
     export TEST_CURRENT_API_IMAGE TEST_CURRENT_WEB_IMAGE
     run_deploy --initialize
+    export EXTRA_IMAGE_REFS="$(printf '%s\n%s' "$API_IMAGE_REPOSITORY:latest" "$WEB_LOCAL_ALIAS")"
 
     set_target; run_deploy
     assert_contains "$TEMPO_DEPLOY_STATE_FILE.rollback" 'TEMPO_API_SHA=bootstrap'
@@ -160,7 +315,121 @@ run_bootstrap_cleanup_test() {
 run_noop_test() {
     setup_fixture noop; TEST_API_SHA=$SHA_A; TEST_WEB_SHA=$SHA_B; export TEST_API_SHA TEST_WEB_SHA
     write_active_state; run_deploy
-    [[ ! -s $DOCKER_LOG ]] || fail 'no-op invoked Docker'
+    if grep -Eq '(^| )(pull|up|down|rm|tag|restart|stop|start|exec)( |$)' "$DOCKER_LOG"; then
+        fail 'no-op polled and mutated Docker images or containers'
+    fi
+}
+
+run_root_owned_compose_test() {
+    setup_fixture root-owned-compose; set_target; write_active_state
+    export FAKE_PRODUCTION_COMPOSE_OWNER_UID=0 FAKE_PRODUCTION_COMPOSE_MODE=644
+    run_deploy
+    assert_contains "$DOCKER_LOG" 'up -d --no-deps --force-recreate --wait api'
+    assert_contains "$TEMPO_DEPLOY_STATE_FILE" "TEMPO_API_SHA=$TEST_API_SHA"
+    assert_no_stateful_compose
+}
+
+run_root_owned_zero_mode_compose_test() {
+    setup_fixture root-owned-zero-mode-compose; set_target; write_active_state
+    export FAKE_PRODUCTION_COMPOSE_OWNER_UID=0 FAKE_PRODUCTION_COMPOSE_MODE=0
+    run_deploy
+    assert_contains "$DOCKER_LOG" 'up -d --no-deps --force-recreate --wait api'
+    assert_contains "$TEMPO_DEPLOY_STATE_FILE" "TEMPO_API_SHA=$TEST_API_SHA"
+    assert_no_stateful_compose
+}
+
+run_group_writable_root_compose_rejected_test() {
+    setup_fixture group-writable-root-compose; set_target; write_active_state
+    export FAKE_PRODUCTION_COMPOSE_OWNER_UID=0 FAKE_PRODUCTION_COMPOSE_MODE=664
+    if run_deploy >"$FIXTURE/output" 2>&1; then
+        fail 'group-writable root-owned production Compose file was accepted'
+    fi
+    assert_contains "$FIXTURE/output" 'root-owned production Compose file must not be group/world writable'
+    [[ ! -s $DOCKER_LOG ]] || fail 'Docker was invoked with a group-writable production Compose file'
+}
+
+run_world_writable_root_compose_rejected_test() {
+    setup_fixture world-writable-root-compose; set_target; write_active_state
+    export FAKE_PRODUCTION_COMPOSE_OWNER_UID=0 FAKE_PRODUCTION_COMPOSE_MODE=666
+    if run_deploy >"$FIXTURE/output" 2>&1; then
+        fail 'world-writable root-owned production Compose file was accepted'
+    fi
+    assert_contains "$FIXTURE/output" 'root-owned production Compose file must not be group/world writable'
+    [[ ! -s $DOCKER_LOG ]] || fail 'Docker was invoked with a world-writable production Compose file'
+}
+
+run_malformed_root_compose_mode_rejected_test() {
+    setup_fixture malformed-root-compose-mode; set_target; write_active_state
+    export FAKE_PRODUCTION_COMPOSE_OWNER_UID=0 FAKE_PRODUCTION_COMPOSE_MODE=invalid
+    if run_deploy >"$FIXTURE/output" 2>&1; then
+        fail 'malformed root-owned production Compose mode was accepted'
+    fi
+    assert_contains "$FIXTURE/output" 'could not parse production Compose file permissions'
+    [[ ! -s $DOCKER_LOG ]] || fail 'Docker was invoked with a malformed production Compose mode'
+}
+
+run_foreign_owned_compose_rejected_test() {
+    setup_fixture foreign-owned-compose; set_target; write_active_state
+    export FAKE_PRODUCTION_COMPOSE_OWNER_UID=12345 FAKE_PRODUCTION_COMPOSE_MODE=644
+    if run_deploy >"$FIXTURE/output" 2>&1; then
+        fail 'production Compose file with a foreign owner was accepted'
+    fi
+    assert_contains "$FIXTURE/output" 'Compose file must be owned by the deployment user (or root for production)'
+    [[ ! -s $DOCKER_LOG ]] || fail 'Docker was invoked with a foreign-owned production Compose file'
+}
+
+run_staging_rejects_root_owned_compose_test() {
+    setup_fixture staging-root-owned-compose; set_target
+    DEPLOY_TARGET=staging
+    TEMPO_DEPLOY_COMPOSE_FILE="$FIXTURE/staging.compose.yml"
+    FAKE_PRODUCTION_COMPOSE_OWNER_UID=0 FAKE_PRODUCTION_COMPOSE_MODE=644
+    export DEPLOY_TARGET TEMPO_DEPLOY_COMPOSE_FILE FAKE_PRODUCTION_COMPOSE_OWNER_UID FAKE_PRODUCTION_COMPOSE_MODE
+    if run_deploy >"$FIXTURE/output" 2>&1; then
+        fail 'staging accepted a root-owned Compose file'
+    fi
+    assert_contains "$FIXTURE/output" 'Compose file must be owned by the deployment user (or root for production)'
+    [[ ! -s $DOCKER_LOG ]] || fail 'Docker was invoked with a root-owned staging Compose file'
+}
+
+run_production_cleanup_retry_test() {
+    setup_fixture production-cleanup-retry
+    TEST_API_SHA=$SHA_C; TEST_WEB_SHA=$SHA_D
+    TEST_API_DIGEST=$API_NEW_DIGEST; TEST_WEB_DIGEST=$WEB_NEW_DIGEST
+    TEST_CURRENT_API_IMAGE=$API_OLD_IMAGE; TEST_CURRENT_WEB_IMAGE=$WEB_OLD_IMAGE
+    export TEST_API_SHA TEST_WEB_SHA TEST_API_DIGEST TEST_WEB_DIGEST TEST_CURRENT_API_IMAGE TEST_CURRENT_WEB_IMAGE
+    write_active_state
+    cp "$TEMPO_DEPLOY_STATE_FILE" "$TEMPO_DEPLOY_STATE_FILE.rollback"
+    export PRODUCTION_SWEEP_TEST=1
+    export EXTRA_IMAGE_REFS="$(printf '%s\n' "$API_IMAGE_REPOSITORY:$SHA_C" "$WEB_IMAGE_REPOSITORY:$SHA_D" "$PROD_STALE_API_TAG" "$PROD_STALE_WEB_TAG" "$PROD_STAGING_API_TAG" "$PROD_ARBITRARY_API_TAG")"
+    export FAIL_IMAGE_RM_ONCE="$API_STALE_IMAGE" FAIL_IMAGE_RM_MARKER="$FIXTURE/image-rm-failed"
+
+    run_deploy
+    [[ -e $FAIL_IMAGE_RM_MARKER ]] || fail 'production digest-removal failure was not injected'
+    assert_contains "$REMOVED_IMAGE_REFS" "$PROD_STALE_API_TAG"
+    [[ $(<"$REMOVED_IMAGE_REFS") != *"$API_STALE_IMAGE"* ]] || fail 'failed production digest removal was marked successful'
+    [[ $(<"$REMOVED_IMAGE_REFS") != *"$PROD_STALE_WEB_TAG"* ]] || fail 'production cleanup removed a stopped-container image tag'
+    [[ $(<"$REMOVED_IMAGE_REFS") != *"$WEB_STALE_IMAGE"* ]] || fail 'production cleanup removed a stopped-container image digest'
+    [[ $(<"$REMOVED_IMAGE_REFS") != *"$PROD_STAGING_API_TAG"* ]] || fail 'production cleanup removed a staging-tagged image'
+    [[ $(<"$REMOVED_IMAGE_REFS") != *"$PROD_ARBITRARY_API_TAG"* ]] || fail 'production cleanup removed an unmanaged image tag'
+    [[ $(<"$REMOVED_IMAGE_REFS") != *"$API_IMAGE_REPOSITORY:$SHA_C"* ]] || fail 'production cleanup removed the active API image'
+    [[ $(<"$REMOVED_IMAGE_REFS") != *"$WEB_IMAGE_REPOSITORY:$SHA_D"* ]] || fail 'production cleanup removed the active web image'
+
+    : > "$DOCKER_LOG"
+    run_deploy
+    assert_contains "$REMOVED_IMAGE_REFS" "$API_STALE_IMAGE"
+    [[ $(<"$REMOVED_IMAGE_REFS") != *"$PROD_STALE_WEB_TAG"* ]] || fail 'production retry removed a stopped-container image tag'
+    [[ $(<"$REMOVED_IMAGE_REFS") != *"$WEB_STALE_IMAGE"* ]] || fail 'production retry removed a stopped-container image digest'
+    assert_contains "$DOCKER_LOG" 'image ls --all --digests --no-trunc'
+}
+
+run_missing_mailpit_test() {
+    setup_fixture missing-mailpit; set_target; write_active_state
+    export FAIL_MAILPIT_INSPECT=1
+
+    run_deploy
+
+    assert_contains "$TEMPO_DEPLOY_STATE_FILE" "TEMPO_API_SHA=$TEST_API_SHA"
+    assert_no_stateful_compose
 }
 
 run_failed_pull_test() {
@@ -173,6 +442,7 @@ run_failed_pull_test() {
 
 run_failed_pull_cleanup_test() {
     setup_fixture failed-pull-cleanup; set_target; write_active_state
+    export EXTRA_IMAGE_REFS="$API_IMAGE_REPOSITORY:$TEST_API_SHA"
     export FAIL_PULL=ghcr.io/tempo-co/tempo-web:$TEST_WEB_SHA
     if run_deploy; then fail 'failed web pull unexpectedly succeeded'; fi
     assert_contains "$DOCKER_LOG" "image rm ghcr.io/tempo-co/tempo-api:$TEST_API_SHA"
@@ -182,23 +452,53 @@ run_failed_pull_cleanup_test() {
 
 run_failed_rollout_cleanup_test() {
     setup_fixture failed-rollout-cleanup; set_target; write_active_state
+    printf '%s\n' "TEMPO_API_SHA=$SHA_E" "TEMPO_WEB_SHA=$SHA_F" "TEMPO_API_IMAGE=$API_STALE_IMAGE" "TEMPO_WEB_IMAGE=$WEB_STALE_IMAGE" > "$TEMPO_DEPLOY_STATE_FILE.rollback"
+    export EXTRA_IMAGE_REFS="$(printf '%s\n' "$API_IMAGE_REPOSITORY:$TEST_API_SHA" "$WEB_IMAGE_REPOSITORY:$TEST_WEB_SHA" "$PROD_STALE_API_TAG" "$PROD_STALE_WEB_TAG")"
     export FAIL_COMPOSE_ONCE=web
     if run_deploy; then fail 'failed rollout unexpectedly succeeded'; fi
+    assert_contains "$TEMPO_DEPLOY_STATE_FILE.rollback" "TEMPO_API_SHA=$SHA_E"
+    assert_contains "$TEMPO_DEPLOY_STATE_FILE.rollback" "TEMPO_API_IMAGE=$API_STALE_IMAGE"
+    assert_contains "$TEMPO_DEPLOY_STATE_FILE.rollback" "TEMPO_WEB_SHA=$SHA_F"
+    assert_contains "$TEMPO_DEPLOY_STATE_FILE.rollback" "TEMPO_WEB_IMAGE=$WEB_STALE_IMAGE"
     assert_contains "$DOCKER_LOG" "image rm ghcr.io/tempo-co/tempo-api:$TEST_API_SHA"
     assert_contains "$DOCKER_LOG" "image rm ghcr.io/tempo-co/tempo-api@sha256:$TEST_API_DIGEST"
     assert_contains "$DOCKER_LOG" "image rm ghcr.io/tempo-co/tempo-web:$TEST_WEB_SHA"
     assert_contains "$DOCKER_LOG" "image rm ghcr.io/tempo-co/tempo-web@sha256:$TEST_WEB_DIGEST"
     assert_no_stateful_compose
+
+    run_deploy
+    assert_contains "$DOCKER_LOG" "image rm ghcr.io/tempo-co/tempo-api:$SHA_E"
+    assert_contains "$DOCKER_LOG" "image rm $API_STALE_IMAGE"
+    assert_contains "$DOCKER_LOG" "image rm $WEB_STALE_IMAGE"
+    assert_contains "$TEMPO_DEPLOY_STATE_FILE.rollback" "TEMPO_API_SHA=$SHA_A"
+    assert_contains "$TEMPO_DEPLOY_STATE_FILE.rollback" "TEMPO_API_IMAGE=$API_OLD_IMAGE"
+    assert_contains "$TEMPO_DEPLOY_STATE_FILE.rollback" "TEMPO_WEB_SHA=$SHA_B"
+    assert_contains "$TEMPO_DEPLOY_STATE_FILE.rollback" "TEMPO_WEB_IMAGE=$WEB_OLD_IMAGE"
 }
 
 run_success_test() {
-    setup_fixture success; set_target; write_active_state; cp "$TEMPO_DEPLOY_STATE_FILE" "$TEMPO_DEPLOY_STATE_FILE.rollback"; run_deploy
+    setup_fixture success; set_target; write_active_state; cp "$TEMPO_DEPLOY_STATE_FILE" "$TEMPO_DEPLOY_STATE_FILE.rollback"
+    export EXTRA_IMAGE_REFS="$(printf '%s\n%s' "$API_IMAGE_REPOSITORY:latest" "$WEB_LOCAL_ALIAS")"
+    run_deploy
     assert_contains "$DOCKER_LOG" '--env-file'; assert_contains "$CURL_LOG" '/tempo/'
     assert_contains "$CURL_LOG" '/tempo/api/health'
     assert_contains "$TEMPO_DEPLOY_STATE_FILE" "TEMPO_API_SHA=$TEST_API_SHA"
     assert_contains "$TEMPO_DEPLOY_STATE_FILE.rollback" "TEMPO_API_IMAGE=$API_OLD_IMAGE"
-    assert_contains "$DOCKER_LOG" "image rm ghcr.io/tempo-co/tempo-api:$SHA_A"
+    local first_log; first_log=$(<"$DOCKER_LOG")
+    [[ $first_log != *"image rm ghcr.io/tempo-co/tempo-api:$SHA_A"* ]] || fail 'deployment removed the image retained as API rollback'
+    [[ $first_log != *"image rm $API_OLD_IMAGE"* ]] || fail 'deployment removed the API image retained as rollback'
+    [[ $first_log != *"image rm $WEB_OLD_IMAGE"* ]] || fail 'deployment removed the web image retained as rollback'
+
+    TEST_API_SHA=$SHA_E; TEST_WEB_SHA=$SHA_F
+    TEST_API_DIGEST=$API_NEXT_DIGEST; TEST_WEB_DIGEST=$WEB_NEXT_DIGEST
+    export TEST_API_SHA TEST_WEB_SHA TEST_API_DIGEST TEST_WEB_DIGEST
+    run_deploy
+
+    assert_contains "$TEMPO_DEPLOY_STATE_FILE.rollback" "TEMPO_API_SHA=$SHA_C"
+    assert_contains "$TEMPO_DEPLOY_STATE_FILE.rollback" "TEMPO_WEB_SHA=$SHA_D"
+    assert_contains "$DOCKER_LOG" "image rm $API_IMAGE_REPOSITORY:latest"
     assert_contains "$DOCKER_LOG" "image rm $API_OLD_IMAGE"
+    assert_contains "$DOCKER_LOG" "image rm $WEB_OLD_IMAGE"
     assert_no_stateful_compose
 }
 
@@ -246,5 +546,5 @@ run_rollback_test() {
     assert_no_stateful_compose
 }
 
-run_initialize_test; run_bootstrap_cleanup_test; run_noop_test; run_failed_pull_test; run_failed_pull_cleanup_test; run_failed_rollout_cleanup_test; run_success_test; run_api_only_test; run_api_only_rollback_test; run_web_only_test; run_rollback_test
+run_initialize_test; run_production_docker_config_test; run_bootstrap_cleanup_test; run_noop_test; run_root_owned_compose_test; run_root_owned_zero_mode_compose_test; run_group_writable_root_compose_rejected_test; run_world_writable_root_compose_rejected_test; run_malformed_root_compose_mode_rejected_test; run_foreign_owned_compose_rejected_test; run_staging_rejects_root_owned_compose_test; run_production_cleanup_retry_test; run_missing_mailpit_test; run_failed_pull_test; run_failed_pull_cleanup_test; run_failed_rollout_cleanup_test; run_success_test; run_api_only_test; run_api_only_rollback_test; run_web_only_test; run_rollback_test
 printf 'PASS: tempo production deploy script tests\n'
