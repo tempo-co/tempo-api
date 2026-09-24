@@ -19,7 +19,7 @@ Tempo API is a backend service built with [NestJS](https://nestjs.com) for perso
 Make sure you have the following installed on your system:
 
 - [Node.js](https://nodejs.org/) (v20.19.0+, v22.13.0+, or v24.x+)
-- [Docker](https://www.docker.com/)
+- [Docker Engine](https://docs.docker.com/engine/) (v28.0.0 or later)
 
 ## Installation
 
@@ -30,6 +30,8 @@ $ npm ci
 ## Env setup
 
 The development environment uses variables from `.env.development`. To override these locally (for API keys or secrets), define them in a `.env.development.local` file, which takes precedence.
+
+Development and test Docker services publish ports only on host loopback, so they are not reachable from other machines. pgAdmin requires a login; its password defaults to `DB_PASSWORD` and can be overridden by setting `PGADMIN_DEFAULT_PASSWORD` in the environment.
 
 ## Development
 
