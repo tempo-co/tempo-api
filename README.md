@@ -31,7 +31,7 @@ $ npm ci
 
 The development environment uses variables from `.env.development`. To override these locally (for API keys or secrets), define them in a `.env.development.local` file, which takes precedence.
 
-Development and test Docker services publish ports only on host loopback, so they are not reachable from other machines. pgAdmin requires a login; its password defaults to `DB_PASSWORD` and can be overridden by setting `PGADMIN_DEFAULT_PASSWORD` in the environment.
+pgAdmin requires a login; its password defaults to `DB_PASSWORD` and can be overridden by setting `PGADMIN_DEFAULT_PASSWORD` in the environment.
 
 ## Development
 
