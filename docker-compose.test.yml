@@ -5,14 +5,35 @@ services:
     image: axllent/mailpit
     container_name: mailpit_test
     ports:
-      - "${EMAIL_PORT}:${EMAIL_PORT}"
-      - "${EMAIL_UI_PORT}:${EMAIL_UI_PORT}"
+      - target: ${EMAIL_PORT}
+        published: "${EMAIL_PORT}"
+        host_ip: 127.0.0.1
+        protocol: tcp
+      - target: ${EMAIL_PORT}
+        published: "${EMAIL_PORT}"
+        host_ip: "::1"
+        protocol: tcp
+      - target: ${EMAIL_UI_PORT}
+        published: "${EMAIL_UI_PORT}"
+        host_ip: 127.0.0.1
+        protocol: tcp
+      - target: ${EMAIL_UI_PORT}
+        published: "${EMAIL_UI_PORT}"
+        host_ip: "::1"
+        protocol: tcp
 
   redis:
     image: redis
     container_name: redis_test
     ports:
-      - "${REDIS_PORT}:${REDIS_PORT}"
+      - target: ${REDIS_PORT}
+        published: "${REDIS_PORT}"
+        host_ip: 127.0.0.1
+        protocol: tcp
+      - target: ${REDIS_PORT}
+        published: "${REDIS_PORT}"
+        host_ip: "::1"
+        protocol: tcp
 
   postgres:
     image: postgres:17
@@ -22,4 +43,11 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: ${DB_NAME}
     ports:
-      - "${DB_PORT}:${DB_PORT}"
+      - target: ${DB_PORT}
+        published: "${DB_PORT}"
+        host_ip: 127.0.0.1
+        protocol: tcp
+      - target: ${DB_PORT}
+        published: "${DB_PORT}"
+        host_ip: "::1"
+        protocol: tcp
