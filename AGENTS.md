@@ -12,8 +12,8 @@ Tempo API is a NestJS backend for personal-finance accounts, bank connections, b
 
 ## Dev environment
 
-- Prerequisites: Node.js 22.x and Docker. Install the locked dependencies with `npm ci`.
-- Development: `npm run start:dev`. This starts `docker-compose.dev.yml` with `.env.development`, then starts Nest in watch mode. The stack includes PostgreSQL, Redis, RedisInsight, Mailpit, and pgAdmin.
+- Prerequisites: Node.js 22.x and Docker Engine 28.0.0 or later. Install the locked dependencies with `npm ci`.
+- Development: `npm run start:dev`. This starts `docker-compose.dev.yml` with `.env.development`, then starts Nest in watch mode. The stack includes PostgreSQL, Redis, RedisInsight, Mailpit, and pgAdmin; published development and test ports bind only to host loopback, and pgAdmin requires login.
 - Development Swagger is at `http://localhost:3000/docs` when `PORT=3000`.
 - Configuration is validated by `src/app/core/config/config.schema.ts`. `NODE_ENV` selects `.env.development`, `.env.test`, or `.env.production`; the corresponding `.local` file takes precedence for Nest configuration.
 - `src/app/core/config/config.schema.ts` is the source of truth for required and optional environment variables. Use `.env.development` plus `.env.development.local` for local secrets, and keep credentials out of Git.
