@@ -53,11 +53,12 @@ export class AuthService {
 		return {message: LOGIN_SUCCESS};
 	}
 
-	async changePassword(account: Account, dto: PasswordChangeDto) {
+	async changePassword(account: Account, dto: PasswordChangeDto, currentSessionId: string) {
 		await this.accountService.verifyPassword(account.password, dto.currentPassword);
 
 		const hash = await argon2.hash(dto.newPassword);
 		await this.accountService.update(account.id, {password: hash});
+		await this.sessionService.revokeAllOtherSessions(account.id, currentSessionId);
 		return {message: PASSWORD_CHANGE_SUCCESS};
 	}
 }

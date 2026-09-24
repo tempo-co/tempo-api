@@ -23,8 +23,9 @@ describe('AuthController - Change password', () => {
 	});
 
 	describe('POST /auth/change-password', () => {
-		it('should change password for authenticated account and allow login with new password', async () => {
+		it('should change password, revoke other sessions, and allow login with new password', async () => {
 			const agent = await loginAgent(httpServer, PW_CHANGE_ACCOUNT_EMAIL, PW_CHANGE_ACCOUNT_PASSWORD);
+			const otherAgent = await loginAgent(httpServer, PW_CHANGE_ACCOUNT_EMAIL, PW_CHANGE_ACCOUNT_PASSWORD);
 
 			const newPassword = faker.internet.password({length: 12});
 			const changePasswordDto: PasswordChangeDto = {
@@ -40,6 +41,8 @@ describe('AuthController - Change password', () => {
 					expect(res.body.message).toEqual(PASSWORD_CHANGE_SUCCESS);
 				});
 
+			await agent.get('/accounts/me').expect(200);
+			await otherAgent.get('/accounts/me').expect(401);
 			await agent.post('/auth/logout').expect(200);
 
 			// Old password fails login
@@ -57,6 +60,7 @@ describe('AuthController - Change password', () => {
 
 		it('should fail with 401 Unauthorized if current password is incorrect', async () => {
 			const agent = await loginAgent(httpServer, VERIFIED_ACCOUNT_EMAIL, VERIFIED_ACCOUNT_PASSWORD);
+			const otherAgent = await loginAgent(httpServer, VERIFIED_ACCOUNT_EMAIL, VERIFIED_ACCOUNT_PASSWORD);
 
 			const changePasswordDto: PasswordChangeDto = {
 				currentPassword: 'wrong-current-password',
@@ -64,6 +68,8 @@ describe('AuthController - Change password', () => {
 			};
 
 			await agent.post('/auth/change-password').send(changePasswordDto).expect(401);
+			await agent.get('/accounts/me').expect(200);
+			await otherAgent.get('/accounts/me').expect(200);
 		});
 
 		it('should fail with 403 Forbidden when unverified account tries to change password', async () => {
