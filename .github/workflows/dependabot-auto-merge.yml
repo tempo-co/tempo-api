@@ -1,0 +1,403 @@
+name: Dependabot patch auto-merge
+
+on:
+    pull_request_target:
+        types:
+            - opened
+            - reopened
+            - synchronize
+            - ready_for_review
+            - closed
+    workflow_run:
+        workflows:
+            - CI/CD
+        types:
+            - completed
+    repository_dispatch:
+        types:
+            - dependabot-patch-ready
+
+jobs:
+    classify-update:
+        if: github.repository == 'tempo-co/tempo-api' && github.event_name == 'pull_request_target' && github.event.pull_request.base.ref == 'main' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login == 'dependabot[bot]'
+        permissions:
+            actions: read
+            contents: write
+            issues: write
+            pull-requests: read
+        runs-on: ubuntu-latest
+        steps:
+            - name: Read Dependabot update metadata
+              id: metadata
+              if: github.event.action != 'closed'
+              uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+              with:
+                  github-token: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Record head-bound patch eligibility
+              if: always()
+              uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+              env:
+                  UPDATE_TYPE: ${{ steps.metadata.outputs.update-type }}
+              with:
+                  script: |
+                      const owner = context.repo.owner;
+                      const repo = context.repo.repo;
+                      const pullNumber = context.payload.pull_request.number;
+                      const marker = `<!-- dependabot-patch-eligibility:pr-${pullNumber} -->`;
+                      const isPatch = process.env.UPDATE_TYPE === 'version-update:semver-patch';
+                      const isClosed = context.payload.action === 'closed';
+
+                      const { data: pullRequest } = await github.rest.pulls.get({ owner, repo, pull_number: pullNumber });
+                      if (pullRequest.head.sha !== context.payload.pull_request.head.sha) return;
+
+                      async function recordPolicy(message) {
+                          const comments = await github.paginate(github.rest.issues.listComments, {
+                              owner,
+                              repo,
+                              issue_number: pullNumber,
+                              per_page: 100,
+                          });
+                          const existing = comments.find((comment) =>
+                              comment.user?.login === 'github-actions[bot]' && comment.body?.includes(marker)
+                          );
+                          const body = `${marker}\n${message}`;
+
+                          if (existing) {
+                              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+                          } else {
+                              await github.rest.issues.createComment({ owner, repo, issue_number: pullNumber, body });
+                          }
+                      }
+
+                      if (isClosed || pullRequest.state !== 'open') {
+                          await recordPolicy('This Dependabot PR is closed; automatic merge is not eligible.');
+                          return;
+                      }
+
+                      if (isPatch) {
+                          await recordPolicy(
+                              `Eligible semver-patch update for head \`${pullRequest.head.sha}\`. It will merge only after the complete CI/CD workflow succeeds and GitHub accepts the repository merge rules.`
+                          );
+                      } else {
+                          await recordPolicy(
+                              `Not eligible for automatic merge: update type is \`${process.env.UPDATE_TYPE || 'unknown'}\`. Only semver-patch Dependabot updates are eligible; minor, major, and unknown updates remain for maintainer review. Current head: \`${pullRequest.head.sha}\`.`
+                          );
+                          return;
+                      }
+
+                      const { data: workflowRuns } = await github.rest.actions.listWorkflowRuns({
+                          owner,
+                          repo,
+                          workflow_id: 'ci.yml',
+                          head_sha: pullRequest.head.sha,
+                          event: 'pull_request',
+                          per_page: 100,
+                      });
+                      const latestRun = workflowRuns.workflow_runs
+                          .slice()
+                          .sort((left, right) => {
+                              const leftStarted = Date.parse(left.run_started_at ?? left.created_at);
+                              const rightStarted = Date.parse(right.run_started_at ?? right.created_at);
+                              return rightStarted - leftStarted || (right.run_attempt ?? 1) - (left.run_attempt ?? 1) || right.id - left.id;
+                          })[0];
+                      if (latestRun?.status !== 'completed' || latestRun.conclusion !== 'success') return;
+
+                      await github.rest.repos.createDispatchEvent({
+                          owner,
+                          repo,
+                          event_type: 'dependabot-patch-ready',
+                          client_payload: {
+                              pull_number: pullNumber,
+                              head_sha: pullRequest.head.sha,
+                              workflow_run_id: latestRun.id,
+                              workflow_run_attempt: latestRun.run_attempt ?? 1,
+                          },
+                      });
+
+    merge-after-ci:
+        if: >-
+            github.repository == 'tempo-co/tempo-api' &&
+            (
+              (
+                github.event_name == 'workflow_run' &&
+                github.event.workflow_run.event == 'pull_request' &&
+                github.event.workflow_run.head_repository.full_name == github.repository
+              ) ||
+              (
+                github.event_name == 'repository_dispatch' &&
+                github.event.action == 'dependabot-patch-ready'
+              )
+            )
+        permissions:
+            actions: read
+            contents: write
+            issues: write
+            pull-requests: write
+        runs-on: ubuntu-latest
+        steps:
+            - name: Merge an eligible patch after full CI/CD succeeds
+              uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+              with:
+                  script: |
+                      const owner = context.repo.owner;
+                      const repo = context.repo.repo;
+                      const repository = `${owner}/${repo}`;
+                      const isReadyDispatch = context.eventName === 'repository_dispatch';
+                      let run;
+                      let pullNumber;
+
+                      if (isReadyDispatch) {
+                          const payload = context.payload.client_payload ?? {};
+                          pullNumber = Number(payload.pull_number);
+                          const runId = Number(payload.workflow_run_id);
+                          const runAttempt = Number(payload.workflow_run_attempt);
+                          if (!Number.isSafeInteger(pullNumber) || pullNumber < 1 || !Number.isSafeInteger(runId) || runId < 1) return;
+
+                          const { data } = await github.rest.actions.getWorkflowRun({ owner, repo, run_id: runId });
+                          run = data;
+                          if (run.head_sha !== payload.head_sha || (run.run_attempt ?? 1) !== runAttempt || run.conclusion !== 'success') return;
+                      } else {
+                          run = context.payload.workflow_run;
+                          let associatedPullRequests = run.pull_requests ?? [];
+                          if (associatedPullRequests.length === 0) {
+                              const { data } = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+                                  owner,
+                                  repo,
+                                  commit_sha: run.head_sha,
+                              });
+                              associatedPullRequests = data;
+                          }
+
+                          const associatedPullRequest = associatedPullRequests.find((item) => item.head?.sha === run.head_sha) ?? associatedPullRequests[0];
+                          if (!associatedPullRequest) return;
+                          pullNumber = associatedPullRequest.number;
+                      }
+
+                      if (repository !== 'tempo-co/tempo-api' || run.name !== 'CI/CD' || run.event !== 'pull_request' || run.head_repository?.full_name !== repository) return;
+
+                      const { data: pullRequest } = await github.rest.pulls.get({ owner, repo, pull_number: pullNumber });
+                      if (pullRequest.user.login !== 'dependabot[bot]' || pullRequest.base.ref !== 'main') return;
+                      if (pullRequest.state !== 'open' || pullRequest.head.sha !== run.head_sha) return;
+
+                      const { data: workflowRuns } = await github.rest.actions.listWorkflowRuns({
+                          owner,
+                          repo,
+                          workflow_id: run.workflow_id,
+                          head_sha: run.head_sha,
+                          event: 'pull_request',
+                          per_page: 100,
+                      });
+                      const latestRun = workflowRuns.workflow_runs
+                          .slice()
+                          .sort((left, right) => {
+                              const leftStarted = Date.parse(left.run_started_at ?? left.created_at);
+                              const rightStarted = Date.parse(right.run_started_at ?? right.created_at);
+                              return rightStarted - leftStarted || (right.run_attempt ?? 1) - (left.run_attempt ?? 1) || right.id - left.id;
+                          })[0];
+                      if (!latestRun || latestRun.id !== run.id || (latestRun.run_attempt ?? 1) !== (run.run_attempt ?? 1)) return;
+                      if (run.conclusion !== 'success') return;
+
+                      const policyMarker = `<!-- dependabot-patch-eligibility:pr-${pullNumber} -->`;
+                      const comments = await github.paginate(github.rest.issues.listComments, {
+                          owner,
+                          repo,
+                          issue_number: pullNumber,
+                          per_page: 100,
+                      });
+                      const policyComment = comments.find((comment) =>
+                          comment.user?.login === 'github-actions[bot]' && comment.body?.includes(policyMarker)
+                      );
+                      const exactHeadEligibility = `Eligible semver-patch update for head \`${run.head_sha}\``;
+                      if (!policyComment?.body?.includes(exactHeadEligibility)) return;
+
+                      async function findMergeBlocker() {
+                          const labels = await github.paginate(github.rest.issues.listLabelsForRepo, { owner, repo, per_page: 100 });
+                          if (!labels.some((label) => label.name === 'merge-blocked')) {
+                              try {
+                                  await github.rest.issues.createLabel({
+                                      owner,
+                                      repo,
+                                      name: 'merge-blocked',
+                                      color: 'd73a4a',
+                                      description: 'Eligible Dependabot patch could not be automatically merged',
+                                  });
+                              } catch (error) {
+                                  if (error.status !== 422) throw error;
+                              }
+                          }
+
+                          const trackerMarker = `<!-- dependabot-automerge-tracker:pr-${pullNumber} -->`;
+                          const issues = await github.paginate(github.rest.issues.listForRepo, {
+                              owner,
+                              repo,
+                              state: 'all',
+                              labels: 'merge-blocked',
+                              per_page: 100,
+                          });
+                          return { trackerMarker, issue: issues.find((item) => !item.pull_request && item.body?.includes(trackerMarker)) };
+                      }
+
+                      async function reportMergeBlocked(error) {
+                          const current = (await github.rest.pulls.get({ owner, repo, pull_number: pullNumber })).data;
+                          if (current.merged_at || current.state !== 'open' || current.head.sha !== run.head_sha) return;
+
+                          const { trackerMarker, issue } = await findMergeBlocker();
+                          const body = [
+                              trackerMarker,
+                              `Eligible Dependabot patch PR [#${pullNumber}](${current.html_url}) passed the complete CI/CD workflow, but GitHub did not accept the automatic squash merge.`,
+                              '',
+                              `Head: \`${run.head_sha}\``,
+                              `CI/CD run: [#${run.run_number} (attempt ${run.run_attempt ?? 1})](${run.html_url})`,
+                              '',
+                              'The workflow does not bypass merge rules. Check required reviews/statuses, repository merge settings, and merge conflicts; this issue closes when the PR is merged. No security alert is dismissed by this automation.',
+                          ].join('\n');
+
+                          await github.rest.issues.addLabels({ owner, repo, issue_number: pullNumber, labels: ['merge-blocked'] });
+
+                          let trackerIssue;
+                          if (issue) {
+                              const update = { owner, repo, issue_number: issue.number, title: `Auto-merge blocked: Dependabot PR #${pullNumber}`, body };
+                              if (issue.state !== 'open') update.state = 'open';
+                              trackerIssue = (await github.rest.issues.update(update)).data;
+                          } else {
+                              trackerIssue = (await github.rest.issues.create({
+                                  owner,
+                                  repo,
+                                  title: `Auto-merge blocked: Dependabot PR #${pullNumber}`,
+                                  body,
+                                  labels: ['merge-blocked'],
+                              })).data;
+                          }
+
+                          const commentMarker = `<!-- dependabot-automerge-blocked:${run.id}:${run.run_attempt ?? 1} -->`;
+                          const existingComments = await github.paginate(github.rest.issues.listComments, {
+                              owner,
+                              repo,
+                              issue_number: pullNumber,
+                              per_page: 100,
+                          });
+                          if (!existingComments.some((comment) => comment.body?.includes(commentMarker))) {
+                              await github.rest.issues.createComment({
+                                  owner,
+                                  repo,
+                                  issue_number: pullNumber,
+                                  body: `${commentMarker}\nFull CI/CD passed, but GitHub blocked automatic squash merge. See [tracker issue #${trackerIssue.number}](${trackerIssue.html_url}) and the merge box; no merge rule was bypassed.`,
+                              });
+                          }
+
+                          core.warning(`Full CI/CD passed, but GitHub blocked automatic merge for PR #${pullNumber} (HTTP ${error.status ?? 'unknown'}). A tracker issue was opened or updated.`);
+                      }
+
+                      async function reportImagePublishDispatchFailure(error, mergedPullRequest) {
+                          const labelName = 'image-publish-blocked';
+                          const trackerMarker = `<!-- dependabot-image-publish:pr-${pullNumber} -->`;
+                          const labels = await github.paginate(github.rest.issues.listLabelsForRepo, { owner, repo, per_page: 100 });
+                          if (!labels.some((label) => label.name === labelName)) {
+                              try {
+                                  await github.rest.issues.createLabel({
+                                      owner, repo, name: labelName, color: 'd73a4a',
+                                      description: 'GHCR image publication failed after a Dependabot merge',
+                                  });
+                              } catch (labelError) {
+                                  if (labelError.status !== 422) throw labelError;
+                              }
+                          }
+
+                          const issues = await github.paginate(github.rest.issues.listForRepo, {
+                              owner, repo, state: 'all', labels: labelName, per_page: 100,
+                          });
+                          const issue = issues.find((item) => !item.pull_request && item.body?.includes(trackerMarker));
+                          const runUrl = `https://github.com/${owner}/${repo}/actions/runs/${context.runId}`;
+                          const body = [
+                              trackerMarker,
+                              `The GHCR publish dispatch failed after Dependabot PR [#${pullNumber}](${mergedPullRequest.html_url}) was merged.`,
+                              '',
+                              `Merge commit: \`${mergedPullRequest.merge_commit_sha}\``,
+                              `PR head SHA: ${mergedPullRequest.head.sha}`,
+                              `Auto-merge workflow run: [${runUrl}](${runUrl})`,
+                              '',
+                              'Run the “Publish image after Dependabot merge” workflow manually using this PR number, head SHA, and merge commit SHA after resolving the dispatch failure.',
+                          ].join(String.fromCharCode(10));
+
+                          await github.rest.issues.addLabels({ owner, repo, issue_number: pullNumber, labels: [labelName] });
+
+                          let trackerIssue;
+                          if (issue) {
+                              const update = { owner, repo, issue_number: issue.number, title: `Image publish blocked: Dependabot PR #${pullNumber}`, body };
+                              if (issue.state !== 'open') update.state = 'open';
+                              trackerIssue = (await github.rest.issues.update(update)).data;
+                          } else {
+                              trackerIssue = (await github.rest.issues.create({
+                                  owner, repo, title: `Image publish blocked: Dependabot PR #${pullNumber}`,
+                                  body, labels: [labelName],
+                              })).data;
+                          }
+
+                          const commentMarker = `<!-- dependabot-image-publish-dispatch-failed:${context.runId} -->`;
+                          const comments = await github.paginate(github.rest.issues.listComments, {
+                              owner, repo, issue_number: pullNumber, per_page: 100,
+                          });
+                          if (!comments.some((comment) => comment.body?.includes(commentMarker))) {
+                              await github.rest.issues.createComment({
+                                  owner, repo, issue_number: pullNumber,
+                                  body: [commentMarker, `Image publication dispatch failed. Track recovery in [issue #${trackerIssue.number}](${trackerIssue.html_url}).`].join(String.fromCharCode(10)),
+                              });
+                          }
+                          core.warning(`Image-publish dispatch failed for merged PR #${pullNumber}; a tracker issue was opened or updated (HTTP ${error.status ?? 'unknown'}).`);
+                      }
+
+                      const mutation = `mutation($pullRequestId: ID!, $expectedHeadOid: GitObjectID!) {
+                          mergePullRequest(input: {
+                              pullRequestId: $pullRequestId,
+                              mergeMethod: SQUASH,
+                              expectedHeadOid: $expectedHeadOid
+                          }) {
+                              pullRequest { merged mergedAt mergeCommit { oid } }
+                          }
+                      }`;
+
+                      try {
+                          await github.graphql(mutation, {
+                              pullRequestId: pullRequest.node_id,
+                              expectedHeadOid: run.head_sha,
+                          });
+                      } catch (error) {
+                          await reportMergeBlocked(error);
+                          return;
+                      }
+
+                      const { data: mergedPullRequest } = await github.rest.pulls.get({ owner, repo, pull_number: pullNumber });
+                      if (mergedPullRequest.state !== 'closed' || !mergedPullRequest.merged_at) {
+                          await reportMergeBlocked(new Error('Merge mutation returned without a merged pull request'));
+                          return;
+                      }
+                      core.info(`Verified PR #${pullNumber} merged as ${run.head_sha} passed full CI/CD.`);
+
+                      try {
+                          await github.rest.repos.createDispatchEvent({
+                              owner,
+                              repo,
+                              event_type: 'dependabot-patch-merged',
+                              client_payload: {
+                                  pull_number: pullNumber,
+                                  head_sha: run.head_sha,
+                                  merge_commit_sha: mergedPullRequest.merge_commit_sha,
+                              },
+                          });
+                          core.info(`Dispatched GHCR image publication and tracker resolution for merged PR #${pullNumber}.`);
+                      } catch (error) {
+                          await reportImagePublishDispatchFailure(error, mergedPullRequest);
+                          return;
+                      }
+
+                      try {
+                          await github.rest.issues.updateComment({
+                              owner,
+                              repo,
+                              comment_id: policyComment.id,
+                              body: [policyMarker, `Merged after the full CI/CD workflow succeeded for head \`${run.head_sha}\`.`].join(String.fromCharCode(10)),
+                          });
+                      } catch (error) {
+                          core.warning(`Could not update the Dependabot policy comment for merged PR #${pullNumber} (HTTP ${error.status ?? 'unknown'}).`);
+                      }

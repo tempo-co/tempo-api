@@ -137,6 +137,9 @@ jobs:
 
     publish-image:
         name: Publish Docker image to GHCR
+        concurrency:
+            group: tempo-api-main-image-publish
+            cancel-in-progress: true
         runs-on: ubuntu-latest
         permissions:
             contents: read

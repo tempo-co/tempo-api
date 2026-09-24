@@ -1,0 +1,270 @@
+name: Dependabot CI triage
+
+on:
+    workflow_run:
+        workflows:
+            - CI/CD
+        types:
+            - completed
+    pull_request_target:
+        types:
+            - closed
+    repository_dispatch:
+        types:
+            - dependabot-patch-merged
+
+permissions:
+    actions: read
+    issues: write
+    pull-requests: read
+
+jobs:
+    triage:
+        if: >-
+            github.repository == 'tempo-co/tempo-api' &&
+            (
+              (
+                github.event_name == 'pull_request_target' &&
+                github.event.pull_request.head.repo.full_name == github.repository &&
+                github.event.pull_request.user.login == 'dependabot[bot]'
+              ) ||
+              (
+                github.event_name == 'workflow_run' &&
+                github.event.workflow_run.event == 'pull_request' &&
+                github.event.workflow_run.head_repository.full_name == github.repository
+              ) ||
+              (
+                github.event_name == 'repository_dispatch' &&
+                github.event.action == 'dependabot-patch-merged'
+              )
+            )
+        runs-on: ubuntu-latest
+        steps:
+            - name: Triage Dependabot CI failures
+              uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+              with:
+                  script: |
+                      const owner = context.repo.owner;
+                      const repo = context.repo.repo;
+                      const repository = `${owner}/${repo}`;
+                      const failureLabel = 'ci-failed';
+                      const mergeBlockedLabel = 'merge-blocked';
+
+                      if (repository !== 'tempo-co/tempo-api') return;
+
+                      const isRepositoryDispatch = context.eventName === 'repository_dispatch';
+                      const isCloseEvent = context.eventName === 'pull_request_target' || isRepositoryDispatch;
+                      const run = isCloseEvent ? null : context.payload.workflow_run;
+                      let pullNumber;
+
+                      if (isRepositoryDispatch) {
+                          const payload = context.payload.client_payload ?? {};
+                          pullNumber = Number(payload.pull_number);
+                          if (context.payload.action !== 'dependabot-patch-merged' || !Number.isSafeInteger(pullNumber) || pullNumber < 1) return;
+                      } else if (isCloseEvent) {
+                          pullNumber = context.payload.pull_request.number;
+                      } else {
+                          if (run.event !== 'pull_request' || run.head_repository?.full_name !== repository) return;
+
+                          let associatedPullRequests = run.pull_requests ?? [];
+                          if (associatedPullRequests.length === 0) {
+                              const { data } = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+                                  owner,
+                                  repo,
+                                  commit_sha: run.head_sha,
+                              });
+                              associatedPullRequests = data;
+                          }
+
+                          const associatedPullRequest = associatedPullRequests.find((item) => item.head?.sha === run.head_sha) ?? associatedPullRequests[0];
+                          if (!associatedPullRequest) return;
+                          pullNumber = associatedPullRequest.number;
+                      }
+
+                      const { data: pullRequest } = await github.rest.pulls.get({ owner, repo, pull_number: pullNumber });
+                      if (pullRequest.user.login !== 'dependabot[bot]' || pullRequest.base.ref !== 'main') return;
+                      if (isRepositoryDispatch) {
+                          const payload = context.payload.client_payload ?? {};
+                          if (!pullRequest.merged_at || pullRequest.head.sha !== payload.head_sha || pullRequest.merge_commit_sha !== payload.merge_commit_sha) return;
+                      }
+
+                      const trackerMarker = `<!-- dependabot-ci-tracker:pr-${pullNumber} -->`;
+                      const mergeTrackerMarker = `<!-- dependabot-automerge-tracker:pr-${pullNumber} -->`;
+                      const trackerTitle = `CI blocked: Dependabot PR #${pullNumber}`;
+                      const issueMarker = `<!-- dependabot-ci-run:${run?.id ?? 'closed'}:${run?.run_attempt ?? 'closed'} -->`;
+
+                      async function ensureFailureLabel() {
+                          const labels = await github.paginate(github.rest.issues.listLabelsForRepo, { owner, repo, per_page: 100 });
+                          if (labels.some((label) => label.name.toLowerCase() === failureLabel)) return;
+
+                          try {
+                              await github.rest.issues.createLabel({
+                                  owner,
+                                  repo,
+                                  name: failureLabel,
+                                  color: 'd73a4a',
+                                  description: 'Dependabot pull request is blocked by CI',
+                              });
+                          } catch (error) {
+                              if (error.status !== 422) throw error;
+                          }
+                      }
+
+                      async function removeLabel(labelName) {
+                          try {
+                              await github.rest.issues.removeLabel({ owner, repo, issue_number: pullNumber, name: labelName });
+                          } catch (error) {
+                              if (error.status !== 404) throw error;
+                          }
+                      }
+
+                      async function getTrackerIssue(labelName, marker) {
+                          const labels = await github.paginate(github.rest.issues.listLabelsForRepo, { owner, repo, per_page: 100 });
+                          if (!labels.some((label) => label.name.toLowerCase() === labelName)) return undefined;
+
+                          const issues = await github.paginate(github.rest.issues.listForRepo, {
+                              owner,
+                              repo,
+                              state: 'all',
+                              labels: labelName,
+                              per_page: 100,
+                          });
+                          return issues.find((issue) => !issue.pull_request && issue.body?.includes(marker));
+                      }
+
+                      async function commentOnce(issueNumber, marker, body) {
+                          const comments = await github.paginate(github.rest.issues.listComments, {
+                              owner,
+                              repo,
+                              issue_number: issueNumber,
+                              per_page: 100,
+                          });
+                          if (comments.some((comment) => comment.body?.includes(marker))) return;
+                          await github.rest.issues.createComment({ owner, repo, issue_number: issueNumber, body: `${marker}\n${body}` });
+                      }
+
+                      let trackerIssue = await getTrackerIssue(failureLabel, trackerMarker);
+                      let mergeIssue = isCloseEvent ? await getTrackerIssue(mergeBlockedLabel, mergeTrackerMarker) : undefined;
+
+                      if (isCloseEvent) {
+                          const blockers = [
+                              { issue: trackerIssue, kind: 'CI blocker', resolvedMarker: `<!-- dependabot-ci-resolved:pr-${pullNumber} -->`, closedMarker: `<!-- dependabot-ci-closed-unmerged:pr-${pullNumber} -->` },
+                              { issue: mergeIssue, kind: 'automatic-merge blocker', resolvedMarker: `<!-- dependabot-automerge-resolved:pr-${pullNumber} -->`, closedMarker: `<!-- dependabot-automerge-closed-unmerged:pr-${pullNumber} -->` },
+                          ].filter((blocker) => blocker.issue?.state === 'open');
+
+                          for (const blocker of blockers) {
+                              if (pullRequest.merged_at) {
+                                  await commentOnce(
+                                      blocker.issue.number,
+                                      blocker.resolvedMarker,
+                                      `PR #${pullNumber} was merged. Closing this ${blocker.kind}; security alerts are managed separately by GitHub.`,
+                                  );
+                                  await github.rest.issues.update({
+                                      owner,
+                                      repo,
+                                      issue_number: blocker.issue.number,
+                                      state: 'closed',
+                                      state_reason: 'completed',
+                                  });
+                              } else {
+                                  if (!blocker.issue.body?.includes(blocker.closedMarker)) {
+                                      await github.rest.issues.update({
+                                          owner,
+                                          repo,
+                                          issue_number: blocker.issue.number,
+                                          body: [
+                                              blocker.issue.body,
+                                              '',
+                                              `${blocker.closedMarker} PR #${pullNumber} was closed without merging. This tracker remains open until a maintainer verifies the dependency is otherwise resolved; closing a Dependabot PR does not dismiss its security alert.`,
+                                          ].join(String.fromCharCode(10)),
+                                      });
+                                  }
+                                  await commentOnce(
+                                      blocker.issue.number,
+                                      blocker.closedMarker,
+                                      `PR #${pullNumber} closed without a merge. This issue remains open so an unresolved dependency/security finding is not lost.`,
+                                  );
+                              }
+                          }
+                          await removeLabel(failureLabel);
+                          await removeLabel(mergeBlockedLabel);
+                          return;
+                      }
+
+                      if (pullRequest.state !== 'open' || pullRequest.head.sha !== run.head_sha) return;
+
+                      const { data: workflowRuns } = await github.rest.actions.listWorkflowRuns({
+                          owner,
+                          repo,
+                          workflow_id: run.workflow_id,
+                          head_sha: run.head_sha,
+                          event: 'pull_request',
+                          per_page: 100,
+                      });
+                      const latestRun = workflowRuns.workflow_runs
+                          .slice()
+                          .sort((left, right) => {
+                              const leftStarted = Date.parse(left.run_started_at ?? left.created_at);
+                              const rightStarted = Date.parse(right.run_started_at ?? right.created_at);
+                              return rightStarted - leftStarted || (right.run_attempt ?? 1) - (left.run_attempt ?? 1) || right.id - left.id;
+                          })[0];
+
+                      if (!latestRun || latestRun.id !== run.id || (latestRun.run_attempt ?? 1) !== (run.run_attempt ?? 1)) return;
+
+                      if (run.conclusion === 'success') {
+                          if (trackerIssue?.state === 'open') {
+                              await commentOnce(
+                                  trackerIssue.number,
+                                  `<!-- dependabot-ci-resolved:pr-${pullNumber}-${run.head_sha} -->`,
+                                  `The full CI/CD workflow passed for the current head of PR #${pullNumber}. This CI blocker is resolved; the PR remains open for normal review or eligible patch auto-merge.`,
+                              );
+                              await github.rest.issues.update({
+                                  owner,
+                                  repo,
+                                  issue_number: trackerIssue.number,
+                                  state: 'closed',
+                                  state_reason: 'completed',
+                              });
+                          }
+                          await removeLabel(failureLabel);
+                          return;
+                      }
+
+                      await ensureFailureLabel();
+                      await github.rest.issues.addLabels({ owner, repo, issue_number: pullNumber, labels: [failureLabel] });
+
+                      const trackerBody = [
+                          trackerMarker,
+                          `Dependabot PR [#${pullNumber}](${pullRequest.html_url}) has a non-green CI run for its current head.`,
+                          '',
+                          `Workflow run: [CI/CD #${run.run_number} (attempt ${run.run_attempt ?? 1})](${run.html_url})`,
+                          '',
+                          'Review the failing checks before rerunning. This automation does not merge failed PRs, close the PR, or dismiss a security alert. The tracker closes automatically only after the full CI/CD workflow passes for the current PR head or the PR is merged.',
+                      ].join('\n');
+
+                      if (trackerIssue) {
+                          const update = {
+                              owner,
+                              repo,
+                              issue_number: trackerIssue.number,
+                              title: trackerTitle,
+                              body: trackerBody,
+                          };
+                          if (trackerIssue.state !== 'open') update.state = 'open';
+                          await github.rest.issues.update(update);
+                      } else {
+                          const { data } = await github.rest.issues.create({
+                              owner,
+                              repo,
+                              title: trackerTitle,
+                              body: trackerBody,
+                              labels: [failureLabel],
+                          });
+                          trackerIssue = data;
+                      }
+
+                      await commentOnce(
+                          pullNumber,
+                          issueMarker,
+                          `The full CI/CD workflow is not green for this Dependabot update. The PR is labeled \`${failureLabel}\` and tracked in [issue #${trackerIssue.number}](${trackerIssue.html_url}). No merge or security-alert dismissal will happen while the workflow is failing.`,
+                      );
