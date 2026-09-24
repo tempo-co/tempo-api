@@ -167,7 +167,7 @@ PY
 
 need_commands() {
     local command
-    for command in curl docker flock mktemp awk cp chmod mv rm mkdir dirname python3; do
+    for command in curl docker flock mktemp awk cp chmod mv rm mkdir dirname python3 stat; do
         command -v "$command" >/dev/null 2>&1 || die "required command is missing: $command"
     done
     if [[ $TARGET == production ]]; then
@@ -360,9 +360,17 @@ compose_cli() {
 }
 
 require_target_files() {
+    local compose_owner compose_mode
     [[ -r $COMPOSE_FILE ]] || die "Compose file is missing or unreadable: $COMPOSE_FILE"
     [[ ! -L $COMPOSE_FILE ]] || die 'Compose file must not be a symlink'
-    [[ -O $COMPOSE_FILE ]] || die 'Compose file must be owned by the deployment user'
+    compose_owner=$(stat -c '%u' "$COMPOSE_FILE") || die 'could not inspect Compose file owner'
+    if [[ $TARGET == production && $compose_owner == 0 ]]; then
+        compose_mode=$(stat -c '%a' "$COMPOSE_FILE") || die 'could not inspect production Compose file permissions'
+        [[ $compose_mode =~ ^[0-7]{1,4}$ ]] || die 'could not parse production Compose file permissions'
+        (( (8#$compose_mode & 18) == 0 )) || die 'root-owned production Compose file must not be group/world writable'
+    elif [[ $compose_owner != "$EUID" ]]; then
+        die 'Compose file must be owned by the deployment user (or root for production)'
+    fi
     [[ -r $ENV_FILE ]] || die "environment file is missing or unreadable: $ENV_FILE"
     [[ ! -L $ENV_FILE ]] || die 'environment file must not be a symlink'
     [[ -O $ENV_FILE ]] || die 'environment file must be owned by the deployment user'

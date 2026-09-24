@@ -51,7 +51,8 @@ assert_no_stateful_compose() {
 
 setup_fixture() {
     FIXTURE=$TMP_DIR/fixture-$1; BIN=$FIXTURE/bin; STATE_DIR=$FIXTURE/state
-    unset FAIL_PULL FAIL_COMPOSE_ONCE PRODUCTION_SWEEP_TEST EXTRA_IMAGE_REFS FAIL_IMAGE_RM_ONCE FAIL_IMAGE_RM_MARKER
+    unset FAIL_PULL FAIL_COMPOSE_ONCE PRODUCTION_SWEEP_TEST EXTRA_IMAGE_REFS FAIL_IMAGE_RM_ONCE FAIL_IMAGE_RM_MARKER DEPLOY_TARGET
+    unset FAKE_PRODUCTION_COMPOSE_OWNER_UID FAKE_PRODUCTION_COMPOSE_MODE
     mkdir -p "$BIN" "$STATE_DIR"
     cat > "$BIN/fake" <<'EOF'
 #!/usr/bin/env bash
@@ -220,10 +221,22 @@ esac
 EOF
     ln -s fake "$BIN/git"; ln -s fake "$BIN/curl"; ln -s fake "$BIN/docker"
     chmod +x "$BIN/fake"
+    cat > "$BIN/stat" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+if [[ ${FAKE_PRODUCTION_COMPOSE_OWNER_UID:-} && ${3-} == "$TEMPO_DEPLOY_COMPOSE_FILE" ]]; then
+    case ${2-} in
+        %u) printf '%s\n' "$FAKE_PRODUCTION_COMPOSE_OWNER_UID"; exit 0 ;;
+        %a) printf '%s\n' "${FAKE_PRODUCTION_COMPOSE_MODE:-644}"; exit 0 ;;
+    esac
+fi
+exec /usr/bin/stat "$@"
+EOF
+    chmod +x "$BIN/stat"
     : > "$FIXTURE/docker.log"; : > "$FIXTURE/curl.log"
     : > "$FIXTURE/removed-image-refs"
     : > "$FIXTURE/runtime-api"; : > "$FIXTURE/runtime-web"
-    touch "$FIXTURE/production.compose.yml" "$FIXTURE/production.env"
+    touch "$FIXTURE/production.compose.yml" "$FIXTURE/production.env" "$FIXTURE/staging.compose.yml" "$FIXTURE/staging.env"
     export PATH="$BIN:$PATH" DOCKER_LOG="$FIXTURE/docker.log" CURL_LOG="$FIXTURE/curl.log"
     export TEMPO_DEPLOY_TEST_MODE=1 TEMPO_DEPLOY_TEST_ROOT="$FIXTURE"
     export RUNTIME_API_FILE="$FIXTURE/runtime-api" RUNTIME_WEB_FILE="$FIXTURE/runtime-web"
@@ -250,7 +263,7 @@ set_target() {
 }
 
 run_deploy() {
-    bash "$SCRIPT" --target production "$@"
+    bash "$SCRIPT" --target "${DEPLOY_TARGET:-production}" "$@"
 }
 
 run_initialize_test() {
@@ -294,6 +307,77 @@ run_noop_test() {
     if grep -Eq '(^| )(pull|up|down|rm|tag|restart|stop|start|exec)( |$)' "$DOCKER_LOG"; then
         fail 'no-op polled and mutated Docker images or containers'
     fi
+}
+
+run_root_owned_compose_test() {
+    setup_fixture root-owned-compose; set_target; write_active_state
+    export FAKE_PRODUCTION_COMPOSE_OWNER_UID=0 FAKE_PRODUCTION_COMPOSE_MODE=644
+    run_deploy
+    assert_contains "$DOCKER_LOG" 'up -d --no-deps --force-recreate --wait api'
+    assert_contains "$TEMPO_DEPLOY_STATE_FILE" "TEMPO_API_SHA=$TEST_API_SHA"
+    assert_no_stateful_compose
+}
+
+run_root_owned_zero_mode_compose_test() {
+    setup_fixture root-owned-zero-mode-compose; set_target; write_active_state
+    export FAKE_PRODUCTION_COMPOSE_OWNER_UID=0 FAKE_PRODUCTION_COMPOSE_MODE=0
+    run_deploy
+    assert_contains "$DOCKER_LOG" 'up -d --no-deps --force-recreate --wait api'
+    assert_contains "$TEMPO_DEPLOY_STATE_FILE" "TEMPO_API_SHA=$TEST_API_SHA"
+    assert_no_stateful_compose
+}
+
+run_group_writable_root_compose_rejected_test() {
+    setup_fixture group-writable-root-compose; set_target; write_active_state
+    export FAKE_PRODUCTION_COMPOSE_OWNER_UID=0 FAKE_PRODUCTION_COMPOSE_MODE=664
+    if run_deploy >"$FIXTURE/output" 2>&1; then
+        fail 'group-writable root-owned production Compose file was accepted'
+    fi
+    assert_contains "$FIXTURE/output" 'root-owned production Compose file must not be group/world writable'
+    [[ ! -s $DOCKER_LOG ]] || fail 'Docker was invoked with a group-writable production Compose file'
+}
+
+run_world_writable_root_compose_rejected_test() {
+    setup_fixture world-writable-root-compose; set_target; write_active_state
+    export FAKE_PRODUCTION_COMPOSE_OWNER_UID=0 FAKE_PRODUCTION_COMPOSE_MODE=666
+    if run_deploy >"$FIXTURE/output" 2>&1; then
+        fail 'world-writable root-owned production Compose file was accepted'
+    fi
+    assert_contains "$FIXTURE/output" 'root-owned production Compose file must not be group/world writable'
+    [[ ! -s $DOCKER_LOG ]] || fail 'Docker was invoked with a world-writable production Compose file'
+}
+
+run_malformed_root_compose_mode_rejected_test() {
+    setup_fixture malformed-root-compose-mode; set_target; write_active_state
+    export FAKE_PRODUCTION_COMPOSE_OWNER_UID=0 FAKE_PRODUCTION_COMPOSE_MODE=invalid
+    if run_deploy >"$FIXTURE/output" 2>&1; then
+        fail 'malformed root-owned production Compose mode was accepted'
+    fi
+    assert_contains "$FIXTURE/output" 'could not parse production Compose file permissions'
+    [[ ! -s $DOCKER_LOG ]] || fail 'Docker was invoked with a malformed production Compose mode'
+}
+
+run_foreign_owned_compose_rejected_test() {
+    setup_fixture foreign-owned-compose; set_target; write_active_state
+    export FAKE_PRODUCTION_COMPOSE_OWNER_UID=12345 FAKE_PRODUCTION_COMPOSE_MODE=644
+    if run_deploy >"$FIXTURE/output" 2>&1; then
+        fail 'production Compose file with a foreign owner was accepted'
+    fi
+    assert_contains "$FIXTURE/output" 'Compose file must be owned by the deployment user (or root for production)'
+    [[ ! -s $DOCKER_LOG ]] || fail 'Docker was invoked with a foreign-owned production Compose file'
+}
+
+run_staging_rejects_root_owned_compose_test() {
+    setup_fixture staging-root-owned-compose; set_target
+    DEPLOY_TARGET=staging
+    TEMPO_DEPLOY_COMPOSE_FILE="$FIXTURE/staging.compose.yml"
+    FAKE_PRODUCTION_COMPOSE_OWNER_UID=0 FAKE_PRODUCTION_COMPOSE_MODE=644
+    export DEPLOY_TARGET TEMPO_DEPLOY_COMPOSE_FILE FAKE_PRODUCTION_COMPOSE_OWNER_UID FAKE_PRODUCTION_COMPOSE_MODE
+    if run_deploy >"$FIXTURE/output" 2>&1; then
+        fail 'staging accepted a root-owned Compose file'
+    fi
+    assert_contains "$FIXTURE/output" 'Compose file must be owned by the deployment user (or root for production)'
+    [[ ! -s $DOCKER_LOG ]] || fail 'Docker was invoked with a root-owned staging Compose file'
 }
 
 run_production_cleanup_retry_test() {
@@ -441,5 +525,5 @@ run_rollback_test() {
     assert_no_stateful_compose
 }
 
-run_initialize_test; run_bootstrap_cleanup_test; run_noop_test; run_production_cleanup_retry_test; run_failed_pull_test; run_failed_pull_cleanup_test; run_failed_rollout_cleanup_test; run_success_test; run_api_only_test; run_api_only_rollback_test; run_web_only_test; run_rollback_test
+run_initialize_test; run_bootstrap_cleanup_test; run_noop_test; run_root_owned_compose_test; run_root_owned_zero_mode_compose_test; run_group_writable_root_compose_rejected_test; run_world_writable_root_compose_rejected_test; run_malformed_root_compose_mode_rejected_test; run_foreign_owned_compose_rejected_test; run_staging_rejects_root_owned_compose_test; run_production_cleanup_retry_test; run_failed_pull_test; run_failed_pull_cleanup_test; run_failed_rollout_cleanup_test; run_success_test; run_api_only_test; run_api_only_rollback_test; run_web_only_test; run_rollback_test
 printf 'PASS: tempo production deploy script tests\n'
