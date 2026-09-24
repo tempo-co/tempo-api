@@ -12,8 +12,6 @@ mkdir -p "$BIN" "$TMP_DIR/state" "$TMP_DIR/backups" "$TMP_DIR/home/.config/tempo
 chmod 700 "$TMP_DIR/backups"
 printf '%s\n' '{"auths":{"ghcr.io":{"auth":"synthetic"}}}' > "$TMP_DIR/home/.config/tempo-staging/docker-config/config.json"
 chmod 600 "$TMP_DIR/home/.config/tempo-staging/docker-config/config.json"
-printf '%s\n' 'synthetic staging password for integration test' > "$TMP_DIR/home/.config/tempo-staging/staging-login-password"
-chmod 600 "$TMP_DIR/home/.config/tempo-staging/staging-login-password"
 python3 - "$TMP_DIR/backups/tempo-20260920-000000.dump" "$TMP_DIR/backups/tempo-20260921-060000.dump" <<'PY'
 import sys
 from pathlib import Path
@@ -121,12 +119,6 @@ json.dump(config, sys.stdout)
         fi
         exit 0
     fi
-    if [[ $command_line == *'set-staging-password.js'* ]]; then
-        IFS= read -r received_password || exit 1
-        [[ $received_password == 'synthetic staging password for integration test' ]] || exit 1
-        : > "$FAKE_PASSWORD_STDIN_MARKER"
-        exit 0
-    fi
     if [[ $command_line == *' ps -q postgres'* ]]; then printf 'pgid\n'; exit 0; fi
     if [[ $command_line == *' ps -q redis'* ]]; then printf 'redisid\n'; exit 0; fi
     if [[ $command_line == *' ps -q api'* ]]; then printf 'apiid\n'; exit 0; fi
@@ -171,6 +163,26 @@ chmod +x "$BIN/docker"
 cat > "$BIN/curl" <<'EOF'
 #!/usr/bin/env bash
 set -Eeuo pipefail
+printf '%s\n' "$*" >> "$FAKE_CURL_LOG"
+url=''
+for arg in "$@"; do url=$arg; done
+if [[ $url == */api/health ]]; then
+    request_count=0
+    if [[ -f $FAKE_API_HEALTH_COUNT_FILE ]]; then
+        request_count=$(<"$FAKE_API_HEALTH_COUNT_FILE")
+    fi
+    request_count=$((request_count + 1))
+    printf '%s\n' "$request_count" > "$FAKE_API_HEALTH_COUNT_FILE"
+    if (( request_count > 2 )); then
+        printf 'curl: (22) HTTP 429 rate limit exceeded\n' >&2
+        exit 22
+    fi
+    if [[ ${FAKE_API_HEALTH_RESPONSE_AT_REQUEST:-} == "$request_count" ]]; then
+        printf '%s\n' "${FAKE_API_HEALTH_RESPONSE:?}"
+    else
+        printf '{"status":"ok"}\n'
+    fi
+fi
 exit 0
 EOF
 chmod +x "$BIN/curl"
@@ -183,12 +195,11 @@ export TEMPO_STAGING_REFRESH_COMPOSE_FILE="$TMP_DIR/compose.yml"
 export TEMPO_STAGING_REFRESH_ENV_FILE="$TMP_DIR/staging.env"
 export TEMPO_STAGING_REFRESH_STATE_DIR="$TMP_DIR/state"
 export TEMPO_STAGING_REFRESH_BACKUP_DIR="$TMP_DIR/backups"
-export TEMPO_STAGING_LOGIN_PASSWORD_FILE="$TMP_DIR/home/.config/tempo-staging/staging-login-password"
 export TEMPO_STAGING_REFRESH_DOCKER_HOST="unix://$SOCKET"
-export TEMPO_STAGING_REFRESH_WEB_URL=http://127.0.0.1:8119/tempo/
 export TEMPO_STAGING_REFRESH_TEST_MODE=1
 export FAKE_PARTIAL_STOP_MARKER="$TMP_DIR/partial-stop.marker"
-export FAKE_PASSWORD_STDIN_MARKER="$TMP_DIR/password-stdin-verified"
+export FAKE_CURL_LOG="$TMP_DIR/curl.log"
+export FAKE_API_HEALTH_COUNT_FILE="$TMP_DIR/api-health-request-count"
 
 cp "$TMP_DIR/staging.env" "$TMP_DIR/duplicate.env"
 printf 'STAGING_DB_NAME=duplicate_name\n' >> "$TMP_DIR/duplicate.env"
@@ -272,16 +283,65 @@ fi
 grep -F 'pg_restore --list' "$FAKE_DOCKER_LOG" >/dev/null || { printf 'FAIL: staging pg_restore did not validate the archive\n' >&2; exit 1; }
 grep -F 'pg_restore --exit-on-error --no-owner --no-privileges' "$FAKE_DOCKER_LOG" >/dev/null || \
     { printf 'FAIL: staging restore did not strip owners and privileges\n' >&2; exit 1; }
-[[ -f $FAKE_PASSWORD_STDIN_MARKER ]] || { printf 'FAIL: staging password was not passed via stdin\n' >&2; exit 1; }
-if grep -F 'synthetic staging password' "$FAKE_DOCKER_LOG" >/dev/null; then
-    printf 'FAIL: staging password appeared in Docker argv/log\n' >&2
+if grep -F 'set-staging-password.js' "$FAKE_DOCKER_LOG" >/dev/null; then
+    printf 'FAIL: refresh overwrote the restored production account identity/password hash\n' >&2
     exit 1
 fi
+grep -F 'http://127.0.0.1:8119/tempo/' "$FAKE_CURL_LOG" >/dev/null || \
+    { printf 'FAIL: refresh health check did not use the local staging route\n' >&2; exit 1; }
+grep -F 'http://127.0.0.1:8119/tempo/api/health' "$FAKE_CURL_LOG" >/dev/null || \
+    { printf 'FAIL: refresh health check did not exercise the host-facing staging API route\n' >&2; exit 1; }
+python3 - "$FAKE_DOCKER_LOG" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+log = Path(sys.argv[1]).read_text(encoding='utf-8')
+writes = set(re.findall(
+    r'(?i)\b(?:UPDATE|DELETE\s+FROM|TRUNCATE(?:\s+TABLE)?|INSERT\s+INTO|MERGE\s+INTO|COPY)\s+(?:public\.)?["`]?([a-z_]+)',
+    log,
+))
+if writes != {'bank_connections', 'bank_sync_runs'}:
+    raise SystemExit(f'unexpected data writes during refresh: {sorted(writes)}')
+PY
 grep -F 'redisid' "$FAKE_DOCKER_LOG" | grep -F 'FLUSHALL' >/dev/null || { printf 'FAIL: staging Redis was not flushed\n' >&2; exit 1; }
 if grep -E 'prod(redis|_redis|Redis)' "$FAKE_DOCKER_LOG" >/dev/null; then
     printf 'FAIL: production Redis was touched\n' >&2
     exit 1
 fi
+
+for bad_response in 'not-json' '{"status":"degraded"}'; do
+    : > "$FAKE_DOCKER_LOG"
+    : > "$FAKE_CURL_LOG"
+    : > "$FAKE_API_HEALTH_COUNT_FILE"
+    output="$TMP_DIR/refresh-api-health-failure.out"
+    # The staging deployer already consumed one request from this API client's
+    # two-request, 30-second health-route allowance before calling refresh.
+    curl --fail --silent --show-error --max-time 15 http://127.0.0.1:8119/tempo/api/health >/dev/null
+    if FAKE_API_HEALTH_RESPONSE_AT_REQUEST=2 FAKE_API_HEALTH_RESPONSE="$bad_response" bash "$SCRIPT" refresh --confirm-production-backup-refresh >"$output" 2>&1; then
+        printf 'FAIL: refresh accepted invalid API health JSON: %s\n' "$bad_response" >&2
+        exit 1
+    fi
+    grep -F 'host-facing staging API health route did not return healthy JSON' "$output" >/dev/null || \
+        { printf 'FAIL: invalid API health JSON did not fail the refresh\n' >&2; exit 1; }
+    python3 - "$FAKE_API_HEALTH_COUNT_FILE" "$FAKE_CURL_LOG" "$FAKE_DOCKER_LOG" "$output" <<'PY'
+from pathlib import Path
+import sys
+
+count_file, curl_log, docker_log, output = map(Path, sys.argv[1:])
+curls = curl_log.read_text(encoding='utf-8')
+docker = docker_log.read_text(encoding='utf-8')
+if count_file.read_text(encoding='utf-8').strip() != '2':
+    raise SystemExit('rollback made a third host-facing API health request and hit the rate limit')
+if curls.count('http://127.0.0.1:8119/tempo/api/health') != 2:
+    raise SystemExit('expected only deployment and refresh host-facing API health requests')
+if docker.count('up -d --wait api web') < 2:
+    raise SystemExit('refresh failure did not restart API/web after rollback')
+if 'database rollback was not verified' in output.read_text(encoding='utf-8'):
+    raise SystemExit('API/web did not recover after invalid health JSON')
+PY
+done
+
 : > "$FAKE_DOCKER_LOG"
 chmod 775 "$TMP_DIR/backups"
 if bash "$SCRIPT" refresh --confirm-production-backup-refresh >/dev/null 2>&1; then
@@ -293,17 +353,6 @@ if grep -E 'compose .* up| cp |CREATE DATABASE|pg_restore' "$FAKE_DOCKER_LOG" >/
     exit 1
 fi
 chmod 700 "$TMP_DIR/backups"
-: > "$FAKE_DOCKER_LOG"
-chmod 644 "$TMP_DIR/home/.config/tempo-staging/staging-login-password"
-if bash "$SCRIPT" refresh --confirm-production-backup-refresh >/dev/null 2>&1; then
-    printf 'FAIL: permissive staging password file mode was accepted\n' >&2
-    exit 1
-fi
-if grep -E 'compose .* up| cp |CREATE DATABASE|pg_restore' "$FAKE_DOCKER_LOG" >/dev/null; then
-    printf 'FAIL: invalid password-file permissions reached database work\n' >&2
-    exit 1
-fi
-chmod 600 "$TMP_DIR/home/.config/tempo-staging/staging-login-password"
 mkdir -p "$TMP_DIR/no-backups"
 chmod 700 "$TMP_DIR/no-backups"
 : > "$FAKE_DOCKER_LOG"

@@ -11,8 +11,10 @@ runtime state.
 - Config: `$HOME/.config/tempo-staging/staging.compose.yml` and `staging.env`
 - State: `$HOME/.local/state/tempo-staging/`
 - Host port: loopback `127.0.0.1:8119`
-- Browser origin: a dedicated private staging hostname, never the production
-  hostname or only a different path/port
+- Local browser URL: `http://127.0.0.1:8119/tempo/`; the listener is loopback-only
+- API health URL: `http://127.0.0.1:8119/tempo/api/health`
+- Absolute email/callback URLs use `STAGING_PUBLIC_URL`; for local-only testing,
+  open the loopback URL directly
 - Services: separate PostgreSQL, Redis, Mailpit, API, web, volumes, and
   networks
 - Database route: API and Postgres share only the internal staging backend;
@@ -93,13 +95,13 @@ image baseline and never refreshes data. If a refresh fails, the deployed image
 set remains marked pending and a later healthy poll retries without redeploying.
 Installing the poller alone does not refresh the existing synthetic staging DB.
 
-Before enabling this flow, provision a distinct staging-only login password at
-`$HOME/.config/tempo-staging/staging-login-password`, mode `0600`. The value must
-not be copied from production or committed. The refresh passes it to the staging
-API process over stdin, where it is Argon2-hashed in the temporary database; it
-is not included in command arguments or logs. Only the password hash and update
-timestamp change on the single restored account; its name, email, financial rows,
-and bank identifiers are retained.
+The authorized production-data refresh preserves the restored account's name,
+email, and password hash along with its financial rows and bank identifiers; no
+separate staging login password is applied. Staging remains reachable only on
+loopback at `127.0.0.1:8119`. This intentionally makes the production password
+usable on that local staging instance, so do not expose the staging listener
+remotely. Production Redis sessions are not copied, so sign in again after a
+refresh.
 
 The production refresh path:
 
@@ -109,11 +111,13 @@ The production refresh path:
 2. Starts only staging PostgreSQL/Redis/Mailpit through the rootless staging
    Compose project and restores into a temporary database.
 3. Applies current-image schema work, clears provider authorization/session and
-   sync-run state, resets the staging-only account password, and validates the
-   sanitized result.
+   sync-run state, preserves the restored account identity/password hash and
+   financial records, and validates the sanitized result.
 4. Stops staging API/web, atomically swaps the temporary database into the
    configured staging database, flushes only staging Redis/BullMQ state, then
-   restarts and health-checks staging.
+   restarts and health-checks staging. The post-refresh check requires the
+   loopback `/tempo/api/health` route to return healthy JSON, in addition to
+   the web route and the API container's internal health endpoint.
 5. Retains the source backup and removes temporary database/container artifacts;
    on failure, it rolls back the database swap and restarts staging.
 
