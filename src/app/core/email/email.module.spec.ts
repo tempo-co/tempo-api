@@ -39,13 +39,15 @@ describe('EmailModule SMTP options', () => {
 		expect(options.defaults.from).toBe('Tempo <mailer@example.test>');
 	});
 
-	it('does not configure SMTP authentication for Mailpit', () => {
+	it('does not configure SMTP authentication for Mailpit when Gmail credentials are staged', () => {
 		const options = createMailerOptions(
 			makeConfig({
 				EMAIL_HOST: 'mailpit',
 				EMAIL_PORT: 1025,
 				EMAIL_SECURE: false,
 				EMAIL_REQUIRE_TLS: false,
+				EMAIL_USERNAME: 'mailer@example.test',
+				EMAIL_PASSWORD: 'synthetic-app-password',
 			}),
 		);
 

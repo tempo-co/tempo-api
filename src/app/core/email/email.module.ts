@@ -13,16 +13,18 @@ import {EmailService} from './email.service';
 const DEFAULT_EMAIL_FROM = '"Tempo" <no-reply@localhost>';
 
 export const createMailerOptions = (config: ConfigurationService) => {
+	const host = config.get('EMAIL_HOST');
 	const username = config.get('EMAIL_USERNAME');
 	const password = config.get('EMAIL_PASSWORD');
+	const auth = host === 'smtp.gmail.com' && username && password ? {user: username, pass: password} : undefined;
 
 	return {
 		transport: {
-			host: config.get('EMAIL_HOST'),
+			host,
 			port: config.get('EMAIL_PORT'),
 			secure: config.get('EMAIL_SECURE'),
 			requireTLS: config.get('EMAIL_REQUIRE_TLS'),
-			...(username && password ? {auth: {user: username, pass: password}} : {}),
+			...(auth ? {auth} : {}),
 		},
 		defaults: {from: config.get('EMAIL_FROM') ?? DEFAULT_EMAIL_FROM},
 		template: {
