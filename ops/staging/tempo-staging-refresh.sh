@@ -13,7 +13,6 @@ readonly DEFAULT_STATE_DIR="${HOME}/.local/state/tempo-staging"
 readonly DEFAULT_DOCKER_SOCKET="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/tempo-staging/docker.sock"
 readonly DEFAULT_DOCKER_CONFIG="$HOME/.config/tempo-staging/docker-config"
 readonly DEFAULT_BACKUP_DIR="$HOME/backups/tempo"
-readonly DEFAULT_STAGING_PASSWORD_FILE="$HOME/.config/tempo-staging/staging-login-password"
 readonly STAGING_POSTGRES_VOLUME='tempo-staging-postgres-data'
 readonly REFRESH_DATABASE='tempo_staging_refresh'
 readonly PREVIOUS_DATABASE='tempo_staging_previous'
@@ -23,10 +22,10 @@ COMPOSE_FILE=${TEMPO_STAGING_REFRESH_COMPOSE_FILE:-$DEFAULT_COMPOSE_FILE}
 ENV_FILE=${TEMPO_STAGING_REFRESH_ENV_FILE:-$DEFAULT_ENV_FILE}
 STATE_DIR=${TEMPO_STAGING_REFRESH_STATE_DIR:-$DEFAULT_STATE_DIR}
 BACKUP_DIR=${TEMPO_STAGING_REFRESH_BACKUP_DIR:-$DEFAULT_BACKUP_DIR}
-STAGING_PASSWORD_FILE=${TEMPO_STAGING_LOGIN_PASSWORD_FILE:-$DEFAULT_STAGING_PASSWORD_FILE}
 DOCKER_HOST_VALUE=${TEMPO_STAGING_REFRESH_DOCKER_HOST:-unix://$DEFAULT_DOCKER_SOCKET}
 DOCKER_CONFIG_VALUE=${TEMPO_STAGING_REFRESH_DOCKER_CONFIG:-$DEFAULT_DOCKER_CONFIG}
-STAGING_WEB_URL=${TEMPO_STAGING_REFRESH_WEB_URL:-http://127.0.0.1:8119/tempo/}
+readonly STAGING_WEB_URL='http://127.0.0.1:8119/tempo/'
+readonly STAGING_API_HEALTH_URL='http://127.0.0.1:8119/tempo/api/health'
 PRODUCTION_ORIGIN_HOST_FILE="$HOME/.config/tempo-staging/production-origin-host"
 
 STAGING_DB_USERNAME=''
@@ -178,7 +177,6 @@ check_paths() {
         [[ $COMPOSE_FILE == "$DEFAULT_COMPOSE_FILE" ]] || fail 'staging Compose override is only allowed in test mode'
         [[ $ENV_FILE == "$DEFAULT_ENV_FILE" ]] || fail 'staging env override is only allowed in test mode'
         [[ $BACKUP_DIR == "$DEFAULT_BACKUP_DIR" ]] || fail 'production backup directory override is only allowed in test mode'
-        [[ $STAGING_PASSWORD_FILE == "$DEFAULT_STAGING_PASSWORD_FILE" ]] || fail 'staging password file override is only allowed in test mode'
     fi
     mkdir -p "$STATE_DIR"
     chmod 700 "$STATE_DIR"
@@ -430,12 +428,6 @@ run_api_command() {
         api "$@"
 }
 
-run_api_command_with_stdin() {
-    local database=$1 input_file=$2
-    shift 2
-    compose_cli run --rm --no-deps -i -T -e "DB_NAME=$database" -e 'DB_SYNCHRONIZE=false' api "$@" < "$input_file"
-}
-
 copy_dump_into_staging() {
     local id
     id=$(pg_container)
@@ -494,10 +486,6 @@ clear_staging_redis() {
 validate_refresh_inputs() {
     [[ -d $BACKUP_DIR && ! -L $BACKUP_DIR && -O $BACKUP_DIR ]] || fail 'production backup directory must be an owner-controlled directory'
     [[ $(stat -c '%a' "$BACKUP_DIR") == 700 ]] || fail 'production backup directory must be mode 700'
-    [[ -f $STAGING_PASSWORD_FILE && ! -L $STAGING_PASSWORD_FILE && -O $STAGING_PASSWORD_FILE ]] || fail 'staging login password file must be owner-controlled'
-    [[ $(stat -c '%a' "$STAGING_PASSWORD_FILE") == 600 ]] || fail 'staging login password file must be mode 600'
-    [[ -s $STAGING_PASSWORD_FILE ]] || fail 'staging login password file is empty'
-    (( $(stat -c '%s' "$STAGING_PASSWORD_FILE") <= 256 )) || fail 'staging login password file is too large'
 }
 
 select_local_production_backup() {
@@ -538,7 +526,6 @@ prepare_refresh_database() {
     run_api_command "$REFRESH_DATABASE" node dist/scripts/schema.js
     sanitize_database
     assert_sanitized
-    run_api_command_with_stdin "$REFRESH_DATABASE" "$STAGING_PASSWORD_FILE" node dist/src/scripts/set-staging-password.js
 }
 
 prepare_seed_database() {
@@ -572,7 +559,7 @@ rollback_database_swap() {
         if ! compose_cli up -d --wait api web; then status=1; fi
     fi
     if (( status == 0 )); then
-        if ! health_check_staging; then status=1; fi
+        if ! health_check_staging --rollback; then status=1; fi
     fi
     if (( status != 0 )); then
         compose_cli stop api web >/dev/null 2>&1 || true
@@ -581,11 +568,21 @@ rollback_database_swap() {
 }
 
 health_check_staging() {
-    compose_cli ps --status running api web >/dev/null
-    curl --fail --silent --show-error --max-time 15 "$STAGING_WEB_URL" >/dev/null
+    local mode=${1:-normal}
+    [[ $mode == normal || $mode == --rollback ]] || fail 'invalid staging health-check mode'
+    compose_cli ps --status running api web >/dev/null || return 1
+    curl --fail --silent --show-error --max-time 15 "$STAGING_WEB_URL" >/dev/null || return 1
+    if [[ $mode == normal ]]; then
+        local api_health_response
+        api_health_response=$(curl --fail --silent --show-error --max-time 15 "$STAGING_API_HEALTH_URL") || return 1
+        python3 -c 'import json, sys; payload = json.load(sys.stdin); raise SystemExit(0 if payload.get("status") == "ok" else 1)' <<<"$api_health_response" || {
+            fail 'host-facing staging API health route did not return healthy JSON'
+            return 1
+        }
+    fi
     local api_id
-    api_id=$(compose_cli ps -q api)
-    docker_cli exec "$api_id" curl --fail --silent --show-error --max-time 10 http://127.0.0.1:3000/health >/dev/null
+    api_id=$(compose_cli ps -q api) || return 1
+    docker_cli exec "$api_id" curl --fail --silent --show-error --max-time 10 http://127.0.0.1:3000/health >/dev/null || return 1
 }
 
 swap_database_and_verify() {
