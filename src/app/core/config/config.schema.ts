@@ -76,6 +76,10 @@ export const configSchema = z
 		EMAIL_HOST: z.string().min(1),
 		EMAIL_PORT: portSchema,
 		EMAIL_SECURE: strictBooleanEnvSchema.default(false),
+		EMAIL_USERNAME: z.string().min(1).optional(),
+		EMAIL_PASSWORD: z.string().min(1).optional(),
+		EMAIL_REQUIRE_TLS: strictBooleanEnvSchema.default(false),
+		EMAIL_FROM: z.string().trim().min(1).optional(),
 		EMAIL_UI_PORT: portSchema,
 		EMAIL_UI_URL: z.string().url(),
 		EMAIL_VERIFICATION_EXPIRATION: durationSchema,
@@ -90,6 +94,43 @@ export const configSchema = z
 		THROTTLE_LIMIT: z.coerce.number().int().positive(),
 	})
 	.superRefine((config, context) => {
+		const hasEmailUsername = config.EMAIL_USERNAME !== undefined;
+		const hasEmailPassword = config.EMAIL_PASSWORD !== undefined;
+
+		if (hasEmailUsername !== hasEmailPassword) {
+			context.addIssue({
+				code: 'custom',
+				path: ['EMAIL_USERNAME'],
+				message: 'Configure both EMAIL_USERNAME and EMAIL_PASSWORD for SMTP authentication.',
+			});
+		}
+
+		if (config.EMAIL_HOST === 'smtp.gmail.com') {
+			if (!hasEmailUsername || !hasEmailPassword) {
+				context.addIssue({
+					code: 'custom',
+					path: ['EMAIL_USERNAME'],
+					message: 'Gmail SMTP requires EMAIL_USERNAME and EMAIL_PASSWORD.',
+				});
+			}
+
+			if (config.EMAIL_PORT !== 587 || config.EMAIL_SECURE || !config.EMAIL_REQUIRE_TLS) {
+				context.addIssue({
+					code: 'custom',
+					path: ['EMAIL_REQUIRE_TLS'],
+					message: 'Gmail SMTP must use port 587 with STARTTLS required.',
+				});
+			}
+
+			if (!config.EMAIL_FROM) {
+				context.addIssue({
+					code: 'custom',
+					path: ['EMAIL_FROM'],
+					message: 'Gmail SMTP requires a configured sender address.',
+				});
+			}
+		}
+
 		const hasPrivateKeyB64 = config.ENABLE_BANKING_PRIVATE_KEY_B64 !== undefined;
 		const hasPrivateKeyPath = config.ENABLE_BANKING_PRIVATE_KEY_PATH !== undefined;
 

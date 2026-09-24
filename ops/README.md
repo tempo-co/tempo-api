@@ -18,7 +18,13 @@ Production uses the rootful Docker socket, `/etc/tempo/production.compose.yml`,
 production container names/routes. Staging uses the dedicated rootless socket,
 `tempo-staging` Compose project, separate state, separate volumes, and
 loopback port `8119`. The reconciler recreates only API/web and verifies the
-stateful container IDs remain unchanged.
+Postgres and Redis container IDs in production, plus staging Mailpit.
+
+Production sends email through authenticated Gmail SMTP at `smtp.gmail.com:587`
+with required STARTTLS. Keep `EMAIL_USERNAME`, `EMAIL_PASSWORD`, and `EMAIL_FROM`
+in the owner-controlled production env file; the checked-in Compose manifest
+sets only the non-secret transport requirements. Development and staging keep
+Mailpit and receive no Gmail credentials.
 
 Staging promotion is not based on a moving branch or mutable image tag. The
 protected manual workflows in the API and web repositories publish immutable
@@ -35,6 +41,12 @@ The existing production service/timer invoke the installed
 `tempo-production-deploy` entrypoint. The repository wrapper delegates to the
 shared target-aware engine, while production configuration and Docker state stay
 outside the repository and are not modified by staging operations.
+
+The reviewed host snapshots must be updated separately after approval: install
+the production Compose/deployer changes and provision the SMTP credentials and
+sender in `/etc/tempo/production.env` before recreating the API. Keep the
+production Mailpit container until delivery is verified, then remove only that
+container; do not prune volumes or run a broad Compose teardown.
 
 The production deployment contract tests run entirely against fake Docker/Git
 and HTTP commands:

@@ -51,7 +51,7 @@ assert_no_stateful_compose() {
 
 setup_fixture() {
     FIXTURE=$TMP_DIR/fixture-$1; BIN=$FIXTURE/bin; STATE_DIR=$FIXTURE/state
-    unset FAIL_PULL FAIL_COMPOSE_ONCE PRODUCTION_SWEEP_TEST EXTRA_IMAGE_REFS FAIL_IMAGE_RM_ONCE FAIL_IMAGE_RM_MARKER DEPLOY_TARGET DOCKER_CONFIG
+    unset FAIL_PULL FAIL_COMPOSE_ONCE FAIL_MAILPIT_INSPECT PRODUCTION_SWEEP_TEST EXTRA_IMAGE_REFS FAIL_IMAGE_RM_ONCE FAIL_IMAGE_RM_MARKER DEPLOY_TARGET DOCKER_CONFIG
     unset FAKE_PRODUCTION_COMPOSE_OWNER_UID FAKE_PRODUCTION_COMPOSE_MODE
     mkdir -p "$BIN" "$STATE_DIR"
     cat > "$BIN/fake" <<'EOF'
@@ -180,7 +180,9 @@ PY
                     tempo-api-production-web-1) [[ -s $RUNTIME_WEB_FILE ]] && printf '%s\n' "$(<"$RUNTIME_WEB_FILE")" || printf '%s\n' "$TEST_CURRENT_WEB_IMAGE" ;;
                     tempo-api-production-postgres-1) printf 'postgres-id\n' ;;
                     tempo-api-production-redis-1) printf 'redis-id\n' ;;
-                    tempo-api-production-mailpit-1) printf 'mailpit-id\n' ;;
+                    tempo-api-production-mailpit-1)
+                        [[ ${FAIL_MAILPIT_INSPECT:-0} != 1 ]] || exit 1
+                        printf 'mailpit-id\n' ;;
                     *) printf 'unknown-id\n' ;;
                 esac
             fi
@@ -420,6 +422,16 @@ run_production_cleanup_retry_test() {
     assert_contains "$DOCKER_LOG" 'image ls --all --digests --no-trunc'
 }
 
+run_missing_mailpit_test() {
+    setup_fixture missing-mailpit; set_target; write_active_state
+    export FAIL_MAILPIT_INSPECT=1
+
+    run_deploy
+
+    assert_contains "$TEMPO_DEPLOY_STATE_FILE" "TEMPO_API_SHA=$TEST_API_SHA"
+    assert_no_stateful_compose
+}
+
 run_failed_pull_test() {
     setup_fixture failed-pull; set_target; write_active_state
     export FAIL_PULL=ghcr.io/tempo-co/tempo-web:$TEST_WEB_SHA
@@ -534,5 +546,5 @@ run_rollback_test() {
     assert_no_stateful_compose
 }
 
-run_initialize_test; run_production_docker_config_test; run_bootstrap_cleanup_test; run_noop_test; run_root_owned_compose_test; run_root_owned_zero_mode_compose_test; run_group_writable_root_compose_rejected_test; run_world_writable_root_compose_rejected_test; run_malformed_root_compose_mode_rejected_test; run_foreign_owned_compose_rejected_test; run_staging_rejects_root_owned_compose_test; run_production_cleanup_retry_test; run_failed_pull_test; run_failed_pull_cleanup_test; run_failed_rollout_cleanup_test; run_success_test; run_api_only_test; run_api_only_rollback_test; run_web_only_test; run_rollback_test
+run_initialize_test; run_production_docker_config_test; run_bootstrap_cleanup_test; run_noop_test; run_root_owned_compose_test; run_root_owned_zero_mode_compose_test; run_group_writable_root_compose_rejected_test; run_world_writable_root_compose_rejected_test; run_malformed_root_compose_mode_rejected_test; run_foreign_owned_compose_rejected_test; run_staging_rejects_root_owned_compose_test; run_production_cleanup_retry_test; run_missing_mailpit_test; run_failed_pull_test; run_failed_pull_cleanup_test; run_failed_rollout_cleanup_test; run_success_test; run_api_only_test; run_api_only_rollback_test; run_web_only_test; run_rollback_test
 printf 'PASS: tempo production deploy script tests\n'
