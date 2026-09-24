@@ -175,8 +175,8 @@ export class AuthController {
 	@ApiResponse({status: 401, description: UNAUTHORIZED})
 	@ApiResponse({status: 429, description: TOO_MANY_REQUESTS})
 	@ApiOperation({summary: 'Changes the password for the current account.'})
-	async changePassword(@CurrentAccount() account: Account, @Body() dto: PasswordChangeDto) {
-		return await this.authService.changePassword(account, dto);
+	async changePassword(@CurrentAccount() account: Account, @Body() dto: PasswordChangeDto, @Req() request: Request) {
+		return await this.authService.changePassword(account, dto, request.session.id);
 	}
 
 	@Public()
