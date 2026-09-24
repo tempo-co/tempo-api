@@ -351,7 +351,7 @@ docker_cli() {
     if [[ $TARGET == staging ]]; then
         env -u DOCKER_CONTEXT DOCKER_CONFIG="$DOCKER_CONFIG_VALUE" DOCKER_HOST="$DOCKER_HOST_VALUE" docker "$@"
     else
-        env -u DOCKER_CONTEXT -u DOCKER_CONFIG DOCKER_HOST="$DOCKER_HOST_VALUE" docker "$@"
+        env -u DOCKER_CONTEXT DOCKER_HOST="$DOCKER_HOST_VALUE" docker "$@"
     fi
 }
 
