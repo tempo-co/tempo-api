@@ -59,12 +59,12 @@ function createInputWithSensitiveText(correlationId: string): BankTransactionCat
 		bankTransactionCode: null,
 		bankTransactionSubCode: null,
 		description:
-			'iDEAL purchase Example Merchant 2024 IBAN: NL51 DEUT 0265 2624 61 BIC: DEUTNL2A Ref: TXN-20260918-ABCD dcc99d102550619f22 c48b435d7f8d38 8152154118941831 https://shop.example/orders/123456?token=sample-token sales@example.test',
+			'iDEAL purchase Example Merchant 2024 IBAN: NL00 TEST 0000 0000 00 BIC: TESTXX00 Ref: TXN-20260918-ABCD dcc99d102550619f22 c48b435d7f8d38 8152154118941831 https://shop.example/orders/123456?token=sample-token sales@example.test',
 		counterpartyName:
-			'Example Merchant VOF BIC: DEUTNL2A Order: 7654321 020 123 4567 card 3782 822463 10005 Account no: 1234/5678/90 Reference number: QZXB 2345.6789.77 Ref: ABCD 1234 Reference: AB12 3456 Reference number: 1234 AB12 Reference: 1234/ABCD.Reference number: 5678 Reference: 9876/ABCD-XYZ',
-		bankTransactionDescription: 'Retail card purchase account: 4111 1111 1111 1111',
+			'Example Merchant VOF BIC: TESTXX00 Order: 7654321 020 000 0000 card 9999 999999 99999 Account no: 1234/5678/90 Reference number: QZXB 2345.6789.77 Ref: ABCD 1234 Reference: AB12 3456 Reference number: 1234 AB12 Reference: 1234/ABCD.Reference number: 5678 Reference: 9876/ABCD-XYZ',
+		bankTransactionDescription: 'Retail card purchase account: 0000 0000 0000 0000',
 		merchantCategoryCode: '5999',
-		remittanceInformation: 'Invoice 1234567 phone +31 20 123 4567 Mandate: MND123 contact seller@example.test',
+		remittanceInformation: 'Invoice 1234567 phone +1 202-555-0100 Mandate: MND123 contact seller@example.test',
 	});
 }
 
@@ -150,7 +150,7 @@ describe('OpenAiBankTransactionCategorizationProvider', () => {
 		const request = responsesCreate.mock.calls[0][0];
 		const serializedTransactions = JSON.stringify(JSON.parse(request.input).transactions);
 		expect(serializedTransactions).not.toMatch(
-			/NL51|DEUTNL2A|TXN-20260918-ABCD|dcc99d102550619f22|c48b435d7f8d38|8152154118941831|7654321|4111 1111 1111 1111|1234567|123456|MND123|020 123 4567|3782|822463|10005|1234|5678|90|2345|6789|77|QZXB|ABCD|AB12|3456|9876|XYZ|sample-token|seller@example\.test|\+31 20 123 4567/,
+			/NL00|TESTXX00|TXN-20260918-ABCD|dcc99d102550619f22|c48b435d7f8d38|8152154118941831|7654321|0000|1234567|123456|MND123|020 000 0000|000000|9999|999999|1234|5678|90|2345|6789|77|QZXB|ABCD|AB12|3456|9876|XYZ|sample-token|seller@example\.test|\+1 202-555-0100/,
 		);
 		expect(serializedTransactions).toContain('iDEAL purchase Example Merchant 2024');
 		expect(serializedTransactions).toContain('Example Merchant VOF');
@@ -181,7 +181,7 @@ describe('OpenAiBankTransactionCategorizationProvider', () => {
 		const request = responsesCreate.mock.calls[0][0];
 		const serializedRequest = JSON.stringify(request);
 		expect(serializedRequest).not.toMatch(
-			/NL51|DEUTNL2A|TXN-20260918-ABCD|dcc99d102550619f22|c48b435d7f8d38|8152154118941831|7654321|4111 1111 1111 1111|1234567|123456|MND123|020 123 4567|3782|822463|10005|1234|5678|90|2345|6789|77|QZXB|ABCD|AB12|3456|9876|XYZ|sample-token|seller@example\.test|\+31 20 123 4567/,
+			/NL00|TESTXX00|TXN-20260918-ABCD|dcc99d102550619f22|c48b435d7f8d38|8152154118941831|7654321|0000|1234567|123456|MND123|020 000 0000|000000|9999|999999|1234|5678|90|2345|6789|77|QZXB|ABCD|AB12|3456|9876|XYZ|sample-token|seller@example\.test|\+1 202-555-0100/,
 		);
 		expect(request.input).toContain('Example Merchant VOF');
 		expect(request.input).not.toContain('[REDACTED]');
@@ -347,7 +347,7 @@ describe('OpenAiBankTransactionCategorizationProvider', () => {
 					status: 'completed',
 					action: {
 						type: 'search',
-						queries: ['ACME 1234567 someone@example.com NL91ABNA0417164300'],
+						queries: ['ACME 1234567 someone@example.com NL00TEST0000000000'],
 						sources: [{type: 'url', url: 'https://www.example.com/private/path?token=secret'}],
 					},
 				},
