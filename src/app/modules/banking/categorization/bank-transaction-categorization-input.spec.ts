@@ -190,7 +190,52 @@ describe('bank transaction categorization input', () => {
 			}),
 		);
 
-		expect(input.remittanceInformation).toBe('IBAN [REDACTED] contact [REDACTED] [REDACTED] [REDACTED]');
+		expect(input.remittanceInformation).toBe('IBAN [REDACTED] contact [REDACTED] NR:[REDACTED]');
+	});
+
+	it('redacts identifiers from all provider-bound text while preserving useful category context', () => {
+		const input = toBankTransactionCategorizationInput(
+			createTransaction({
+				description:
+					'SEPA card purchase at 7-Eleven in 2024. 020 123 4567. IBAN: NL51 DEUT 0265 2624 61 BIC: DEUTNL2A Ref: TXN-20260918-ABCD dcc99d102550619f22 c48b435d7f8d38 8152154118941831 Order Jouw bestelling 867066 https://shop.example/orders/123456?token=sample-token sales@example.test',
+				counterpartyName:
+					'3M Hardware Card: 3782 822463 10005 Account no: 1234/5678/90 Reference number: QZXB 2345.6789.77 Ref: ABCD 1234 Reference: AB12 3456 Reference number: 1234 AB12 Reference: 1234/ABCD.Reference number: 5678 Reference: 9876/ABCD-XYZ',
+				bankTransactionDescription: 'Retail purchase account NL91 ABNA 0417 1643 00',
+				remittanceInformation: 'Invoice 1234567 phone +31 20 123 4567 Mandate: MND123',
+			}),
+		);
+		const serializedText = JSON.stringify({
+			description: input.description,
+			counterpartyName: input.counterpartyName,
+			bankTransactionDescription: input.bankTransactionDescription,
+			remittanceInformation: input.remittanceInformation,
+		});
+
+		expect(input.description).toContain('SEPA card purchase at 7-Eleven in 2024');
+		expect(input.description).toContain('Order Jouw bestelling');
+		expect(input.description).toContain('shop.example');
+		expect(input.counterpartyName).toContain('3M Hardware');
+		expect(input.counterpartyName).toContain('Card: [REDACTED]');
+		expect(input.counterpartyName).toContain('Account no: [REDACTED]');
+		expect(input.counterpartyName).toContain('Reference number: [REDACTED]');
+		expect(input.counterpartyName).toContain('Ref: [REDACTED]');
+		expect(input.counterpartyName).toContain('Reference: [REDACTED]');
+		expect(input.counterpartyName).toContain('Reference: [REDACTED].Reference number: [REDACTED]');
+		expect(input.bankTransactionDescription).toContain('Retail purchase');
+		expect(input.remittanceInformation).toContain('Invoice');
+		expect(serializedText).not.toMatch(
+			/NL51|NL91|DEUTNL2A|TXN-20260918-ABCD|dcc99d102550619f22|c48b435d7f8d38|8152154118941831|867066|1234567|123456|sample-token|sales@example\.test|\+31 20 123 4567|MND123|020 123 4567|3782|822463|10005|1234|5678|90|2345|6789|77|QZXB|ABCD|AB12|3456|9876|XYZ/,
+		);
+		expect(input.amount).toBe('-12.50');
+		expect(input.transactionDate).toBe('2026-09-01');
+		expect(input.bankTransactionCode).toBe('PMNT');
+		expect(input.merchantCategoryCode).toBe('5814');
+	});
+
+	it('does not hash changes to redacted transaction references', () => {
+		expect(
+			createBankTransactionCategorizationInputHash(createTransaction({description: 'Coffee order 1234567'})),
+		).toBe(createBankTransactionCategorizationInputHash(createTransaction({description: 'Coffee order 7654321'})));
 	});
 
 	it('treats malformed merchant category codes as absent evidence', () => {

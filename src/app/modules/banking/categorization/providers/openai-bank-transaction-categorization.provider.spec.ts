@@ -1,5 +1,9 @@
 import {ConfigurationService} from '@core/config/config.service';
 
+import {
+	toBankTransactionCategorizationInput,
+	toBankTransactionCategorizationWebSearchInput,
+} from '../bank-transaction-categorization-input';
 import {BankTransactionCategorizationProviderError} from '../bank-transaction-categorization.provider';
 import {
 	BankTransactionCategorizationInput,
@@ -41,6 +45,27 @@ function createWebSearchInput(correlationId: string): BankTransactionCategorizat
 		searchQuery: 'Example Cafe Testville',
 		merchantCategoryCode: '5814',
 	};
+}
+
+function createInputWithSensitiveText(correlationId: string): BankTransactionCategorizationInput {
+	return toBankTransactionCategorizationInput({
+		id: correlationId,
+		transactionDate: '2026-09-01',
+		bookingDate: '2026-09-02',
+		valueDate: null,
+		amount: '-18.99',
+		currency: 'EUR',
+		creditDebitIndicator: 'DBIT',
+		bankTransactionCode: null,
+		bankTransactionSubCode: null,
+		description:
+			'iDEAL purchase Example Merchant 2024 IBAN: NL51 DEUT 0265 2624 61 BIC: DEUTNL2A Ref: TXN-20260918-ABCD dcc99d102550619f22 c48b435d7f8d38 8152154118941831 https://shop.example/orders/123456?token=sample-token sales@example.test',
+		counterpartyName:
+			'Example Merchant VOF BIC: DEUTNL2A Order: 7654321 020 123 4567 card 3782 822463 10005 Account no: 1234/5678/90 Reference number: QZXB 2345.6789.77 Ref: ABCD 1234 Reference: AB12 3456 Reference number: 1234 AB12 Reference: 1234/ABCD.Reference number: 5678 Reference: 9876/ABCD-XYZ',
+		bankTransactionDescription: 'Retail card purchase account: 4111 1111 1111 1111',
+		merchantCategoryCode: '5999',
+		remittanceInformation: 'Invoice 1234567 phone +31 20 123 4567 Mandate: MND123 contact seller@example.test',
+	});
 }
 
 function createProvider() {
@@ -111,6 +136,56 @@ describe('OpenAiBankTransactionCategorizationProvider', () => {
 			'For a card payment with no merchantCategoryCode and no counterpartyName, do not guess a specific category',
 		);
 		expect(request.input).not.toContain('test-secret-api-key');
+	});
+
+	it('serializes sanitized free-text fields for standard categorization', async () => {
+		const {provider, responsesCreate} = createProvider();
+		responsesCreate.mockResolvedValue({
+			output_text: output([{correlationId: '0', category: 'SHOPPING', confidence: 0.8}]),
+		});
+		const transaction = createInputWithSensitiveText('transaction-1');
+
+		await provider.categorize([transaction], BANK_TRANSACTION_CATEGORY_DEFINITIONS);
+
+		const request = responsesCreate.mock.calls[0][0];
+		const serializedTransactions = JSON.stringify(JSON.parse(request.input).transactions);
+		expect(serializedTransactions).not.toMatch(
+			/NL51|DEUTNL2A|TXN-20260918-ABCD|dcc99d102550619f22|c48b435d7f8d38|8152154118941831|7654321|4111 1111 1111 1111|1234567|123456|MND123|020 123 4567|3782|822463|10005|1234|5678|90|2345|6789|77|QZXB|ABCD|AB12|3456|9876|XYZ|sample-token|seller@example\.test|\+31 20 123 4567/,
+		);
+		expect(serializedTransactions).toContain('iDEAL purchase Example Merchant 2024');
+		expect(serializedTransactions).toContain('Example Merchant VOF');
+		expect(serializedTransactions).toContain('Retail card purchase');
+		expect(JSON.parse(request.input).transactions[0]).toMatchObject({
+			transactionDate: '2026-09-01',
+			amount: '-18.99',
+			currency: 'EUR',
+			merchantCategoryCode: '5999',
+		});
+	});
+
+	it('keeps the web-search request and query free of redacted identifiers', async () => {
+		const {provider, responsesCreate} = createProvider();
+		responsesCreate.mockResolvedValue({
+			output_text: webOutput([{correlationId: '0', category: 'SHOPPING', confidence: 0.8}]),
+		});
+		const transaction = createInputWithSensitiveText('transaction-1');
+		const webSearchInput = toBankTransactionCategorizationWebSearchInput(transaction);
+		expect(webSearchInput).toMatchObject({
+			merchantName: 'Example Merchant VOF',
+			searchQuery: 'Example Merchant VOF',
+		});
+		if (!webSearchInput) throw new Error('Expected a merchant web-search input.');
+
+		await provider.categorizeWithWebSearch([webSearchInput], BANK_TRANSACTION_CATEGORY_DEFINITIONS);
+
+		const request = responsesCreate.mock.calls[0][0];
+		const serializedRequest = JSON.stringify(request);
+		expect(serializedRequest).not.toMatch(
+			/NL51|DEUTNL2A|TXN-20260918-ABCD|dcc99d102550619f22|c48b435d7f8d38|8152154118941831|7654321|4111 1111 1111 1111|1234567|123456|MND123|020 123 4567|3782|822463|10005|1234|5678|90|2345|6789|77|QZXB|ABCD|AB12|3456|9876|XYZ|sample-token|seller@example\.test|\+31 20 123 4567/,
+		);
+		expect(request.input).toContain('Example Merchant VOF');
+		expect(request.input).not.toContain('[REDACTED]');
+		expect(request.instructions).toContain('Use exactly the supplied searchQuery as the only search query.');
 	});
 
 	it('maps compact provider correlation IDs back to the original transaction IDs', async () => {
