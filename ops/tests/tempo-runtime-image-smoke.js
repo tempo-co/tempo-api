@@ -14,6 +14,20 @@ assert.deepEqual(remainingDevDependencies, [], `Development dependencies remain 
 const manifest = require('/usr/src/app/package.json');
 assert.deepEqual(Object.keys(manifest.devDependencies ?? {}), [], 'Runtime package.json still declares devDependencies');
 
+const emailTemplatesDirectory = '/usr/src/app/dist/src/app/core/email/templates';
+for (const template of [
+	'account-deleted.hbs',
+	'reset-password.hbs',
+	'verify-new-email.hbs',
+	'welcome.hbs',
+	'partials/button.hbs',
+	'partials/code-block.hbs',
+	'partials/layout.hbs',
+]) {
+	const templatePath = path.join(emailTemplatesDirectory, template);
+	assert.ok(fs.existsSync(templatePath), `Email template missing from runtime image: ${templatePath}`);
+}
+
 Object.assign(process.env, {
 	NODE_ENV: 'production',
 	WEB_BASE_URL: 'http://web.example.invalid',
