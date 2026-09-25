@@ -163,6 +163,21 @@ function createService({
 	return {service, queue, provider, repository, config};
 }
 
+describe('BankTransactionCategorizationService provider behavior versions', () => {
+	it('versions sanitized transaction text separately from prior provider inputs', () => {
+		expect(BANK_TRANSACTION_CATEGORIZATION_PROMPT_VERSION).toBe('bank-transaction-categorization-v5');
+		expect(BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_PROMPT_VERSION).toBe(
+			'bank-transaction-categorization-web-search-v6',
+		);
+		expect(BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_SKIPPED_PROMPT_VERSION).toBe(
+			'bank-transaction-categorization-web-search-skipped-v5',
+		);
+		expect(BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_FAILED_PROMPT_VERSION).toBe(
+			'bank-transaction-categorization-web-search-failed-v5',
+		);
+	});
+});
+
 describe('BankTransactionCategorizationService queue scheduling', () => {
 	it('deduplicates transaction IDs and enqueues deterministic batches of 50', async () => {
 		const {service, queue} = createService();
