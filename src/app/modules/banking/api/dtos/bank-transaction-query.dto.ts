@@ -89,6 +89,10 @@ export class BankTransactionFilterQueryDto {
 	bookingDate?: BankTransactionBookingDateFilterDto;
 
 	@IsOptional()
+	@Matches(/^[A-Z]{3}$/)
+	currency?: string;
+
+	@IsOptional()
 	@IsArray()
 	@IsUUID('4', {each: true})
 	bankAccountIds?: string[];
