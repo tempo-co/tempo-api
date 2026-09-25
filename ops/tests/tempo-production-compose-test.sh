@@ -51,5 +51,44 @@ for key, expected in expected_email.items():
         raise SystemExit(f'production API email configuration is incorrect: {key}')
 if 'mailpit' in api.get('depends_on', {}):
     raise SystemExit('production API must not depend on Mailpit')
-print('tempo production Compose email and Mailpit removal contract: PASS')
+
+
+def network_names(service_name):
+    attached = services[service_name].get('networks', {})
+    return set(attached) if isinstance(attached, dict) else set(attached)
+
+
+expected_service_networks = {
+    'postgres': {'default'},
+    'redis': {'default'},
+    'api': {'default', 'frontend'},
+    'web': {'frontend', 'ingress'},
+}
+for service_name, expected in expected_service_networks.items():
+    if network_names(service_name) != expected:
+        raise SystemExit(f'{service_name} must attach to networks {sorted(expected)}')
+
+networks = config.get('networks', {})
+if not networks.get('frontend', {}).get('internal'):
+    raise SystemExit('production frontend network must be internal')
+if networks.get('default', {}).get('internal'):
+    raise SystemExit('production default network must remain non-internal for API egress')
+if networks.get('ingress', {}).get('internal'):
+    raise SystemExit('production web ingress network must remain non-internal')
+
+for service_name in ('postgres', 'redis', 'api'):
+    if services[service_name].get('ports'):
+        raise SystemExit(f'{service_name} must not publish host ports')
+web_ports = services['web'].get('ports', [])
+expected_web_port = {
+    'mode': 'ingress',
+    'host_ip': '127.0.0.1',
+    'target': 8080,
+    'published': '8080',
+    'protocol': 'tcp',
+}
+if web_ports != [expected_web_port]:
+    raise SystemExit('production web must publish only loopback:8080 to container port 8080/tcp')
+
+print('tempo production Compose email, Mailpit, and network isolation contracts: PASS')
 PY

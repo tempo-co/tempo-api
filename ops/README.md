@@ -20,6 +20,41 @@ production container names/routes. Staging uses the dedicated rootless socket,
 loopback port `8119`. The reconciler recreates only API/web and verifies the
 Postgres and Redis container IDs in production, plus staging Mailpit.
 
+### Production network boundary
+
+The production Compose project keeps PostgreSQL, Redis, and the API on the
+project's existing non-internal `default` network. The API also joins a separate
+`frontend` network marked `internal: true`; the web container joins `frontend`
+and a web-only, non-internal `ingress` network for its existing loopback-published
+host route. No stateful service or the API joins `ingress`. This preserves
+API-to-database/cache access and the Nginx-to-API route while removing the web
+container's direct network path to the database and cache. The API retains
+outbound access through `default`; do not mark that network internal.
+
+The host uses a reviewed Compose snapshot, so changing the repository file alone
+does not change live networking. Install the reviewed snapshot with separate
+approval before the next API image update. The production poller only applies
+Compose changes when an API or web image reference changes; during an API image
+update it recreates API first and waits for API health before recreating web.
+Until that web recreation completes, the old web container remains on `default`
+and retains direct network reachability to PostgreSQL and Redis. Isolation takes
+effect only after web has been recreated and the new memberships are verified.
+If the image update has already happened, or immediate containment is required,
+stop and coordinate a separately approved application-only reconciliation; the
+poller has no force-reconcile action. Do not run an ad hoc Compose command or
+assume restoring the manifest changes running containers. Never recreate or
+disconnect PostgreSQL or Redis for this network change.
+
+After activation, verify the resolved memberships (`web`: `frontend` and
+`ingress`; `api`: `default` and `frontend`; PostgreSQL/Redis: `default` only),
+that `frontend` is internal, `ingress` is non-internal and web-only, and that
+the API and web health routes pass. The poller's
+automatic rollback covers failed image/health rollouts, not a failed manual
+network-membership check. If that check fails, stop and coordinate a separately
+approved application-only recovery; restoring the previous manifest alone does
+not change live network attachments. Never use `down`, `down -v`, or a volume
+operation for this network change.
+
 Production sends email through authenticated Gmail SMTP at `smtp.gmail.com:587`
 with required STARTTLS. Keep `EMAIL_USERNAME`, `EMAIL_PASSWORD`, and `EMAIL_FROM`
 in the owner-controlled production env file; the checked-in Compose manifest
