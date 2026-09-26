@@ -26,9 +26,16 @@ import {getApp, loginAgent} from '../../setup/e2e.setup';
 import {UUID_REGEX} from '../../types/regex.constants';
 import {EmailUtils} from '../../utils/email-utils';
 
+const TEST_WEB_BASE_URL = 'https://app.example.test';
+const TEST_SIBLING_ORIGIN = 'https://evil.example.test';
+
+// Use a reserved same-site pair so the regression models a sibling subdomain, not just a cross-site Origin.
+process.env.WEB_BASE_URL = TEST_WEB_BASE_URL;
+
 describe('AuthController - Change email', () => {
 	let mailpitApiUrl: string;
 	let webUrl: string;
+	let webOrigin: string;
 	let emailVerificationExpiration: string;
 	let httpServer: Server;
 
@@ -38,6 +45,8 @@ describe('AuthController - Change email', () => {
 		const config = app.get(ConfigurationService);
 		mailpitApiUrl = config.get('EMAIL_UI_URL');
 		webUrl = config.get('WEB_BASE_URL');
+		webOrigin = new URL(webUrl).origin;
+		expect(webOrigin).toBe(TEST_WEB_BASE_URL);
 		emailVerificationExpiration = config.get('EMAIL_VERIFICATION_EXPIRATION');
 		httpServer = app.getHttpServer();
 	});
@@ -145,6 +154,7 @@ describe('AuthController - Change email', () => {
 
 			await verifiedAgent
 				.post('/auth/change-email/request')
+				.set('Origin', webOrigin)
 				.send(emailChangeDto)
 				.expect(200)
 				.expect((res) => {
@@ -165,11 +175,40 @@ describe('AuthController - Change email', () => {
 			expect(token).toMatch(UUID_REGEX);
 		});
 
+		it('should reject an email change request from a sibling origin before sending email', async () => {
+			const attackerEmail = 'takeover@attacker.example.test';
+
+			await verifiedAgent
+				.post('/auth/change-email/request')
+				.set('Origin', TEST_SIBLING_ORIGIN)
+				.type('form')
+				.send({newEmail: attackerEmail})
+				.expect(403);
+
+			expect(await EmailUtils.findEmailByRecipient(attackerEmail, mailpitApiUrl)).toBeUndefined();
+		});
+
+		it.each([
+			['missing', undefined],
+			['opaque', 'null'],
+			['malformed', 'not-an-origin'],
+			['non-canonical trailing slash', `${TEST_WEB_BASE_URL}/`],
+			['non-canonical explicit default port', `${TEST_WEB_BASE_URL}:443`],
+		])('should reject an email change request with a %s Origin', async (_kind, origin) => {
+			const attackerEmail = `takeover-${faker.string.uuid()}@attacker.example.test`;
+			const testRequest = verifiedAgent.post('/auth/change-email/request').type('form');
+			if (origin !== undefined) testRequest.set('Origin', origin);
+
+			await testRequest.send({newEmail: attackerEmail}).expect(403);
+			expect(await EmailUtils.findEmailByRecipient(attackerEmail, mailpitApiUrl)).toBeUndefined();
+		});
+
 		it('should fail with 401 Unauthorized if the user is not logged in', async () => {
 			const emailChangeDto: EmailChangeRequestDto = {newEmail: faker.internet.email()};
 
 			await request(httpServer)
 				.post('/auth/change-email/request')
+				.set('Origin', webOrigin)
 				.send(emailChangeDto)
 				.expect(401)
 				.expect((res) => {
@@ -182,6 +221,7 @@ describe('AuthController - Change email', () => {
 
 			await unverifiedAgent
 				.post('/auth/change-email/request')
+				.set('Origin', webOrigin)
 				.send(emailChangeDto)
 				.expect(403)
 				.expect((res) => {
@@ -194,6 +234,7 @@ describe('AuthController - Change email', () => {
 
 			await verifiedAgent
 				.post('/auth/change-email/request')
+				.set('Origin', webOrigin)
 				.send(emailChangeDto)
 				.expect(409)
 				.expect((res) => {
@@ -206,6 +247,7 @@ describe('AuthController - Change email', () => {
 
 			await verifiedAgent
 				.post('/auth/change-email/request')
+				.set('Origin', webOrigin)
 				.send(emailChangeDto)
 				.expect(400)
 				.expect((res) => {
@@ -218,6 +260,7 @@ describe('AuthController - Change email', () => {
 		it('should fail with 400 Bad Request if newEmail is missing', async () => {
 			await verifiedAgent
 				.post('/auth/change-email/request')
+				.set('Origin', webOrigin)
 				.send({})
 				.expect(400)
 				.expect((res) => {
@@ -240,7 +283,7 @@ describe('AuthController - Change email', () => {
 			// Request email change and get the token
 			const requestedNewEmail = faker.internet.email();
 			const changeDto: EmailChangeRequestDto = {newEmail: requestedNewEmail};
-			await verifiedAgent.post('/auth/change-email/request').send(changeDto).expect(200);
+			await verifiedAgent.post('/auth/change-email/request').set('Origin', webOrigin).send(changeDto).expect(200);
 
 			const emailContent = await EmailUtils.findEmailByRecipient(requestedNewEmail, mailpitApiUrl);
 			const body = EmailUtils.normalizeEmailText(emailContent?.Text);
@@ -257,6 +300,7 @@ describe('AuthController - Change email', () => {
 			const dto: EmailChangeVerifyDto = {token: token, email: newEmailAddress};
 			await verifiedAgent
 				.post('/auth/change-email/verify')
+				.set('Origin', webOrigin)
 				.send(dto)
 				.expect(200)
 				.expect((res) => {
@@ -268,9 +312,61 @@ describe('AuthController - Change email', () => {
 			initialAccountEmail = newEmailAddress;
 		});
 
+		it('should reject sibling-origin verification without changing the account email or consuming its token', async () => {
+			await verifiedAgent
+				.post('/auth/change-email/verify')
+				.set('Origin', TEST_SIBLING_ORIGIN)
+				.type('form')
+				.send({token, email: newEmailAddress})
+				.expect(403);
+
+			const meResponse = await verifiedAgent.get('/accounts/me').expect(200);
+			expect(meResponse.body.email).toBe(initialAccountEmail);
+
+			await verifiedAgent
+				.post('/auth/change-email/verify')
+				.set('Origin', webOrigin)
+				.send({token, email: newEmailAddress})
+				.expect(200);
+
+			const updatedAccount = await verifiedAgent.get('/accounts/me').expect(200);
+			expect(updatedAccount.body.email).toBe(newEmailAddress);
+			initialAccountEmail = newEmailAddress;
+		});
+
+		it.each([
+			['missing', undefined],
+			['opaque', 'null'],
+			['malformed', 'not-an-origin'],
+			['non-canonical trailing slash', `${TEST_WEB_BASE_URL}/`],
+			['non-canonical explicit default port', `${TEST_WEB_BASE_URL}:443`],
+		])(
+			'should reject email verification with a %s Origin without changing the email or consuming its token',
+			async (_kind, origin) => {
+				const testRequest = verifiedAgent.post('/auth/change-email/verify').type('form');
+				if (origin !== undefined) testRequest.set('Origin', origin);
+
+				await testRequest.send({token, email: newEmailAddress}).expect(403);
+
+				const meResponse = await verifiedAgent.get('/accounts/me').expect(200);
+				expect(meResponse.body.email).toBe(initialAccountEmail);
+
+				await verifiedAgent
+					.post('/auth/change-email/verify')
+					.set('Origin', webOrigin)
+					.send({token, email: newEmailAddress})
+					.expect(200);
+
+				const updatedAccount = await verifiedAgent.get('/accounts/me').expect(200);
+				expect(updatedAccount.body.email).toBe(newEmailAddress);
+				initialAccountEmail = newEmailAddress;
+			},
+		);
+
 		it('should fail with 401 Unauthorized if the user is not logged in', async () => {
 			await request(httpServer)
 				.post('/auth/change-email/verify')
+				.set('Origin', webOrigin)
 				.send({})
 				.expect(401)
 				.expect((res) => {
@@ -283,6 +379,7 @@ describe('AuthController - Change email', () => {
 
 			await unverifiedAgent
 				.post('/auth/change-email/verify')
+				.set('Origin', webOrigin)
 				.send({})
 				.expect(403)
 				.expect((res) => {
@@ -294,6 +391,7 @@ describe('AuthController - Change email', () => {
 			const dto: EmailChangeVerifyDto = {token: faker.string.uuid(), email: newEmailAddress};
 			await verifiedAgent
 				.post('/auth/change-email/verify')
+				.set('Origin', webOrigin)
 				.send(dto)
 				.expect(400)
 				.expect((res) => {
@@ -303,7 +401,7 @@ describe('AuthController - Change email', () => {
 
 		it('should fail with 400 Bad Request if the token has already been used', async () => {
 			const dto: EmailChangeVerifyDto = {token: token, email: newEmailAddress};
-			await verifiedAgent.post('/auth/change-email/verify').send(dto).expect(200);
+			await verifiedAgent.post('/auth/change-email/verify').set('Origin', webOrigin).send(dto).expect(200);
 
 			initialAccountEmail = newEmailAddress;
 
@@ -311,6 +409,7 @@ describe('AuthController - Change email', () => {
 
 			await agentWithNewEmail
 				.post('/auth/change-email/verify')
+				.set('Origin', webOrigin)
 				.send(dto)
 				.expect(400)
 				.expect((res) => {
@@ -321,6 +420,7 @@ describe('AuthController - Change email', () => {
 		it('should fail with 400 Bad Request for an invalid token (not UUID)', async () => {
 			await verifiedAgent
 				.post('/auth/change-email/verify')
+				.set('Origin', webOrigin)
 				.send({token: '12345'})
 				.expect(400)
 				.expect((res) => {
@@ -333,6 +433,7 @@ describe('AuthController - Change email', () => {
 		it('should fail with 400 Bad Request for a missing token', async () => {
 			await verifiedAgent
 				.post('/auth/change-email/verify')
+				.set('Origin', webOrigin)
 				.send({})
 				.expect(400)
 				.expect((res) => {
@@ -367,7 +468,11 @@ describe('AuthController - Change email', () => {
 
 			// 3. Account B requests change to the same targetEmail and gets their own token
 			const changeDtoForB: EmailChangeRequestDto = {newEmail: targetEmail};
-			await accountBAgent.post('/auth/change-email/request').send(changeDtoForB).expect(200);
+			await accountBAgent
+				.post('/auth/change-email/request')
+				.set('Origin', webOrigin)
+				.send(changeDtoForB)
+				.expect(200);
 
 			const emailForB = await EmailUtils.findEmailByRecipient(targetEmail, mailpitApiUrl);
 			const tokenForB = EmailUtils.extractToken(emailForB?.Text);
@@ -377,12 +482,14 @@ describe('AuthController - Change email', () => {
 			// 4. Account B successfully verifies their token, taking the targetEmail address
 			await accountBAgent
 				.post('/auth/change-email/verify')
+				.set('Origin', webOrigin)
 				.send({token: tokenForB, email: targetEmail})
 				.expect(200);
 
 			// 5. Account A now tries to verify their original token for the now-taken email, expect conflict
 			await verifiedAgent
 				.post('/auth/change-email/verify')
+				.set('Origin', webOrigin)
 				.send({token: tokenForA, email: targetEmail})
 				.expect(409)
 				.expect((res) => {

@@ -9,6 +9,7 @@ import {AccountModule} from '@modules/account/account.module';
 
 import {AuthController} from './api/auth.controller';
 import {AuthGuard} from './guards/auth.guard';
+import {CsrfOriginGuard} from './guards/csrf-origin.guard';
 import {AuthService} from './services/auth.service';
 import {EmailVerifierService} from './services/email-verifier.service';
 import {PasswordResetService} from './services/password-reset.service';
@@ -19,6 +20,7 @@ import {LocalStrategy} from './strategies/local.strategy';
 	imports: [RedisModule, AccountModule, EmailModule, SessionModule, PassportModule.register({session: true})],
 	providers: [
 		AuthService,
+		CsrfOriginGuard,
 		EmailVerifierService,
 		PasswordResetService,
 		SessionSerializer,
