@@ -149,6 +149,10 @@ export class AuthController {
 	@HttpCode(200)
 	@Throttle({default: {limit: 6, ttl: minutes(1)}})
 	@ApiResponse({status: 200, description: EMAIL_VERIFICATION_SENT})
+	@ApiResponse({
+		status: 400,
+		description: 'If newEmail is missing or is not a valid email address of at most 255 characters.',
+	})
 	@ApiResponse({status: 401, description: UNAUTHORIZED})
 	@ApiResponse({
 		status: 403,
