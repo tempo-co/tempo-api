@@ -19,6 +19,7 @@ import {Account} from '@modules/account/account.entity';
 import {CurrentAccount} from '../decorators/current-user.decorator';
 import {Public} from '../decorators/public.decorator';
 import {SkipEmailVerification} from '../decorators/skip-email-verification.decorator';
+import {CsrfOriginGuard} from '../guards/csrf-origin.guard';
 import {LocalLogInGuard} from '../guards/local-login.guard';
 import {AuthService} from '../services/auth.service';
 import {EmailVerifierService} from '../services/email-verifier.service';
@@ -144,10 +145,20 @@ export class AuthController {
 	}
 
 	@Post('change-email/request')
+	@UseGuards(CsrfOriginGuard)
 	@HttpCode(200)
 	@Throttle({default: {limit: 6, ttl: minutes(1)}})
 	@ApiResponse({status: 200, description: EMAIL_VERIFICATION_SENT})
+	@ApiResponse({
+		status: 400,
+		description: 'If newEmail is missing or is not a valid email address of at most 255 characters.',
+	})
 	@ApiResponse({status: 401, description: UNAUTHORIZED})
+	@ApiResponse({
+		status: 403,
+		description:
+			'Forbidden if the account email is unverified or the request Origin is missing, invalid, or does not match the configured web origin.',
+	})
 	@ApiResponse({status: 409, description: EMAIL_ALREADY_IN_USE})
 	@ApiResponse({status: 429, description: TOO_MANY_REQUESTS})
 	@ApiOperation({summary: "Requests a change to the account's email."})
@@ -156,11 +167,17 @@ export class AuthController {
 	}
 
 	@Post('change-email/verify')
+	@UseGuards(CsrfOriginGuard)
 	@HttpCode(200)
 	@Throttle({default: {limit: 6, ttl: minutes(1)}})
 	@ApiResponse({status: 200, description: EMAIL_CHANGE_SUCCESS})
 	@ApiResponse({status: 400, description: EMAIL_INVALID_TOKEN})
 	@ApiResponse({status: 401, description: UNAUTHORIZED})
+	@ApiResponse({
+		status: 403,
+		description:
+			'Forbidden if the account email is unverified or the request Origin is missing, invalid, or does not match the configured web origin.',
+	})
 	@ApiResponse({status: 409, description: EMAIL_ALREADY_IN_USE})
 	@ApiResponse({status: 429, description: TOO_MANY_REQUESTS})
 	@ApiOperation({summary: 'Verifies the new email using a token.'})
