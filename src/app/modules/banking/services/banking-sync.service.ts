@@ -8,8 +8,8 @@ import {
 	ServiceUnavailableException,
 } from '@nestjs/common';
 import {InjectRepository} from '@nestjs/typeorm';
-import {createHash} from 'node:crypto';
-import {DataSource, In, Not, Repository} from 'typeorm';
+import {createHash, randomUUID} from 'node:crypto';
+import {DataSource, In, IsNull, Not, Repository} from 'typeorm';
 
 import {ConfigurationService} from '@core/config/config.service';
 import {Account} from '@modules/account/account.entity';
@@ -36,6 +36,13 @@ import {
 	BANK_TRANSACTION_FINANCIAL_EVENT_TYPES,
 	detectBankTransactionFinancialEvent,
 } from '../bank-transaction-financial-event';
+import {
+	allocateNextBankTransactionStableIdentityKey,
+	assignBankTransactionStableIdentityKeys,
+	createBankTransactionStableIdentityGroupKey,
+	createBankTransactionStableIdentityKey,
+	isLegacyBankTransactionDedupeKey,
+} from '../bank-transaction-identity';
 import {normalizeBankTransactionLocation} from '../bank-transaction-location';
 import {normalizeBankTransactionType} from '../bank-transaction-type';
 import {BankTransaction} from '../bank-transaction.entity';
@@ -94,6 +101,19 @@ type SyncRateLimit = {
 type PersistSyncResult = {
 	transactionsAdded: number;
 	persistedTransactionIds: string[];
+};
+
+type LegacyDedupeKeyValues = {
+	providerTransactionId: string | null;
+	entryReference: string | null;
+	bookingDate: string | null;
+	valueDate: string | null;
+	amount: string;
+	currency: string;
+	creditDebitIndicator: string | null;
+	description: string | null;
+	counterpartyName: string | null;
+	remittanceInformation: string | null;
 };
 
 @Injectable()
@@ -497,6 +517,13 @@ export class BankingSyncService {
 					);
 				}
 
+				if (accountResult.transactionsSucceeded) {
+					await this.repairIncompleteTransactionIdentities(
+						bankTransactionRepository,
+						accountResult.bankAccount,
+					);
+				}
+
 				if (accountResult.transactionsSucceeded && accountResult.transactions.length > 0) {
 					const transactionPersistence = await this.persistTransactions(
 						bankTransactionRepository,
@@ -618,6 +645,73 @@ export class BankingSyncService {
 		);
 	}
 
+	private async repairIncompleteTransactionIdentities(
+		repository: Repository<BankTransaction>,
+		bankAccount: BankAccount,
+	): Promise<void> {
+		const incompleteTransactions = await repository.find({
+			select: [
+				'id',
+				'bankAccountId',
+				'entryReference',
+				'transactionDate',
+				'bookingDate',
+				'valueDate',
+				'amount',
+				'currency',
+				'creditDebitIndicator',
+				'bankTransactionCode',
+				'bankTransactionSubCode',
+				'bankTransactionDescription',
+				'description',
+				'counterpartyName',
+				'merchantLocation',
+				'merchantCategoryCode',
+				'remittanceInformation',
+				'instructedAmount',
+				'instructedCurrency',
+				'exchangeRate',
+				'exchangeRateUnitCurrency',
+				'exchangeRateType',
+				'referenceNumber',
+				'referenceNumberScheme',
+				'stableIdentityKey',
+				'stableIdentityGroupKey',
+			],
+			where: [
+				{bankAccountId: bankAccount.id, stableIdentityKey: IsNull()},
+				{bankAccountId: bankAccount.id, stableIdentityKey: ''},
+				{bankAccountId: bankAccount.id, stableIdentityGroupKey: IsNull()},
+				{bankAccountId: bankAccount.id, stableIdentityGroupKey: ''},
+			],
+			order: {id: 'ASC'},
+		});
+		if (incompleteTransactions.length === 0) return;
+
+		const existingIdentityKeys = await repository.find({
+			select: ['stableIdentityKey'],
+			where: {bankAccountId: bankAccount.id, stableIdentityKey: Not(IsNull())},
+		});
+		const usedKeys = new Set(
+			existingIdentityKeys.flatMap(({stableIdentityKey}) => (stableIdentityKey ? [stableIdentityKey] : [])),
+		);
+		const identityUpdates = incompleteTransactions.map((transaction) => {
+			const stableIdentityGroupKey =
+				transaction.stableIdentityGroupKey || createBankTransactionStableIdentityGroupKey(transaction);
+			let stableIdentityKey = transaction.stableIdentityKey;
+			if (!stableIdentityKey) {
+				stableIdentityKey = allocateNextBankTransactionStableIdentityKey(
+					stableIdentityGroupKey,
+					usedKeys,
+				).stableIdentityKey;
+			}
+			usedKeys.add(stableIdentityKey);
+			return {id: transaction.id, stableIdentityKey, stableIdentityGroupKey};
+		});
+
+		await repository.save(identityUpdates);
+	}
+
 	private async persistTransactions(
 		repository: Repository<BankTransaction>,
 		bankAccount: BankAccount,
@@ -625,14 +719,68 @@ export class BankingSyncService {
 		aspspName: string,
 		provider: string,
 	): Promise<PersistSyncResult> {
-		const transactionValues = transactions.map((transaction) =>
+		const unassignedTransactionValues = transactions.map((transaction) =>
 			this.toBankTransactionValues(bankAccount, transaction, aspspName, provider),
 		);
-		const dedupeKeys = transactionValues.map(({dedupeKey}) => dedupeKey);
+		const stableIdentityGroupKeys = [
+			...new Set(unassignedTransactionValues.map(({stableIdentityGroupKey}) => stableIdentityGroupKey)),
+		];
 		const existingTransactions = await repository.find({
-			select: ['id', 'dedupeKey', 'categoryInputHash', 'categorySource', 'categoryStatus'],
-			where: {bankAccountId: bankAccount.id, dedupeKey: In(dedupeKeys)},
+			select: [
+				'id',
+				'bankAccountId',
+				'entryReference',
+				'transactionDate',
+				'bookingDate',
+				'valueDate',
+				'amount',
+				'currency',
+				'creditDebitIndicator',
+				'bankTransactionCode',
+				'bankTransactionSubCode',
+				'bankTransactionDescription',
+				'description',
+				'counterpartyName',
+				'merchantLocation',
+				'merchantCategoryCode',
+				'remittanceInformation',
+				'instructedAmount',
+				'instructedCurrency',
+				'exchangeRate',
+				'exchangeRateUnitCurrency',
+				'exchangeRateType',
+				'referenceNumber',
+				'referenceNumberScheme',
+				'stableIdentityKey',
+				'stableIdentityGroupKey',
+				'dedupeKey',
+				'categoryInputHash',
+				'categorySource',
+				'categoryStatus',
+			],
+			where: {bankAccountId: bankAccount.id, stableIdentityGroupKey: In(stableIdentityGroupKeys)},
 		});
+		const transactionValues = assignBankTransactionStableIdentityKeys(
+			unassignedTransactionValues,
+			existingTransactions,
+		);
+		const stableIdentityKeys = transactionValues.map(({stableIdentityKey}) => stableIdentityKey);
+		const existingTransactionsByIdentity = new Map(
+			existingTransactions
+				.filter(({stableIdentityKey}) => stableIdentityKey)
+				.map((transaction) => [transaction.stableIdentityKey as string, transaction]),
+		);
+		for (const transactionValue of transactionValues) {
+			const existingTransaction = existingTransactionsByIdentity.get(transactionValue.stableIdentityKey);
+			if (!existingTransaction) {
+				transactionValue.dedupeKey = randomUUID();
+			} else if (existingTransaction.dedupeKey !== transactionValue.dedupeKey) {
+				// UUID markers make rollback refuse rows the previous sync can no longer match by this legacy key.
+				transactionValue.dedupeKey = isLegacyBankTransactionDedupeKey(existingTransaction.dedupeKey)
+					? randomUUID()
+					: existingTransaction.dedupeKey;
+			}
+		}
 
 		const insertResult = await repository
 			.createQueryBuilder()
@@ -644,7 +792,7 @@ export class BankingSyncService {
 			.execute();
 		const transactionsAdded = Array.isArray(insertResult.raw) ? insertResult.raw.length : insertResult.raw ? 1 : 0;
 
-		const conflictColumns = ['bankAccountId', 'dedupeKey'];
+		const conflictColumns = ['bankAccountId', 'stableIdentityKey'];
 		const overwriteColumns = Object.keys(transactionValues[0]).filter(
 			(column) => !conflictColumns.includes(column),
 		);
@@ -668,17 +816,17 @@ export class BankingSyncService {
 			await repository.upsert(eventTransactionValues, conflictColumns);
 		}
 
-		const eventDedupeKeys = [
+		const eventStableIdentityKeys = [
 			...new Set(
 				transactionValues
 					.filter(
 						({financialEventType}) =>
 							financialEventType === BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
 					)
-					.map(({dedupeKey}) => dedupeKey),
+					.map(({stableIdentityKey}) => stableIdentityKey),
 			),
 		];
-		if (eventDedupeKeys.length > 0) {
+		if (eventStableIdentityKeys.length > 0) {
 			await repository
 				.createQueryBuilder()
 				.update(BankTransaction)
@@ -689,7 +837,7 @@ export class BankingSyncService {
 					categoryUpdatedAt: null,
 				})
 				.where('"bankAccountId" = :bankAccountId', {bankAccountId: bankAccount.id})
-				.andWhere('"dedupeKey" IN (:...eventDedupeKeys)', {eventDedupeKeys})
+				.andWhere('"stableIdentityKey" IN (:...eventStableIdentityKeys)', {eventStableIdentityKeys})
 				.andWhere('"financialEventType" = :financialEventType', {
 					financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
 				})
@@ -697,9 +845,12 @@ export class BankingSyncService {
 				.execute();
 		}
 
-		const transactionByDedupeKey = new Map(transactionValues.map((value) => [value.dedupeKey, value]));
+		const transactionByStableIdentityKey = new Map(
+			transactionValues.map((value) => [value.stableIdentityKey, value]),
+		);
 		for (const existingTransaction of existingTransactions) {
-			const currentValue = transactionByDedupeKey.get(existingTransaction.dedupeKey);
+			if (!existingTransaction.stableIdentityKey) continue;
+			const currentValue = transactionByStableIdentityKey.get(existingTransaction.stableIdentityKey);
 			if (
 				!currentValue ||
 				currentValue.financialEventType === BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE ||
@@ -730,7 +881,7 @@ export class BankingSyncService {
 
 		const persistedRows = await repository.find({
 			select: ['id'],
-			where: {bankAccountId: bankAccount.id, dedupeKey: In(dedupeKeys)},
+			where: {bankAccountId: bankAccount.id, stableIdentityKey: In(stableIdentityKeys)},
 		});
 		const persistedTransactionIds =
 			persistedRows.length > 0
@@ -837,7 +988,46 @@ export class BankingSyncService {
 			description,
 		});
 		const merchantCategoryCode = truncate(transaction.merchantCategoryCode, 16);
-		const dedupeKey = this.createDedupeKey({
+		const hasBalanceAfter = Boolean(transaction.balanceAfterAmount && transaction.balanceAfterCurrency);
+		const hasInstructedAmount = Boolean(transaction.instructedAmount && transaction.instructedCurrency);
+		const hasExchangeRate = Boolean(transaction.exchangeRate && transaction.exchangeRateUnitCurrency);
+		const instructedAmount = hasInstructedAmount ? (transaction.instructedAmount ?? null) : null;
+		const instructedCurrency = hasInstructedAmount ? (transaction.instructedCurrency?.toUpperCase() ?? null) : null;
+		const exchangeRate = hasExchangeRate ? (transaction.exchangeRate ?? null) : null;
+		const exchangeRateUnitCurrency = hasExchangeRate
+			? (transaction.exchangeRateUnitCurrency?.toUpperCase() ?? null)
+			: null;
+		const exchangeRateType = truncate(transaction.exchangeRateType, 16);
+		const referenceNumber = truncate(transaction.referenceNumber, 255);
+		const referenceNumberScheme = truncate(transaction.referenceNumberScheme, 32);
+		const identityValues = {
+			bankAccountId: bankAccount.id,
+			entryReference,
+			transactionDate,
+			bookingDate,
+			valueDate,
+			amount,
+			currency,
+			creditDebitIndicator,
+			bankTransactionCode,
+			bankTransactionSubCode,
+			bankTransactionDescription,
+			description,
+			counterpartyName,
+			merchantLocation,
+			merchantCategoryCode,
+			remittanceInformation,
+			instructedAmount,
+			instructedCurrency,
+			exchangeRate,
+			exchangeRateUnitCurrency,
+			exchangeRateType,
+			referenceNumber,
+			referenceNumberScheme,
+		};
+		const stableIdentityGroupKey = createBankTransactionStableIdentityGroupKey(identityValues);
+		const stableIdentityKey = createBankTransactionStableIdentityKey(identityValues, 1);
+		const dedupeKey = this.createLegacyDedupeKey({
 			providerTransactionId,
 			entryReference,
 			bookingDate,
@@ -853,7 +1043,7 @@ export class BankingSyncService {
 			? null
 			: createBankTransactionCategorizationInputHash(
 					toBankTransactionCategorizationInput({
-						id: dedupeKey,
+						id: stableIdentityKey,
 						transactionDate,
 						bookingDate,
 						valueDate,
@@ -871,15 +1061,14 @@ export class BankingSyncService {
 						merchantLocation,
 					}),
 				);
-		const hasBalanceAfter = Boolean(transaction.balanceAfterAmount && transaction.balanceAfterCurrency);
-		const hasInstructedAmount = Boolean(transaction.instructedAmount && transaction.instructedCurrency);
-		const hasExchangeRate = Boolean(transaction.exchangeRate && transaction.exchangeRateUnitCurrency);
 
 		return {
 			bankAccountId: bankAccount.id,
 			providerTransactionId,
 			entryReference,
 			dedupeKey,
+			stableIdentityKey,
+			stableIdentityGroupKey,
 			transactionDate,
 			bookingDate,
 			valueDate,
@@ -903,13 +1092,13 @@ export class BankingSyncService {
 			financialEventRuleVersion: financialEvent?.ruleVersion ?? null,
 			balanceAfterAmount: hasBalanceAfter ? transaction.balanceAfterAmount : null,
 			balanceAfterCurrency: hasBalanceAfter ? transaction.balanceAfterCurrency?.toUpperCase() : null,
-			instructedAmount: hasInstructedAmount ? transaction.instructedAmount : null,
-			instructedCurrency: hasInstructedAmount ? transaction.instructedCurrency?.toUpperCase() : null,
-			exchangeRate: hasExchangeRate ? transaction.exchangeRate : null,
-			exchangeRateUnitCurrency: hasExchangeRate ? transaction.exchangeRateUnitCurrency?.toUpperCase() : null,
-			exchangeRateType: truncate(transaction.exchangeRateType, 16),
-			referenceNumber: truncate(transaction.referenceNumber, 255),
-			referenceNumberScheme: truncate(transaction.referenceNumberScheme, 32),
+			instructedAmount,
+			instructedCurrency,
+			exchangeRate,
+			exchangeRateUnitCurrency,
+			exchangeRateType,
+			referenceNumber,
+			referenceNumberScheme,
 		};
 	}
 
@@ -968,20 +1157,28 @@ export class BankingSyncService {
 		return next;
 	}
 
-	private createDedupeKey(values: Record<string, string | null>): string {
+	private createLegacyDedupeKey(values: LegacyDedupeKeyValues): string {
+		const fallbackValues: Record<string, string | null> = {
+			providerTransactionId: values.providerTransactionId,
+			entryReference: values.entryReference,
+			bookingDate: values.bookingDate,
+			valueDate: values.valueDate,
+			amount: values.amount,
+			currency: values.currency,
+			creditDebitIndicator: values.creditDebitIndicator,
+			description: values.description,
+			counterpartyName: values.counterpartyName,
+			remittanceInformation: values.remittanceInformation,
+		};
 		const identity = values.providerTransactionId
 			? `transaction:${values.providerTransactionId}`
 			: values.entryReference
 				? `entry:${values.entryReference}`
-				: Object.entries(values)
-						.map(([key, value]) => `${key}:${this.normalizeForHash(value)}`)
+				: Object.entries(fallbackValues)
+						.map(([key, value]) => `${key}:${value?.trim().toLowerCase() ?? ''}`)
 						.join('|');
 
 		return createHash('sha256').update(identity).digest('hex');
-	}
-
-	private normalizeForHash(value: string | null): string {
-		return value?.trim().toLowerCase() ?? '';
 	}
 
 	private toSignedAmount(amount: string, creditDebitIndicator?: string): string {

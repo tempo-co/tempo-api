@@ -963,6 +963,32 @@ rollout() {
 
 rollback() {
     log 'attempting application-only rollback'
+    if [[ $3 == 1 ]]; then
+        if ! compose_cli stop api; then
+            log 'ERROR: could not stop the candidate API before checking transaction compatibility; refusing rollback' >&2
+            return 1
+        fi
+
+        local incompatible_dedupe_keys sql
+        sql='SELECT EXISTS (SELECT 1 FROM "bank_transactions" WHERE "dedupeKey" !~ '\''^[a-f0-9]{64}$'\'')'
+        if ! incompatible_dedupe_keys=$(docker_cli exec "$POSTGRES_CONTAINER" sh -ec \
+            'psql --no-psqlrc -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atqc "$1"' sh "$sql"); then
+            log 'ERROR: could not verify transaction dedupe compatibility; refusing application-only API rollback' >&2
+            return 1
+        fi
+        case "$incompatible_dedupe_keys" in
+            f) ;;
+            t)
+                log 'ERROR: legacy transaction dedupe markers are present; refusing application-only API rollback' >&2
+                return 1
+                ;;
+            *)
+                log 'ERROR: transaction dedupe compatibility query returned an unexpected result; refusing API rollback' >&2
+                return 1
+                ;;
+        esac
+    fi
+
     rollout "$1" "$2" "$3" "$4" && log 'application-only rollback completed'
 }
 

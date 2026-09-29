@@ -20,6 +20,8 @@ import type {BankTransactionCategorizationSearchTrace} from './categorization/ba
 
 @Entity('bank_transactions')
 @Index('idx_bank_transactions_account_dedupe', ['bankAccountId', 'dedupeKey'], {unique: true})
+@Index('idx_bank_transactions_account_stable_identity', ['bankAccountId', 'stableIdentityKey'], {unique: true})
+@Index('idx_bank_transactions_account_identity_group', ['bankAccountId', 'stableIdentityGroupKey'])
 @Index('idx_bank_transactions_account_booking_date', ['bankAccountId', 'bookingDate'])
 export class BankTransaction {
 	@PrimaryGeneratedColumn('uuid')
@@ -40,6 +42,12 @@ export class BankTransaction {
 
 	@Column({type: 'varchar', length: 64})
 	dedupeKey: string;
+
+	@Column({type: 'varchar', length: 64, nullable: true})
+	stableIdentityKey: string | null;
+
+	@Column({type: 'varchar', length: 64, nullable: true})
+	stableIdentityGroupKey: string | null;
 
 	@Column({type: 'date', nullable: true})
 	bookingDate: string | null;

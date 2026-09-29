@@ -43,15 +43,19 @@ assert_exact() {
 }
 
 assert_no_stateful_compose() {
-    local log
-    log=$(<"$DOCKER_LOG")
-    [[ $log != *' postgres'* && $log != *' redis'* && $log != *' mailpit'* ]] || \
+    local compose_log='' line
+    while IFS= read -r line; do
+        [[ $line == compose\ * ]] || continue
+        compose_log+="$line"$'\n'
+    done < "$DOCKER_LOG"
+    [[ $compose_log != *' postgres'* && $compose_log != *' redis'* && $compose_log != *' mailpit'* ]] || \
         fail 'stateful service was targeted'
 }
 
 setup_fixture() {
     FIXTURE=$TMP_DIR/fixture-$1; BIN=$FIXTURE/bin; STATE_DIR=$FIXTURE/state
     unset FAIL_PULL FAIL_COMPOSE_ONCE FAIL_MAILPIT_INSPECT PRODUCTION_SWEEP_TEST EXTRA_IMAGE_REFS FAIL_IMAGE_RM_ONCE FAIL_IMAGE_RM_MARKER DEPLOY_TARGET DOCKER_CONFIG
+    unset TEST_ROLLBACK_SQL_RESULT TEST_ROLLBACK_SQL_ERROR
     unset FAKE_PRODUCTION_COMPOSE_OWNER_UID FAKE_PRODUCTION_COMPOSE_MODE
     mkdir -p "$BIN" "$STATE_DIR"
     cat > "$BIN/fake" <<'EOF'
@@ -188,9 +192,19 @@ PY
             fi
             exit 0
     fi
+        if [[ ${1:-} == exec ]]; then
+            [[ ${TEST_ROLLBACK_SQL_ERROR:-0} != 1 ]] || exit 1
+            printf '%s\n' "${TEST_ROLLBACK_SQL_RESULT:-f}"
+            exit 0
+        fi
         if [[ ${1:-} == compose ]]; then
             [[ -z ${TEMPO_API_IMAGE+x} && -z ${TEMPO_WEB_IMAGE+x} ]] || exit 2
             service=${@: -1}; args=("$@"); candidate=''
+            if [[ " ${args[*]} " == *' stop '* ]]; then
+                [[ $service == api ]] || exit 2
+                printf 'stopped\n' > "$API_STOPPED_FILE"
+                exit 0
+            fi
             for ((i=0; i<${#args[@]}; i++)); do
                 [[ ${args[i]} == --env-file ]] && candidate=${args[i+1]}
             done
@@ -238,12 +252,14 @@ EOF
     : > "$FIXTURE/docker.log"; : > "$FIXTURE/curl.log"
     : > "$FIXTURE/removed-image-refs"
     : > "$FIXTURE/runtime-api"; : > "$FIXTURE/runtime-web"
+    : > "$FIXTURE/api-stopped"
     touch "$FIXTURE/production.compose.yml" "$FIXTURE/production.env" "$FIXTURE/staging.compose.yml" "$FIXTURE/staging.env"
     export PATH="$BIN:$PATH" DOCKER_LOG="$FIXTURE/docker.log" CURL_LOG="$FIXTURE/curl.log"
     export TEMPO_DEPLOY_TEST_MODE=1 TEMPO_DEPLOY_TEST_ROOT="$FIXTURE"
     export RUNTIME_API_FILE="$FIXTURE/runtime-api" RUNTIME_WEB_FILE="$FIXTURE/runtime-web"
     export COMPOSE_FAILURE_MARKER="$FIXTURE/compose-failed"
     export REMOVED_IMAGE_REFS="$FIXTURE/removed-image-refs"
+    export API_STOPPED_FILE="$FIXTURE/api-stopped"
     export TEMPO_DEPLOY_COMPOSE_FILE="$FIXTURE/production.compose.yml"
     export TEMPO_DEPLOY_STATE_FILE="$STATE_DIR/images.env" TEMPO_DEPLOY_LOCK_FILE="$STATE_DIR/deploy.lock"
     export TEMPO_PRODUCTION_ENV_FILE="$FIXTURE/production.env"
@@ -546,5 +562,30 @@ run_rollback_test() {
     assert_no_stateful_compose
 }
 
-run_initialize_test; run_production_docker_config_test; run_bootstrap_cleanup_test; run_noop_test; run_root_owned_compose_test; run_root_owned_zero_mode_compose_test; run_group_writable_root_compose_rejected_test; run_world_writable_root_compose_rejected_test; run_malformed_root_compose_mode_rejected_test; run_foreign_owned_compose_rejected_test; run_staging_rejects_root_owned_compose_test; run_production_cleanup_retry_test; run_missing_mailpit_test; run_failed_pull_test; run_failed_pull_cleanup_test; run_failed_rollout_cleanup_test; run_success_test; run_api_only_test; run_api_only_rollback_test; run_web_only_test; run_rollback_test
+run_rollback_with_identity_markers_blocked_test() {
+    setup_fixture rollback-identity-markers; set_target; write_active_state
+    export FAIL_COMPOSE_ONCE=web TEST_ROLLBACK_SQL_RESULT=t
+    if run_deploy >"$FIXTURE/output" 2>&1; then fail 'unsafe application rollback unexpectedly succeeded'; fi
+    assert_contains "$FIXTURE/output" 'legacy transaction dedupe markers are present'
+    assert_exact "$RUNTIME_API_FILE" "$API_IMAGE_REPOSITORY@sha256:$TEST_API_DIGEST"
+    assert_contains "$DOCKER_LOG" 'exec'
+    local log; log=$(<"$DOCKER_LOG")
+    [[ $log != *"up -d --no-deps --force-recreate --wait api"*'tempo-api-production-api-1'* ]] || \
+        fail 'old API image was recreated after rollback was blocked'
+    [[ $log != *"image rm $API_IMAGE_REPOSITORY:$TEST_API_SHA"* ]] || \
+        fail 'candidate image was removed after rollback was blocked'
+    assert_no_stateful_compose
+}
+
+run_rollback_guard_query_failure_test() {
+    setup_fixture rollback-guard-query-failure; set_target; write_active_state
+    export FAIL_COMPOSE_ONCE=web TEST_ROLLBACK_SQL_ERROR=1
+    if run_deploy >"$FIXTURE/output" 2>&1; then fail 'unverified application rollback unexpectedly succeeded'; fi
+    assert_contains "$FIXTURE/output" 'could not verify transaction dedupe compatibility'
+    assert_exact "$RUNTIME_API_FILE" "$API_IMAGE_REPOSITORY@sha256:$TEST_API_DIGEST"
+    [[ -s $API_STOPPED_FILE ]] || fail 'candidate API was not stopped before a failed compatibility check'
+    assert_no_stateful_compose
+}
+
+run_initialize_test; run_production_docker_config_test; run_bootstrap_cleanup_test; run_noop_test; run_root_owned_compose_test; run_root_owned_zero_mode_compose_test; run_group_writable_root_compose_rejected_test; run_world_writable_root_compose_rejected_test; run_malformed_root_compose_mode_rejected_test; run_foreign_owned_compose_rejected_test; run_staging_rejects_root_owned_compose_test; run_production_cleanup_retry_test; run_missing_mailpit_test; run_failed_pull_test; run_failed_pull_cleanup_test; run_failed_rollout_cleanup_test; run_success_test; run_api_only_test; run_api_only_rollback_test; run_web_only_test; run_rollback_test; run_rollback_with_identity_markers_blocked_test; run_rollback_guard_query_failure_test
 printf 'PASS: tempo production deploy script tests\n'

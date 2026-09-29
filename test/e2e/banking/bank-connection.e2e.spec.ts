@@ -782,6 +782,18 @@ describe('BankConnectionController', () => {
 		);
 		const balances = makeBalances();
 		const transactions = makeTransactions('sync');
+		const duplicateEntryReferenceDetails = {
+			entryReference: transactions[0].entryReference,
+			transactionDate: transactions[0].transactionDate,
+			bookingDate: transactions[0].bookingDate,
+			valueDate: transactions[0].valueDate,
+			amount: transactions[0].amount,
+			currency: transactions[0].currency,
+			creditDebitIndicator: transactions[0].creditDebitIndicator,
+			referenceNumber: 'reference-sync-1',
+			referenceNumberScheme: 'RF',
+		};
+		transactions[1] = {...transactions[1], ...duplicateEntryReferenceDetails};
 		getAccountBalances.mockResolvedValueOnce(balances);
 		getAccountTransactions.mockResolvedValueOnce(transactions);
 
@@ -808,14 +820,34 @@ describe('BankConnectionController', () => {
 			where: {bankAccountId: bankAccount.id},
 		});
 		expect(persistedTransactions).toHaveLength(5);
+		expect(new Set(persistedTransactions.map(({stableIdentityKey}) => stableIdentityKey)).size).toBe(5);
 		expect(persistedTransactions.find(({creditDebitIndicator}) => creditDebitIndicator === 'DBIT')?.amount).toBe(
 			'-12.50000000',
 		);
-		expect(
-			persistedTransactions.find(
-				({providerTransactionId}) => providerTransactionId === 'provider-transaction-sync-0',
-			),
-		).toMatchObject({
+		const firstPersistedTransaction = persistedTransactions.find(
+			({referenceNumber}) => referenceNumber === 'reference-sync-0',
+		);
+		const secondPersistedTransaction = persistedTransactions.find(
+			({referenceNumber}) => referenceNumber === 'reference-sync-1',
+		);
+		expect(firstPersistedTransaction).toBeDefined();
+		expect(secondPersistedTransaction).toBeDefined();
+		expect(firstPersistedTransaction?.stableIdentityGroupKey).toEqual(
+			secondPersistedTransaction?.stableIdentityGroupKey,
+		);
+		expect(firstPersistedTransaction?.stableIdentityKey).not.toEqual(secondPersistedTransaction?.stableIdentityKey);
+		if (!firstPersistedTransaction || !secondPersistedTransaction) {
+			throw new Error('Expected the two repeated-reference transactions to persist.');
+		}
+		await bankTransactionRepository.update(
+			{id: firstPersistedTransaction.id},
+			{categorySource: 'MANUAL', categoryStatus: 'COMPLETED'},
+		);
+		await bankTransactionRepository.update(
+			{id: secondPersistedTransaction.id},
+			{categorySource: 'AI', categoryStatus: 'COMPLETED'},
+		);
+		expect(firstPersistedTransaction).toMatchObject({
 			transactionDate: '2026-08-24',
 			transactionType: 'CARD_PAYMENT',
 			bankTransactionCode: 'PMNT',
@@ -858,17 +890,30 @@ describe('BankConnectionController', () => {
 		expect(JSON.stringify(transactionsResponse.body)).not.toContain('provider-entry-sync');
 		expect(transactionsResponse.body.transactions[0]).not.toHaveProperty('bankAccountId');
 
+		const priorFirstStableIdentityKey = firstPersistedTransaction.stableIdentityKey;
+		const priorFirstStableIdentityGroupKey = firstPersistedTransaction.stableIdentityGroupKey;
+		await bankTransactionRepository.update(
+			{id: firstPersistedTransaction.id},
+			{stableIdentityKey: null, stableIdentityGroupKey: null, dedupeKey: 'a'.repeat(64)},
+		);
+
 		getAccountBalances.mockResolvedValueOnce(balances);
 		const updatedTransactions = makeTransactions('sync');
+		updatedTransactions[1] = {...updatedTransactions[1], ...duplicateEntryReferenceDetails};
 		updatedTransactions[0] = {
 			...updatedTransactions[0],
+			providerTransactionId: 'provider-transaction-sync-0-refreshed',
 			description: 'A'.repeat(81),
 			counterpartyName: 'Updated Counterparty',
 			bankTransactionDescription: 'Updated card payment',
 			balanceAfterAmount: '111.95',
 			referenceNumber: 'reference-sync-0-updated',
 		};
-		getAccountTransactions.mockResolvedValueOnce(updatedTransactions);
+		getAccountTransactions.mockResolvedValueOnce([
+			updatedTransactions[1],
+			updatedTransactions[0],
+			...updatedTransactions.slice(2),
+		]);
 		await bankConnectionRepository.update(
 			{id: connection.id},
 			{nextSyncAt: new Date(Date.now() - 1), syncStatus: 'QUEUED'},
@@ -886,17 +931,32 @@ describe('BankConnectionController', () => {
 		);
 		expect(await bankTransactionRepository.count({where: {bankAccountId: bankAccount.id}})).toBe(5);
 		expect(await bankAccountBalanceRepository.count({where: {bankAccountId: bankAccount.id}})).toBe(4);
+		const unchangedDuplicateEntryReferenceTransaction = await bankTransactionRepository.findOneBy({
+			bankAccountId: bankAccount.id,
+			referenceNumber: 'reference-sync-1',
+		});
+		expect(unchangedDuplicateEntryReferenceTransaction?.id).toBe(secondPersistedTransaction?.id);
 		const updatedTransaction = await bankTransactionRepository.findOneBy({
 			bankAccountId: bankAccount.id,
-			providerTransactionId: 'provider-transaction-sync-0',
+			referenceNumber: 'reference-sync-0-updated',
 		});
+		expect(updatedTransaction?.id).toBe(firstPersistedTransaction?.id);
 		expect(updatedTransaction).toMatchObject({
+			stableIdentityKey: priorFirstStableIdentityKey,
+			stableIdentityGroupKey: priorFirstStableIdentityGroupKey,
+			providerTransactionId: 'provider-transaction-sync-0-refreshed',
 			description: 'A'.repeat(81),
 			displayDescription: 'Updated Counterparty',
 			counterpartyName: 'Updated Counterparty',
 			bankTransactionDescription: 'Updated card payment',
 			balanceAfterAmount: '111.95000000',
 			referenceNumber: 'reference-sync-0-updated',
+			categorySource: 'MANUAL',
+			categoryStatus: 'COMPLETED',
+		});
+		expect(unchangedDuplicateEntryReferenceTransaction).toMatchObject({
+			categorySource: 'AI',
+			categoryStatus: 'COMPLETED',
 		});
 	});
 
