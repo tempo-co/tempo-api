@@ -23,7 +23,7 @@ export function getBankTransactionDisplayDescription({
 	return normalizedDescription;
 }
 
-function normalizeBankTransactionText(value: string | null | undefined): string | null {
+export function normalizeBankTransactionText(value: string | null | undefined): string | null {
 	const normalizedValue = value?.replace(/\s+/g, ' ').trim();
 	return normalizedValue || null;
 }

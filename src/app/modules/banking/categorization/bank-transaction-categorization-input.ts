@@ -186,8 +186,6 @@ export function createBankTransactionCategorizationInputHash(
 	return createHash('sha256').update(JSON.stringify(hashInput)).digest('hex');
 }
 
-export const getBankTransactionCategorizationInputHash = createBankTransactionCategorizationInputHash;
-
 function isCategorizationInput(
 	value: BankTransaction | BankTransactionCategorizationInput,
 ): value is BankTransactionCategorizationInput {

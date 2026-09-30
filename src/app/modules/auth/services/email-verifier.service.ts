@@ -19,7 +19,7 @@ import {
 
 @Injectable()
 export class EmailVerifierService {
-	private readonly EXPIRATION;
+	private readonly EXPIRATION_MS: number;
 	private readonly REDIS_KEY;
 	private readonly WEB_BASE_URL;
 
@@ -29,7 +29,7 @@ export class EmailVerifierService {
 		private readonly emailService: EmailService,
 		private readonly accountService: AccountService,
 	) {
-		this.EXPIRATION = this.configService.get('EMAIL_VERIFICATION_EXPIRATION');
+		this.EXPIRATION_MS = ms(this.configService.get('EMAIL_VERIFICATION_EXPIRATION') as ms.StringValue);
 		this.REDIS_KEY = this.configService.get('EMAIL_VERIFICATION_REDIS_KEY');
 		this.WEB_BASE_URL = this.configService.get('WEB_BASE_URL');
 	}
@@ -67,7 +67,7 @@ export class EmailVerifierService {
 
 		const code = await this._createCode(email);
 		const verificationUrl = this._createUrl('/verify-email', {email, code});
-		const expiration = ms(ms(this.EXPIRATION as ms.StringValue), {long: true});
+		const expiration = ms(this.EXPIRATION_MS, {long: true});
 
 		await this.emailService.send(
 			{
@@ -87,7 +87,7 @@ export class EmailVerifierService {
 
 		const token = await this._createToken(newEmail);
 		const verificationUrl = this._createUrl('/verify-email-change', {email: newEmail, token});
-		const expiration = ms(ms(this.EXPIRATION as ms.StringValue), {long: true});
+		const expiration = ms(this.EXPIRATION_MS, {long: true});
 
 		await this.emailService.send(
 			{
@@ -126,7 +126,7 @@ export class EmailVerifierService {
 			try {
 				await this._getEmailBySecret(code);
 			} catch {
-				const expirationSeconds = Math.floor(ms(this.EXPIRATION as ms.StringValue) / 1000);
+				const expirationSeconds = Math.floor(this.EXPIRATION_MS / 1000);
 				await this.redisClient.set(key, email, 'EX', expirationSeconds);
 				return code;
 			}
@@ -137,7 +137,7 @@ export class EmailVerifierService {
 		const token: string = crypto.randomUUID();
 		const key = `${this.REDIS_KEY}:${token}`;
 
-		const expirationSeconds = Math.floor(ms(this.EXPIRATION as ms.StringValue) / 1000);
+		const expirationSeconds = Math.floor(this.EXPIRATION_MS / 1000);
 		await this.redisClient.set(key, email, 'EX', expirationSeconds);
 		return token;
 	}

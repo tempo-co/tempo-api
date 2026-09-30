@@ -158,6 +158,12 @@ export function assignBankTransactionStableIdentityKeys<T extends BankTransactio
 			left.stableIdentityKey.localeCompare(right.stableIdentityKey),
 		);
 		const unmatchedExisting = new Set(existingGroup);
+		const existingContentKeys = new Map(
+			existingGroup.map((existing) => [
+				existing,
+				JSON.stringify(createBankTransactionContentFingerprint(existing)),
+			]),
+		);
 		const incomingByContent = [...incomingGroup].sort((left, right) => {
 			if (left.contentKey < right.contentKey) return -1;
 			if (left.contentKey > right.contentKey) return 1;
@@ -168,8 +174,7 @@ export function assignBankTransactionStableIdentityKeys<T extends BankTransactio
 		for (const incoming of incomingByContent) {
 			const matchingExisting = existingGroup.find(
 				(existing) =>
-					unmatchedExisting.has(existing) &&
-					JSON.stringify(createBankTransactionContentFingerprint(existing)) === incoming.contentKey,
+					unmatchedExisting.has(existing) && existingContentKeys.get(existing) === incoming.contentKey,
 			);
 			if (matchingExisting) {
 				unmatchedExisting.delete(matchingExisting);

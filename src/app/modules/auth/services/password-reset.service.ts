@@ -23,7 +23,7 @@ import {
 export class PasswordResetService {
 	private readonly REDIS_KEY;
 	private readonly WEB_BASE_URL;
-	private readonly EXPIRATION;
+	private readonly EXPIRATION_MS: number;
 
 	constructor(
 		private readonly accountService: AccountService,
@@ -34,7 +34,7 @@ export class PasswordResetService {
 	) {
 		this.REDIS_KEY = this.configService.get('PASSWORD_RESET_REDIS_KEY');
 		this.WEB_BASE_URL = this.configService.get('WEB_BASE_URL');
-		this.EXPIRATION = this.configService.get('PASSWORD_RESET_EXPIRATION');
+		this.EXPIRATION_MS = ms(this.configService.get('PASSWORD_RESET_EXPIRATION') as ms.StringValue);
 	}
 
 	async requestPasswordReset(email: Account['email']) {
@@ -45,7 +45,7 @@ export class PasswordResetService {
 
 		const token = await this._createToken(account.id);
 		const resetUrl = this._createUrl(account.email, token);
-		const expiration = ms(ms(this.EXPIRATION as ms.StringValue), {long: true});
+		const expiration = ms(this.EXPIRATION_MS, {long: true});
 
 		await this.emailService.send(
 			{
@@ -64,7 +64,7 @@ export class PasswordResetService {
 
 		await this._assertPasswordIsNew(accountId, password, key);
 
-		const hash = await argon2.hash(password);
+		const hash = await this.accountService.hashPassword(password);
 		await this.accountService.update(accountId, {password: hash});
 
 		await this.redisClient.del(key);
@@ -77,7 +77,7 @@ export class PasswordResetService {
 		const token: string = crypto.randomUUID();
 		const key = `${this.REDIS_KEY}:${token}`;
 
-		const expirationSeconds = Math.floor(ms(this.EXPIRATION as ms.StringValue) / 1000);
+		const expirationSeconds = Math.floor(this.EXPIRATION_MS / 1000);
 		await this.redisClient.set(key, accountId, 'EX', expirationSeconds);
 		return token;
 	}

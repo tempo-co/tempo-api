@@ -35,6 +35,10 @@ export class AccountService {
 		}
 	}
 
+	hashPassword(password: string): Promise<Account['password']> {
+		return argon2.hash(password);
+	}
+
 	async verifyPassword(hash: Account['password'], password: Account['password']) {
 		const isPasswordValid = await argon2.verify(hash, password);
 		if (!isPasswordValid) {
@@ -43,7 +47,7 @@ export class AccountService {
 	}
 
 	async save(name: Account['name'], email: Account['email'], password: Account['password']) {
-		return this.accountRepository.save({name, email, password});
+		return this.accountRepository.save(this.accountRepository.create({name, email, password}));
 	}
 
 	async update(id: Account['id'], updates: Partial<Account>) {

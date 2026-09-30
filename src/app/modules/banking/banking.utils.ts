@@ -73,3 +73,7 @@ export function selectPreferredBalance(balances: EnableBankingBalance[]): Enable
 export function truncate(value: string | null | undefined, length: number): string | null {
 	return value ? value.slice(0, length) : null;
 }
+
+export function safeErrorName(error: unknown): string {
+	return error instanceof Error && error.name.length > 0 ? error.name : 'UnknownError';
+}

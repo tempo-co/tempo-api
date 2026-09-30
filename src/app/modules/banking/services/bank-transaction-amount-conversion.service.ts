@@ -60,12 +60,13 @@ export class BankTransactionAmountConversionService {
 			);
 			const rateDates = historicalTransactions
 				.map((transaction) => getBankTransactionRateDate(transaction.transactionDate, transaction.bookingDate))
-				.filter((date): date is string => date !== null);
+				.filter((date): date is string => date !== null)
+				.sort();
 			if (rateDates.length > 0) {
 				await this.fxRateService.ensureRates(
 					new Set(historicalTransactions.map(({currency}) => currency)),
-					[...rateDates].sort()[0],
-					[...rateDates].sort().at(-1) as string,
+					rateDates[0],
+					rateDates[rateDates.length - 1],
 				);
 			}
 

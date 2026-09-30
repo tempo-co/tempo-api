@@ -1,5 +1,4 @@
-import {BANK_TRANSACTION_DIRECTIONS} from '../../bank-transaction-direction';
-import type {BankTransactionDirection as BankTransactionDirectionType} from '../../bank-transaction-direction';
+import type {BankTransactionDirection} from '../../bank-transaction-direction';
 import type {
 	BankTransactionCashFlowTreatment,
 	BankTransactionFinancialEventSource,
@@ -12,9 +11,6 @@ import type {
 } from '../../categorization/bank-transaction-categorization.types';
 import type {BankTransactionCategory} from '../../categorization/bank-transaction-category';
 
-export const BankTransactionDirection = BANK_TRANSACTION_DIRECTIONS;
-export type BankTransactionDirection = BankTransactionDirectionType;
-
 export class BankTransactionResponseDto {
 	id: string;
 	transactionDate: string | null;
@@ -26,7 +22,7 @@ export class BankTransactionResponseDto {
 	amount: string;
 	currency: string;
 	creditDebitIndicator: string | null;
-	direction: BankTransactionDirectionType;
+	direction: BankTransactionDirection;
 	transactionType: BankTransactionType;
 	transactionStatus: string | null;
 	category: BankTransactionCategory | null;

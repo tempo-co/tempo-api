@@ -376,7 +376,7 @@ export class EnableBankingClient {
 		const amountRecord = this.asRecord(record?.transaction_amount);
 		const amount = this.asAmount(amountRecord?.amount);
 		const currency = this.asCurrency(amountRecord?.currency);
-		if (!amount || !currency || currency.length !== 3) return [];
+		if (!amount || !currency) return [];
 
 		const creditDebitIndicator = this.asOptionalString(record?.credit_debit_indicator)?.toUpperCase();
 		const creditor = this.asRecord(record?.creditor);
@@ -386,11 +386,7 @@ export class EnableBankingClient {
 		const counterparty =
 			creditDebitIndicator === 'DBIT' ? creditor : creditDebitIndicator === 'CRDT' ? debtor : undefined;
 		const counterpartyName =
-			creditDebitIndicator === 'DBIT'
-				? (creditorName ?? debtorName)
-				: creditDebitIndicator === 'CRDT'
-					? (debtorName ?? creditorName)
-					: (creditorName ?? debtorName);
+			creditDebitIndicator === 'CRDT' ? (debtorName ?? creditorName) : (creditorName ?? debtorName);
 		const counterpartyLocation = this.parseCounterpartyLocation(counterparty);
 		const remittanceInformation = this.parseRemittanceInformation(record?.remittance_information);
 		const bankTransactionCode = this.asRecord(record?.bank_transaction_code);

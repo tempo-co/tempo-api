@@ -14,6 +14,7 @@ import {
 
 import {BANK_TRANSACTION_FINANCIAL_EVENT_TYPES} from '../bank-transaction-financial-event';
 import {BankTransaction} from '../bank-transaction.entity';
+import {safeErrorName} from '../banking.utils';
 import {
 	createBankTransactionCategorizationInputHash,
 	normalizeMerchantCategoryCode,
@@ -85,10 +86,6 @@ export class BankTransactionCategorizationService {
 	) {}
 
 	async enqueueForTransactions(transactionIds: readonly string[]): Promise<void> {
-		await this.enqueueForTransactionsInBatches(transactionIds, this.getCategorizationBatchSize());
-	}
-
-	private async enqueueForTransactionsInBatches(transactionIds: readonly string[], batchSize: number): Promise<void> {
 		if (!this.isEnabled()) return;
 
 		const uniqueIds = [...new Set(transactionIds.filter((id) => id.length > 0))].sort();
@@ -110,8 +107,8 @@ export class BankTransactionCategorizationService {
 		if (categorizationIds.length === 0) return;
 		const inputHashes = new Map(transactions.map(({id, categoryInputHash}) => [id, categoryInputHash]));
 		const jobs = [];
-		for (let index = 0; index < categorizationIds.length; index += batchSize) {
-			const batch = categorizationIds.slice(index, index + batchSize);
+		for (let index = 0; index < categorizationIds.length; index += BANK_TRANSACTION_CATEGORIZATION_BATCH_SIZE) {
+			const batch = categorizationIds.slice(index, index + BANK_TRANSACTION_CATEGORIZATION_BATCH_SIZE);
 			jobs.push({
 				name: CATEGORIZE_BANK_TRANSACTIONS_JOB,
 				data: {
@@ -132,11 +129,10 @@ export class BankTransactionCategorizationService {
 		const uniqueIds = [...new Set(transactionIds.filter((id) => id.length > 0))];
 		if (uniqueIds.length === 0) return;
 
-		const batchSize = this.getCategorizationBatchSize();
-		const batchIds = uniqueIds.slice(0, batchSize);
-		const remainingIds = uniqueIds.slice(batchSize);
+		const batchIds = uniqueIds.slice(0, BANK_TRANSACTION_CATEGORIZATION_BATCH_SIZE);
+		const remainingIds = uniqueIds.slice(BANK_TRANSACTION_CATEGORIZATION_BATCH_SIZE);
 		if (remainingIds.length > 0) {
-			await this.enqueueForTransactionsInBatches(remainingIds, batchSize);
+			await this.enqueueForTransactions(remainingIds);
 		}
 
 		const transactions = await this.repository.find({
@@ -165,10 +161,8 @@ export class BankTransactionCategorizationService {
 			}
 		}
 
-		for (let index = 0; index < claimed.length; index += BANK_TRANSACTION_CATEGORIZATION_BATCH_SIZE) {
-			const batch = claimed.slice(index, index + BANK_TRANSACTION_CATEGORIZATION_BATCH_SIZE);
-			await this.categorizeClaimedBatch(batch);
-		}
+		// batchIds is capped at the batch size, so every claimed transaction fits in one provider batch.
+		if (claimed.length > 0) await this.categorizeClaimedBatch(claimed);
 	}
 
 	async reconcilePendingTransactions(): Promise<void> {
@@ -203,7 +197,7 @@ export class BankTransactionCategorizationService {
 
 			await this.enqueueForTransactions(rows.map(({id}) => id));
 		} catch (error) {
-			this.logger.warn(`Transaction categorization reconciliation failed: ${this.safeErrorName(error)}`);
+			this.logger.warn(`Transaction categorization reconciliation failed: ${safeErrorName(error)}`);
 		}
 	}
 
@@ -252,7 +246,7 @@ export class BankTransactionCategorizationService {
 			})
 			.map((input) => {
 				const webSearchInput = toBankTransactionCategorizationWebSearchInput(input);
-				if (webSearchEnabled && webSearchInput === null) skippedWebSearchIds.add(input.correlationId);
+				if (webSearchInput === null) skippedWebSearchIds.add(input.correlationId);
 				return webSearchInput;
 			})
 			.filter((input): input is NonNullable<typeof input> => input !== null);
@@ -262,26 +256,21 @@ export class BankTransactionCategorizationService {
 		const claimedByCorrelationId = new Map(
 			activeBatchAfterStandardCategorization.map((claimed) => [claimed.input.correlationId, claimed]),
 		);
-		if (webSearchEnabled) {
-			for (const webSearchInput of webCandidates) {
-				const claimed = claimedByCorrelationId.get(webSearchInput.correlationId);
-				if (!claimed) continue;
-				const activeBeforeWebSearch = await this.getActiveClaimedTransactions([claimed]);
-				if (activeBeforeWebSearch.length === 0) {
-					activeCorrelationIds.delete(webSearchInput.correlationId);
-					continue;
-				}
-				try {
-					const candidateResults = await this.provider.categorizeWithWebSearch(
-						[webSearchInput],
-						BANK_TRANSACTION_CATEGORY_DEFINITIONS,
-					);
-					this.assertCompleteResults([webSearchInput], candidateResults);
-					webResults.push(...candidateResults.map((result) => this.normalizeWebSearchResult(result)));
-				} catch (error) {
-					this.logger.warn(`Transaction web-search fallback failed: ${this.safeErrorName(error)}`);
-					failedWebSearchIds.add(webSearchInput.correlationId);
-				}
+		for (const webSearchInput of webCandidates) {
+			const claimed = claimedByCorrelationId.get(webSearchInput.correlationId);
+			if (!claimed) continue;
+			const activeBeforeWebSearch = await this.getActiveClaimedTransactions([claimed]);
+			if (activeBeforeWebSearch.length === 0) continue;
+			try {
+				const candidateResults = await this.provider.categorizeWithWebSearch(
+					[webSearchInput],
+					BANK_TRANSACTION_CATEGORY_DEFINITIONS,
+				);
+				this.assertCompleteResults([webSearchInput], candidateResults);
+				webResults.push(...candidateResults.map((result) => this.normalizeWebSearchResult(result)));
+			} catch (error) {
+				this.logger.warn(`Transaction web-search fallback failed: ${safeErrorName(error)}`);
+				failedWebSearchIds.add(webSearchInput.correlationId);
 			}
 		}
 
@@ -562,10 +551,6 @@ export class BankTransactionCategorizationService {
 		return `categorize-${createHash('sha256').update(jobInput).digest('hex')}`;
 	}
 
-	private getCategorizationBatchSize(): number {
-		return BANK_TRANSACTION_CATEGORIZATION_BATCH_SIZE;
-	}
-
 	private isEnabled(): boolean {
 		return this.configurationService.get('AI_CATEGORIZATION_ENABLED');
 	}
@@ -586,9 +571,5 @@ export class BankTransactionCategorizationService {
 			return error.message.slice(0, MAX_ERROR_LENGTH);
 		}
 		return 'Transaction categorization failed.';
-	}
-
-	private safeErrorName(error: unknown): string {
-		return error instanceof Error && error.name.length > 0 ? error.name : 'UnknownError';
 	}
 }

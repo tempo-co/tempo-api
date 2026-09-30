@@ -56,3 +56,9 @@ export async function loginAgent(httpServer: Server, email: string, password: st
 	await agent.post('/auth/login').send({email, password}).expect(200);
 	return agent;
 }
+
+export function getSessionCookie(response: request.Response): string | undefined {
+	return ([] as string[])
+		.concat(response.headers['set-cookie'] || [])
+		.find((cookie) => cookie.startsWith('session='));
+}

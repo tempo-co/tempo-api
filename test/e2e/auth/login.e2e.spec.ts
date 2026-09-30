@@ -7,7 +7,7 @@ import {Account} from '@modules/account/account.entity';
 import {EMAIL_NOT_VERIFIED} from '@modules/auth/api/constants/api-messages.constants';
 import {SignUpDto} from '@modules/auth/api/dtos/signup.dto';
 
-import {getApp} from '../../setup/e2e.setup';
+import {getApp, getSessionCookie, loginAgent} from '../../setup/e2e.setup';
 
 describe('AuthController - Login', () => {
 	let httpServer: Server;
@@ -28,11 +28,7 @@ describe('AuthController - Login', () => {
 			};
 			await request(httpServer).post('/auth/signup').send(accountCredentials).expect(201);
 
-			agent = request.agent(httpServer);
-			await agent
-				.post('/auth/login')
-				.send({email: accountCredentials.email, password: accountCredentials.password})
-				.expect(200);
+			agent = await loginAgent(httpServer, accountCredentials.email, accountCredentials.password);
 		});
 
 		it('should log in with correct credentials and establish session', async () => {
@@ -45,12 +41,8 @@ describe('AuthController - Login', () => {
 			expect(account.name).toEqual(accountCredentials.name);
 			expect(account.password).toBeUndefined();
 
-			const cookiesHeader = response.headers['set-cookie'];
-			expect(cookiesHeader).toBeDefined();
-
-			const sessionCookie = ([] as string[])
-				.concat(cookiesHeader || [])
-				.find((cookie: string) => cookie.startsWith('session='));
+			expect(response.headers['set-cookie']).toBeDefined();
+			const sessionCookie = getSessionCookie(response);
 
 			expect(sessionCookie).toBeDefined();
 			expect(sessionCookie).toMatch(/HttpOnly/);

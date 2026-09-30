@@ -1,6 +1,4 @@
 import {Injectable} from '@nestjs/common';
-import argon2 from 'argon2';
-import {plainToInstance} from 'class-transformer';
 import {Request} from 'express';
 
 import {SessionService} from '@core/session/session.service';
@@ -23,12 +21,12 @@ export class AuthService {
 	async signUp({name, email, password}: SignUpDto, request: Request) {
 		await this.accountService.validateEmailIsUnique(email);
 
-		const hash = await argon2.hash(password);
+		const hash = await this.accountService.hashPassword(password);
 		const account = await this.accountService.save(name, email, hash);
 
 		await this.emailVerifierService.sendWelcomeEmail(account);
 		await this.logIn(account, request);
-		return plainToInstance(Account, account);
+		return account;
 	}
 
 	async logOut(request: Request) {
@@ -56,7 +54,7 @@ export class AuthService {
 	async changePassword(account: Account, dto: PasswordChangeDto, currentSessionId: string) {
 		await this.accountService.verifyPassword(account.password, dto.currentPassword);
 
-		const hash = await argon2.hash(dto.newPassword);
+		const hash = await this.accountService.hashPassword(dto.newPassword);
 		await this.accountService.update(account.id, {password: hash});
 		await this.sessionService.revokeAllOtherSessions(account.id, currentSessionId);
 		return {message: PASSWORD_CHANGE_SUCCESS};

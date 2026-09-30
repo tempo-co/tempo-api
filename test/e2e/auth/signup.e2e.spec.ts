@@ -21,7 +21,7 @@ import {
 	VERIFIED_ACCOUNT_EMAIL,
 	VERIFIED_ACCOUNT_PASSWORD,
 } from '../../../scripts/seed-data/seed.constants';
-import {getApp, loginAgent} from '../../setup/e2e.setup';
+import {getApp, getSessionCookie, loginAgent} from '../../setup/e2e.setup';
 import {EmailUtils} from '../../utils/email-utils';
 
 describe('AuthController - Signup', () => {
@@ -310,11 +310,8 @@ describe('AuthController - Signup', () => {
 					expect(res.body.message).toBe(EMAIL_VERIFICATION_SUCCESS);
 				});
 
-			const cookiesHeader = response.headers['set-cookie'];
-			expect(cookiesHeader).toBeDefined();
-			const sessionCookie = ([] as string[])
-				.concat(cookiesHeader || [])
-				.find((cookie: string) => cookie.startsWith('session='));
+			expect(response.headers['set-cookie']).toBeDefined();
+			const sessionCookie = getSessionCookie(response);
 			expect(sessionCookie).toBeDefined();
 
 			const agent = await loginAgent(httpServer, accountCredentials.email, accountCredentials.password);

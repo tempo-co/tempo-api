@@ -151,18 +151,13 @@ export class BankTransactionService {
 
 		const [transactions, total] = await query.getManyAndCount();
 		return {
-			transactions: transactions.map((transaction) => this.toBankTransactionResponse(transaction)),
+			transactions: transactions.map((transaction) => this.toSharedResponseFields(transaction)),
 			total,
 		};
 	}
 
 	async findById(accountId: Account['id'], id: BankTransaction['id']): Promise<BankTransactionResponseDto> {
-		const transaction = await this.createOwnerScopedQuery(accountId)
-			.andWhere('transaction.id = :transactionId', {transactionId: id})
-			.getOne();
-
-		if (!transaction) throw new NotFoundException(BANKING_TRANSACTION_NOT_FOUND);
-		return this.toResponse(transaction);
+		return this.toResponse(await this.findOwnedTransaction(accountId, id));
 	}
 
 	async updateCategory(
@@ -170,11 +165,7 @@ export class BankTransactionService {
 		id: BankTransaction['id'],
 		category: BankTransactionCategory,
 	): Promise<BankTransactionResponseDto> {
-		const transaction = await this.createOwnerScopedQuery(accountId)
-			.andWhere('transaction.id = :transactionId', {transactionId: id})
-			.getOne();
-
-		if (!transaction) throw new NotFoundException(BANKING_TRANSACTION_NOT_FOUND);
+		const transaction = await this.findOwnedTransaction(accountId, id);
 		const inputHash = createBankTransactionCategorizationInputHash(transaction);
 		const values = {
 			...BANK_TRANSACTION_CATEGORIZATION_RESET_VALUES,
@@ -198,6 +189,14 @@ export class BankTransactionService {
 		});
 		if (!connection) throw new NotFoundException(BANKING_CONNECTION_NOT_FOUND);
 		return connection;
+	}
+
+	private async findOwnedTransaction(accountId: Account['id'], id: BankTransaction['id']) {
+		const transaction = await this.createOwnerScopedQuery(accountId)
+			.andWhere('transaction.id = :transactionId', {transactionId: id})
+			.getOne();
+		if (!transaction) throw new NotFoundException(BANKING_TRANSACTION_NOT_FOUND);
+		return transaction;
 	}
 
 	private createOwnerScopedQuery(accountId: Account['id']) {
@@ -230,12 +229,6 @@ export class BankTransactionService {
 			bankAccountName: transaction.bankAccount.name,
 			bankAccountAlias: transaction.bankAccount.alias,
 		};
-	}
-
-	private toBankTransactionResponse(
-		transaction: BankTransaction,
-	): BankConnectionTransactionsResponseDto['transactions'][number] {
-		return this.toSharedResponseFields(transaction);
 	}
 
 	private toSharedResponseFields(transaction: BankTransaction) {

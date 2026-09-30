@@ -9,8 +9,6 @@ export const BANK_CONNECTION_STATUSES = {
 	FAILED: 'FAILED',
 } as const;
 
-export type BankConnectionStatus = (typeof BANK_CONNECTION_STATUSES)[keyof typeof BANK_CONNECTION_STATUSES];
-
 export const BANK_SYNC_STATUSES = {
 	IDLE: 'IDLE',
 	QUEUED: 'QUEUED',
@@ -21,8 +19,6 @@ export const BANK_SYNC_STATUSES = {
 	RATE_LIMITED: 'RATE_LIMITED',
 	EXPIRED: 'EXPIRED',
 } as const;
-
-export type BankSyncStatus = (typeof BANK_SYNC_STATUSES)[keyof typeof BANK_SYNC_STATUSES];
 
 export const BANKING_DEFAULT_RETRY_AFTER_SECONDS = 6 * 60 * 60;
 export const BANKING_MAX_RETRY_AFTER_SECONDS = 8_000_000_000_000;
@@ -36,7 +32,7 @@ export function resolveDurationMs(value: string, key: string): number {
 	return parsed;
 }
 
-export function isValidRetryAfterSeconds(seconds: number | null | undefined): boolean {
+export function isValidRetryAfterSeconds(seconds: number | null | undefined): seconds is number {
 	return (
 		seconds !== undefined &&
 		seconds !== null &&
@@ -47,7 +43,5 @@ export function isValidRetryAfterSeconds(seconds: number | null | undefined): bo
 }
 
 export function sanitizeRetryAfterSeconds(seconds: number | null | undefined): number {
-	return seconds !== undefined && seconds !== null && isValidRetryAfterSeconds(seconds)
-		? seconds
-		: BANKING_DEFAULT_RETRY_AFTER_SECONDS;
+	return isValidRetryAfterSeconds(seconds) ? seconds : BANKING_DEFAULT_RETRY_AFTER_SECONDS;
 }

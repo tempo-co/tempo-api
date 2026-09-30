@@ -4,7 +4,6 @@ import type {
 	BankTransactionCategorizationWebSearchInput,
 	BankTransactionCategoryDefinition,
 } from './bank-transaction-categorization.types';
-import type {BankTransactionCategory} from './bank-transaction-category';
 
 export const BANK_TRANSACTION_CATEGORIZATION_PROVIDER = Symbol('BANK_TRANSACTION_CATEGORIZATION_PROVIDER');
 
@@ -28,6 +27,3 @@ export class BankTransactionCategorizationProviderError extends Error {
 		this.name = 'BankTransactionCategorizationProviderError';
 	}
 }
-
-export type BankTransactionCategorizationProviderName = string;
-export type BankTransactionCategorizationCategory = BankTransactionCategory;

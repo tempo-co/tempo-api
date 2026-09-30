@@ -18,7 +18,7 @@ import {
 	VERIFIED_ACCOUNT_EMAIL,
 	VERIFIED_ACCOUNT_PASSWORD,
 } from '../../../scripts/seed-data/seed.constants';
-import {getApp} from '../../setup/e2e.setup';
+import {getApp, loginAgent} from '../../setup/e2e.setup';
 import {UUID_VALIDATION_REGEX} from '../../types/regex.constants';
 import {EmailUtils} from '../../utils/email-utils';
 
@@ -46,11 +46,7 @@ describe('AuthController - Reset Password', () => {
 
 		beforeAll(async () => {
 			accountToResetEmail = PW_RESET_ACCOUNT_EMAIL;
-			const agent = request.agent(httpServer);
-			await agent
-				.post('/auth/login')
-				.send({email: accountToResetEmail, password: PW_RESET_ACCOUNT_PASSWORD})
-				.expect(200);
+			await loginAgent(httpServer, accountToResetEmail, PW_RESET_ACCOUNT_PASSWORD);
 		});
 
 		it('should send a password reset email for an existing account', async () => {

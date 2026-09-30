@@ -1,4 +1,6 @@
 import type {BankTransactionDirection} from './bank-transaction-direction';
+import {normalizeBankTransactionText} from './bank-transaction-display';
+import {normalizeCurrency} from './services/bank-transaction-amount-conversion.utils';
 
 export const BANK_TRANSACTION_FINANCIAL_EVENT_TYPES = {
 	CURRENCY_EXCHANGE: 'CURRENCY_EXCHANGE',
@@ -49,7 +51,7 @@ export function detectBankTransactionFinancialEvent(
 	const transactionCurrency = normalizeCurrency(input.transactionCurrency);
 	if (!accountCurrency || !transactionCurrency || accountCurrency !== transactionCurrency) return null;
 
-	const description = normalizeDescription(input.description);
+	const description = normalizeBankTransactionText(input.description);
 	const targetCurrency = description ? EXCHANGED_TO_DESCRIPTION.exec(description)?.[1] : undefined;
 	if (!targetCurrency) return null;
 
@@ -86,14 +88,4 @@ function isRevolutEnableBankingTransaction(input: BankTransactionFinancialEventI
 	return (
 		input.provider?.trim().toLowerCase() === 'enable-banking' && input.aspspName?.trim().toLowerCase() === 'revolut'
 	);
-}
-
-function normalizeCurrency(value: string | null | undefined): string | null {
-	const normalized = value?.trim().toUpperCase();
-	return normalized && /^[A-Z]{3}$/.test(normalized) ? normalized : null;
-}
-
-function normalizeDescription(value: string | null | undefined): string | null {
-	const normalized = value?.trim().replace(/\s+/g, ' ');
-	return normalized || null;
 }

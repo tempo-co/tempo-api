@@ -46,9 +46,11 @@ import {
 import {normalizeBankTransactionLocation} from '../bank-transaction-location';
 import {normalizeBankTransactionType} from '../bank-transaction-type';
 import {BankTransaction} from '../bank-transaction.entity';
-import {selectPreferredBalance, truncate} from '../banking.utils';
-import {createBankTransactionCategorizationInputHash} from '../categorization/bank-transaction-categorization-input';
-import {toBankTransactionCategorizationInput} from '../categorization/bank-transaction-categorization-input';
+import {safeErrorName, selectPreferredBalance, truncate} from '../banking.utils';
+import {
+	createBankTransactionCategorizationInputHash,
+	toBankTransactionCategorizationInput,
+} from '../categorization/bank-transaction-categorization-input';
 import {BANK_TRANSACTION_CATEGORIZATION_RESET_VALUES} from '../categorization/bank-transaction-categorization.constants';
 import {BankTransactionCategorizationService} from '../categorization/bank-transaction-categorization.service';
 import {
@@ -74,6 +76,34 @@ const PARTIAL = BANK_SYNC_STATUSES.PARTIAL;
 
 const INCREMENTAL_OVERLAP_DAYS = 7;
 const MAX_DATE_TIME_MS = 8_640_000_000_000_000;
+const BANK_TRANSACTION_IDENTITY_SELECT: (keyof BankTransaction)[] = [
+	'id',
+	'bankAccountId',
+	'entryReference',
+	'transactionDate',
+	'bookingDate',
+	'valueDate',
+	'amount',
+	'currency',
+	'creditDebitIndicator',
+	'bankTransactionCode',
+	'bankTransactionSubCode',
+	'bankTransactionDescription',
+	'description',
+	'counterpartyName',
+	'merchantLocation',
+	'merchantCategoryCode',
+	'remittanceInformation',
+	'instructedAmount',
+	'instructedCurrency',
+	'exchangeRate',
+	'exchangeRateUnitCurrency',
+	'exchangeRateType',
+	'referenceNumber',
+	'referenceNumberScheme',
+	'stableIdentityKey',
+	'stableIdentityGroupKey',
+];
 
 type AccountFetchResult = {
 	bankAccount: BankAccount;
@@ -163,14 +193,10 @@ export class BankingSyncService {
 		connectionId: BankConnection['id'],
 		options: {requireDue: boolean},
 	): Promise<BankSyncRunResponseDto | null> {
-		this.ensureEnabled();
 		const lockLease = await this.connectionLockService.acquire(connectionId);
 
 		try {
-			const connection = await this.bankConnectionRepository.findOne({
-				where: {id: connectionId, account: {id: accountId}},
-			});
-			if (!connection) throw new NotFoundException(BANKING_CONNECTION_NOT_FOUND);
+			const connection = await this.findOwnedConnection(accountId, connectionId);
 			if (options.requireDue && !this.isAutomaticSyncEligible(connection)) return null;
 			const providerSessionId = await this.validateConnection(connection, lockLease);
 			let run: BankSyncRun | undefined;
@@ -258,7 +284,7 @@ export class BankingSyncService {
 					await this.markPersistenceFailure(connection.id, run?.id, syncStartedAt);
 				} catch (failureError) {
 					this.logger.warn(
-						`Automatic bank synchronization failure could not be recorded: ${this.safeErrorName(failureError)}`,
+						`Automatic bank synchronization failure could not be recorded: ${safeErrorName(failureError)}`,
 					);
 				}
 
@@ -358,6 +384,12 @@ export class BankingSyncService {
 		let hasSuccessfulEndpoint = false;
 		let connectionExpired = false;
 		let rateLimit: SyncRateLimit | undefined;
+		const recordFailure = (error: unknown) => {
+			lockLease.assertHealthy();
+			hasFailure = true;
+			connectionExpired ||= this.isExpiredSessionError(error);
+			rateLimit = this.mergeRateLimit(rateLimit, this.toRateLimit(error));
+		};
 
 		try {
 			const sessionAccounts = await this.enableBankingClient.getSessionAccounts(
@@ -373,10 +405,7 @@ export class BankingSyncService {
 			authoritativeAccountIds = new Set(sessionAccounts.accountIds);
 			hasSuccessfulEndpoint = true;
 		} catch (error) {
-			lockLease.assertHealthy();
-			hasFailure = true;
-			connectionExpired ||= this.isExpiredSessionError(error);
-			rateLimit = this.mergeRateLimit(rateLimit, this.toRateLimit(error));
+			recordFailure(error);
 		}
 
 		if (connectionExpired || rateLimit) {
@@ -410,10 +439,7 @@ export class BankingSyncService {
 				balancesSucceeded = true;
 				hasSuccessfulEndpoint = true;
 			} catch (error) {
-				lockLease.assertHealthy();
-				hasFailure = true;
-				connectionExpired ||= this.isExpiredSessionError(error);
-				rateLimit = this.mergeRateLimit(rateLimit, this.toRateLimit(error));
+				recordFailure(error);
 			}
 
 			if (connectionExpired || rateLimit) break;
@@ -428,10 +454,7 @@ export class BankingSyncService {
 				transactionsSucceeded = true;
 				hasSuccessfulEndpoint = true;
 			} catch (error) {
-				lockLease.assertHealthy();
-				hasFailure = true;
-				connectionExpired ||= this.isExpiredSessionError(error);
-				rateLimit = this.mergeRateLimit(rateLimit, this.toRateLimit(error));
+				recordFailure(error);
 			}
 
 			accounts.push({
@@ -650,34 +673,7 @@ export class BankingSyncService {
 		bankAccount: BankAccount,
 	): Promise<void> {
 		const incompleteTransactions = await repository.find({
-			select: [
-				'id',
-				'bankAccountId',
-				'entryReference',
-				'transactionDate',
-				'bookingDate',
-				'valueDate',
-				'amount',
-				'currency',
-				'creditDebitIndicator',
-				'bankTransactionCode',
-				'bankTransactionSubCode',
-				'bankTransactionDescription',
-				'description',
-				'counterpartyName',
-				'merchantLocation',
-				'merchantCategoryCode',
-				'remittanceInformation',
-				'instructedAmount',
-				'instructedCurrency',
-				'exchangeRate',
-				'exchangeRateUnitCurrency',
-				'exchangeRateType',
-				'referenceNumber',
-				'referenceNumberScheme',
-				'stableIdentityKey',
-				'stableIdentityGroupKey',
-			],
+			select: BANK_TRANSACTION_IDENTITY_SELECT,
 			where: [
 				{bankAccountId: bankAccount.id, stableIdentityKey: IsNull()},
 				{bankAccountId: bankAccount.id, stableIdentityKey: ''},
@@ -727,32 +723,7 @@ export class BankingSyncService {
 		];
 		const existingTransactions = await repository.find({
 			select: [
-				'id',
-				'bankAccountId',
-				'entryReference',
-				'transactionDate',
-				'bookingDate',
-				'valueDate',
-				'amount',
-				'currency',
-				'creditDebitIndicator',
-				'bankTransactionCode',
-				'bankTransactionSubCode',
-				'bankTransactionDescription',
-				'description',
-				'counterpartyName',
-				'merchantLocation',
-				'merchantCategoryCode',
-				'remittanceInformation',
-				'instructedAmount',
-				'instructedCurrency',
-				'exchangeRate',
-				'exchangeRateUnitCurrency',
-				'exchangeRateType',
-				'referenceNumber',
-				'referenceNumberScheme',
-				'stableIdentityKey',
-				'stableIdentityGroupKey',
+				...BANK_TRANSACTION_IDENTITY_SELECT,
 				'dedupeKey',
 				'categoryInputHash',
 				'categorySource',
@@ -817,14 +788,7 @@ export class BankingSyncService {
 		}
 
 		const eventStableIdentityKeys = [
-			...new Set(
-				transactionValues
-					.filter(
-						({financialEventType}) =>
-							financialEventType === BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
-					)
-					.map(({stableIdentityKey}) => stableIdentityKey),
-			),
+			...new Set(eventTransactionValues.map(({stableIdentityKey}) => stableIdentityKey)),
 		];
 		if (eventStableIdentityKeys.length > 0) {
 			await repository
@@ -896,7 +860,7 @@ export class BankingSyncService {
 		try {
 			await this.categorizationService.enqueueForTransactions(transactionIds);
 		} catch (error) {
-			this.logger.warn(`Transaction categorization enqueue failed: ${this.safeErrorName(error)}`);
+			this.logger.warn(`Transaction categorization enqueue failed: ${safeErrorName(error)}`);
 		}
 	}
 
@@ -1226,9 +1190,5 @@ export class BankingSyncService {
 			code.includes('revok') ||
 			code.includes('expired')
 		);
-	}
-
-	private safeErrorName(error: unknown): string {
-		return error instanceof Error && error.name.length > 0 ? error.name : 'UnknownError';
 	}
 }

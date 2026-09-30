@@ -6,7 +6,7 @@ import TestAgent from 'supertest/lib/agent';
 import {LOGOUT_SUCCESS} from '@modules/auth/api/constants/api-messages.constants';
 import {SignUpDto} from '@modules/auth/api/dtos/signup.dto';
 
-import {getApp, loginAgent} from '../../setup/e2e.setup';
+import {getApp, getSessionCookie, loginAgent} from '../../setup/e2e.setup';
 
 describe('AuthController - Logout', () => {
 	let httpServer: Server;
@@ -42,12 +42,8 @@ describe('AuthController - Logout', () => {
 					expect(res.body.message).toEqual(LOGOUT_SUCCESS);
 				});
 
-			const cookiesHeader = response.headers['set-cookie'];
-			expect(cookiesHeader).toBeDefined();
-
-			const sessionCookie = ([] as string[])
-				.concat(cookiesHeader || [])
-				.find((cookie: string) => cookie.startsWith('session='));
+			expect(response.headers['set-cookie']).toBeDefined();
+			const sessionCookie = getSessionCookie(response);
 
 			expect(sessionCookie).toBeDefined();
 			expect(sessionCookie).toMatch(/Max-Age=0|Expires=.*1970/);
