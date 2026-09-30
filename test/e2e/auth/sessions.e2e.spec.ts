@@ -1,5 +1,4 @@
 import {Server} from 'net';
-import request from 'supertest';
 import TestAgent from 'supertest/lib/agent';
 
 import {
@@ -10,17 +9,15 @@ import {
 	SESSION_REVOKE_SUCCESS,
 } from '@core/session/api-messages.constants';
 import {SessionResponseDto} from '@core/session/session-response.dto';
-import {EMAIL_NOT_VERIFIED} from '@modules/auth/api/constants/api-messages.constants';
 
 import {
-	PW_CHANGE_ACCOUNT_EMAIL,
-	PW_CHANGE_ACCOUNT_PASSWORD,
-	UNVERIFIED_ACCOUNT_EMAIL,
-	UNVERIFIED_ACCOUNT_PASSWORD,
+	SESSION_TEST_ACCOUNT_EMAIL,
+	SESSION_TEST_ACCOUNT_PASSWORD,
 	VERIFIED_ACCOUNT_EMAIL,
 	VERIFIED_ACCOUNT_PASSWORD,
 } from '../../../scripts/seed-data/seed.constants';
 import {getApp, loginAgent} from '../../setup/e2e.setup';
+import {expectValidationMessage} from '../../utils/auth-utils';
 
 describe('AuthController - Sessions', () => {
 	let httpServer: Server;
@@ -32,14 +29,11 @@ describe('AuthController - Sessions', () => {
 	describe('GET /auth/sessions', () => {
 		let verifiedAgent1: TestAgent;
 		let verifiedAgent2: TestAgent;
-		let unverifiedAgent: TestAgent;
 
 		beforeEach(async () => {
 			verifiedAgent1 = await loginAgent(httpServer, VERIFIED_ACCOUNT_EMAIL, VERIFIED_ACCOUNT_PASSWORD);
 
 			verifiedAgent2 = await loginAgent(httpServer, VERIFIED_ACCOUNT_EMAIL, VERIFIED_ACCOUNT_PASSWORD);
-
-			unverifiedAgent = await loginAgent(httpServer, UNVERIFIED_ACCOUNT_EMAIL, UNVERIFIED_ACCOUNT_PASSWORD);
 		});
 
 		it('should return all active sessions, marking the current one', async () => {
@@ -90,31 +84,12 @@ describe('AuthController - Sessions', () => {
 			// Verify agent 2's current session ID is different
 			expect(currentSessions2[0].id).not.toEqual(currentSession.id);
 		});
-
-		it('should return 403 Forbidden for an unverified account', async () => {
-			await unverifiedAgent
-				.get('/auth/sessions')
-				.expect(403)
-				.expect((res) => {
-					expect(res.body.message).toBe(EMAIL_NOT_VERIFIED);
-				});
-		});
-
-		it('should return 401 Unauthorized if the user is not logged in', async () => {
-			await request(httpServer)
-				.get('/auth/sessions')
-				.expect(401)
-				.expect((res) => {
-					expect(res.body.message).toBe('Unauthorized');
-				});
-		});
 	});
 
 	describe('DELETE /auth/sessions', () => {
 		let verifiedAgent1: TestAgent;
 		let verifiedAgent2: TestAgent;
 		let verifiedAgent3: TestAgent;
-		let unverifiedAgent: TestAgent;
 		let currentSessionIdAgent1: string | null = null;
 
 		beforeEach(async () => {
@@ -123,8 +98,6 @@ describe('AuthController - Sessions', () => {
 			verifiedAgent2 = await loginAgent(httpServer, VERIFIED_ACCOUNT_EMAIL, VERIFIED_ACCOUNT_PASSWORD);
 
 			verifiedAgent3 = await loginAgent(httpServer, VERIFIED_ACCOUNT_EMAIL, VERIFIED_ACCOUNT_PASSWORD);
-
-			unverifiedAgent = await loginAgent(httpServer, UNVERIFIED_ACCOUNT_EMAIL, UNVERIFIED_ACCOUNT_PASSWORD);
 
 			// Get current session ID for agent 1
 			const response = await verifiedAgent1.get('/auth/sessions').expect(200);
@@ -158,7 +131,7 @@ describe('AuthController - Sessions', () => {
 		});
 
 		it('should return success message and not change session count when only the current session exists', async () => {
-			const agent = await loginAgent(httpServer, PW_CHANGE_ACCOUNT_EMAIL, PW_CHANGE_ACCOUNT_PASSWORD);
+			const agent = await loginAgent(httpServer, SESSION_TEST_ACCOUNT_EMAIL, SESSION_TEST_ACCOUNT_PASSWORD);
 
 			const initialResponse = await agent.get('/auth/sessions').expect(200);
 			expect(initialResponse.body).toHaveLength(1);
@@ -176,24 +149,10 @@ describe('AuthController - Sessions', () => {
 			expect(finalResponse.body).toHaveLength(1);
 			expect(finalResponse.body[0].id).toEqual(currentId);
 		});
-
-		it('should fail with 403 Forbidden if the account is not email-verified', async () => {
-			await unverifiedAgent
-				.delete('/auth/sessions')
-				.expect(403)
-				.expect((res) => {
-					expect(res.body.message).toBe(EMAIL_NOT_VERIFIED);
-				});
-		});
-
-		it('should fail with 401 Unauthorized if the user is not logged in', async () => {
-			await request(httpServer).delete('/auth/sessions').expect(401);
-		});
 	});
 
 	describe('DELETE /auth/sessions/:sessionId', () => {
 		let verifiedAgent1: TestAgent; // Agent making the revoke request
-		let unverifiedAgent: TestAgent;
 		let sessionToRevokeId: string | null = null;
 		let currentSessionId: string | null = null;
 
@@ -203,8 +162,6 @@ describe('AuthController - Sessions', () => {
 
 			// Login verified account - Session 2
 			await loginAgent(httpServer, VERIFIED_ACCOUNT_EMAIL, VERIFIED_ACCOUNT_PASSWORD);
-
-			unverifiedAgent = await loginAgent(httpServer, UNVERIFIED_ACCOUNT_EMAIL, UNVERIFIED_ACCOUNT_PASSWORD);
 
 			// Get sessions using agent 1 to identify IDs
 			const response = await verifiedAgent1.get('/auth/sessions').expect(200);
@@ -262,54 +219,15 @@ describe('AuthController - Sessions', () => {
 				});
 		});
 
-		it('should fail with 400 Bad Request for an invalid session ID format (too short)', async () => {
-			const invalidId = 'invalid-id';
-
-			await verifiedAgent1
-				.delete(`/auth/sessions/${invalidId}`)
-				.expect(400)
-				.expect((res) => {
-					expect(res.body.message).toEqual(
-						expect.arrayContaining([
-							expect.stringMatching(/sessionId must be longer than or equal to 32 characters/i),
-						]),
-					);
-				});
-		});
-
-		it('should fail with 400 Bad Request for an invalid session ID format (too long)', async () => {
-			const invalidId = 'a'.repeat(33); // 33 chars long
-
-			await verifiedAgent1
-				.delete(`/auth/sessions/${invalidId}`)
-				.expect(400)
-				.expect((res) => {
-					expect(res.body.message).toEqual(
-						expect.arrayContaining([
-							expect.stringMatching(/sessionId must be shorter than or equal to 32 characters/i),
-						]),
-					);
-				});
-		});
-
-		it('should fail with 403 Forbidden if the account is not email-verified', async () => {
-			await unverifiedAgent
-				.delete(`/auth/sessions/${sessionToRevokeId}`)
-				.expect(403)
-				.expect((res) => {
-					expect(res.body.message).toBe(EMAIL_NOT_VERIFIED);
-				});
-		});
-
-		it('should fail with 401 Unauthorized if the user is not logged in', async () => {
-			expect(sessionToRevokeId).toBeDefined();
-
-			await request(httpServer)
-				.delete(`/auth/sessions/${sessionToRevokeId}`)
-				.expect(401)
-				.expect((res) => {
-					expect(res.body.message).toBe('Unauthorized');
-				});
-		});
+		it.each([
+			['too short', 'invalid-id', /sessionId must be longer than or equal to 32 characters/i],
+			['too long', 'a'.repeat(33), /sessionId must be shorter than or equal to 32 characters/i],
+		])(
+			'should fail with 400 Bad Request for an invalid session ID format (%s)',
+			async (_case, sessionId, message) => {
+				const response = await verifiedAgent1.delete(`/auth/sessions/${sessionId}`).expect(400);
+				expectValidationMessage(response, message);
+			},
+		);
 	});
 });

@@ -1,7 +1,7 @@
 import {Job} from 'bullmq';
 import {Repository} from 'typeorm';
 
-import {SYNC_BANK_CONNECTION_JOB} from '@core/queue/queue.constants';
+import {DISPATCH_BANK_CONNECTION_SYNCS_JOB, SYNC_BANK_CONNECTION_JOB} from '@core/queue/queue.constants';
 
 import {BankConnection} from '../bank-connection.entity';
 import {BankingSyncQueueService} from './banking-sync-queue.service';
@@ -93,6 +93,17 @@ describe('BankingSyncProcessor', () => {
 
 		await processor.process({name: 'unrelated-job', data: {connectionId: 'eligible-connection'}} as Job);
 
+		expect(repository.findOne).not.toHaveBeenCalled();
+		expect(synchronizationService.synchronizeAutomatically).not.toHaveBeenCalled();
+	});
+
+	it('does not consume banking jobs when integration is disabled', async () => {
+		queueService.isIntegrationEnabled.mockReturnValue(false);
+
+		await processor.process({name: DISPATCH_BANK_CONNECTION_SYNCS_JOB, data: {}} as Job);
+		await processor.process(job('connection-id'));
+
+		expect(queueService.dispatchDueConnections).not.toHaveBeenCalled();
 		expect(repository.findOne).not.toHaveBeenCalled();
 		expect(synchronizationService.synchronizeAutomatically).not.toHaveBeenCalled();
 	});

@@ -1,8 +1,6 @@
 import Redis from 'ioredis';
 import {createHash} from 'node:crypto';
-import {DataSource, Repository} from 'typeorm';
-
-import {ConfigurationService} from '@core/config/config.service';
+import {Repository} from 'typeorm';
 
 import {BANKING_SERVICE_UNAVAILABLE} from '../api/constants/banking-messages.constants';
 import {BankAccountBalance} from '../bank-account-balance.entity';
@@ -16,11 +14,9 @@ import {
 } from '../bank-transaction-financial-event';
 import {type BankTransactionIdentityInput, assignBankTransactionStableIdentityKeys} from '../bank-transaction-identity';
 import {BankTransaction} from '../bank-transaction.entity';
-import {BankTransactionCategorizationService} from '../categorization/bank-transaction-categorization.service';
 import {BankingConnectionLockService} from './banking-connection-lock.service';
-import {BankingEncryptionService} from './banking-encryption.service';
 import {BankingSyncService} from './banking-sync.service';
-import {EnableBankingClient, EnableBankingClientError} from './enable-banking.client';
+import {EnableBankingClientError} from './enable-banking.client';
 
 type Deferred<T> = {
 	promise: Promise<T>;
@@ -35,22 +31,38 @@ function deferred<T>(): Deferred<T> {
 	return {promise, resolve};
 }
 
+const BANKING_SYNC_SERVICE_DEPENDENCIES = [
+	'bankConnectionRepository',
+	'bankAccountRepository',
+	'bankSyncRunRepository',
+	'dataSource',
+	'enableBankingClient',
+	'encryptionService',
+	'connectionLockService',
+	'categorizationService',
+	'configurationService',
+] as const;
+
+/** Builds the service with named test doubles; unspecified dependencies are empty objects. */
+function createBankingSyncService(
+	dependencies: Partial<Record<(typeof BANKING_SYNC_SERVICE_DEPENDENCIES)[number], unknown>> = {},
+): BankingSyncService {
+	return new BankingSyncService(
+		...(BANKING_SYNC_SERVICE_DEPENDENCIES.map((name) => dependencies[name] ?? {}) as ConstructorParameters<
+			typeof BankingSyncService
+		>),
+	);
+}
+
 describe('BankingSyncService disabled integration', () => {
 	it('rejects manual sync and skips automatic sync without touching persistence', async () => {
 		const bankConnectionRepository = {findOne: jest.fn()};
-		const service = new BankingSyncService(
-			bankConnectionRepository as unknown as Repository<BankConnection>,
-			{} as Repository<BankAccount>,
-			{} as Repository<BankSyncRun>,
-			{} as DataSource,
-			{} as EnableBankingClient,
-			{} as BankingEncryptionService,
-			{} as BankingConnectionLockService,
-			{} as BankTransactionCategorizationService,
-			{
+		const service = createBankingSyncService({
+			bankConnectionRepository,
+			configurationService: {
 				get: jest.fn((key: string) => (key === 'BANKING_INTEGRATION_ENABLED' ? false : '6h')),
-			} as unknown as ConfigurationService,
-		);
+			},
+		});
 
 		await expect(service.synchronize('account-id', 'connection-id')).rejects.toThrow(BANKING_SERVICE_UNAVAILABLE);
 		await expect(service.synchronizeAutomatically('connection-id')).resolves.toBeNull();
@@ -143,17 +155,17 @@ describe('BankingSyncService', () => {
 		const categorizationServiceMock = {
 			enqueueForTransactions: jest.fn().mockResolvedValue(undefined),
 		};
-		const service = new BankingSyncService(
-			bankConnectionRepositoryMock as unknown as Repository<BankConnection>,
-			bankAccountRepositoryMock as unknown as Repository<BankAccount>,
-			bankSyncRunRepositoryMock as unknown as Repository<BankSyncRun>,
-			dataSourceMock as unknown as DataSource,
-			enableBankingClientMock as unknown as EnableBankingClient,
-			encryptionServiceMock as unknown as BankingEncryptionService,
-			new BankingConnectionLockService(redisMock as unknown as Redis),
-			categorizationServiceMock as unknown as BankTransactionCategorizationService,
-			{get: jest.fn().mockReturnValue('6h')} as unknown as ConfigurationService,
-		);
+		const service = createBankingSyncService({
+			bankConnectionRepository: bankConnectionRepositoryMock,
+			bankAccountRepository: bankAccountRepositoryMock,
+			bankSyncRunRepository: bankSyncRunRepositoryMock,
+			dataSource: dataSourceMock,
+			enableBankingClient: enableBankingClientMock,
+			encryptionService: encryptionServiceMock,
+			connectionLockService: new BankingConnectionLockService(redisMock as unknown as Redis),
+			categorizationService: categorizationServiceMock,
+			configurationService: {get: jest.fn().mockReturnValue('6h')},
+		});
 
 		bankConnectionRepositoryMock.findOne.mockImplementation(async (options: {where: {account: {id: string}}}) => {
 			if (options.where.account.id === 'attacker-account-id') {
@@ -320,17 +332,17 @@ describe('BankingSyncService synchronization lock', () => {
 		};
 
 		configurationService = {get: jest.fn().mockReturnValue('6h')};
-		service = new BankingSyncService(
-			bankConnectionRepository as unknown as Repository<BankConnection>,
-			bankAccountRepository as unknown as Repository<BankAccount>,
-			bankSyncRunRepository as unknown as Repository<BankSyncRun>,
-			dataSource as unknown as DataSource,
-			enableBankingClient as unknown as EnableBankingClient,
-			encryptionService as unknown as BankingEncryptionService,
-			new BankingConnectionLockService(redis as unknown as Redis),
-			categorizationService as unknown as BankTransactionCategorizationService,
-			configurationService as unknown as ConfigurationService,
-		);
+		service = createBankingSyncService({
+			bankConnectionRepository,
+			bankAccountRepository,
+			bankSyncRunRepository,
+			dataSource,
+			enableBankingClient,
+			encryptionService,
+			connectionLockService: new BankingConnectionLockService(redis as unknown as Redis),
+			categorizationService,
+			configurationService,
+		});
 	});
 
 	it('rechecks the connection after acquiring the lock', async () => {
@@ -594,17 +606,7 @@ describe('BankingSyncService synchronization lock', () => {
 
 describe('BankingSyncService transaction event persistence', () => {
 	function createServiceForTransactionValues(): BankingSyncService {
-		return new BankingSyncService(
-			{} as never,
-			{} as never,
-			{} as never,
-			{} as never,
-			{} as never,
-			{} as never,
-			{} as never,
-			{} as never,
-			{get: jest.fn().mockReturnValue('6h')} as never,
-		);
+		return createBankingSyncService({configurationService: {get: jest.fn().mockReturnValue('6h')}});
 	}
 
 	function toBankTransactionValues(

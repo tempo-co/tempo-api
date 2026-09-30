@@ -3,14 +3,9 @@ import {getRepositoryToken} from '@nestjs/typeorm';
 import {Repository} from 'typeorm';
 
 import {Account} from '@modules/account/account.entity';
-import {BankAccountBalance} from '@modules/banking/bank-account-balance.entity';
-import {BankAccount} from '@modules/banking/bank-account.entity';
-import {BankConnection} from '@modules/banking/bank-connection.entity';
-import {BankSyncRun} from '@modules/banking/bank-sync-run.entity';
-import {getBankTransactionDisplayDescription} from '@modules/banking/bank-transaction-display';
 import {BANK_TRANSACTION_TYPES} from '@modules/banking/bank-transaction-type';
-import {BankTransaction} from '@modules/banking/bank-transaction.entity';
 
+import {BankingFixtures} from './banking-fixtures';
 import {VERIFIED_ACCOUNT_EMAIL} from './seed.constants';
 
 const SEEDED_BANK_CONNECTION_ID = '00000000-0000-4000-8000-000000000001';
@@ -18,141 +13,66 @@ const SEEDED_BANK_ACCOUNT_ID = '00000000-0000-4000-8000-000000000002';
 const SEEDED_SYNC_RUN_ID = '00000000-0000-4000-8000-000000000003';
 const SEEDED_BALANCE_IDS = ['00000000-0000-4000-8000-000000000004', '00000000-0000-4000-8000-000000000005'] as const;
 
-export async function seedBankingData(app: INestApplicationContext) {
-	const accountRepository = app.get<Repository<Account>>(getRepositoryToken(Account));
-	const account = await accountRepository.findOneByOrFail({email: VERIFIED_ACCOUNT_EMAIL});
-	const bankConnectionRepository = app.get<Repository<BankConnection>>(getRepositoryToken(BankConnection));
-	const bankAccountRepository = app.get<Repository<BankAccount>>(getRepositoryToken(BankAccount));
-	const bankSyncRunRepository = app.get<Repository<BankSyncRun>>(getRepositoryToken(BankSyncRun));
-	const balanceRepository = app.get<Repository<BankAccountBalance>>(getRepositoryToken(BankAccountBalance));
-	const transactionRepository = app.get<Repository<BankTransaction>>(getRepositoryToken(BankTransaction));
+/** Seeds one authorized connection with an account, a sync run, balances, and transactions for the given account. */
+export async function seedBankingData(
+	app: INestApplicationContext,
+	{accountEmail = VERIFIED_ACCOUNT_EMAIL}: {accountEmail?: string} = {},
+) {
+	const account = await app
+		.get<Repository<Account>>(getRepositoryToken(Account))
+		.findOneByOrFail({email: accountEmail});
+	const fixtures = new BankingFixtures(app);
 
-	const bankConnection = await bankConnectionRepository.save(
-		bankConnectionRepository.create({
-			id: SEEDED_BANK_CONNECTION_ID,
-			account,
-			provider: 'enable-banking',
-			aspspName: 'ABN AMRO',
-			aspspCountry: 'NL',
-			aspspIdentifier: null,
-			providerSessionId: 'seed-provider-session',
-			authorizationStateHash: null,
-			status: 'AUTHORIZED',
-			consentValidUntil: new Date('2030-01-01T00:00:00.000Z'),
-			lastSyncedAt: new Date('2026-08-26T12:00:00.000Z'),
-			lastSyncError: null,
-		}),
-	);
-
-	const bankAccount = await bankAccountRepository.save(
-		bankAccountRepository.create({
-			id: SEEDED_BANK_ACCOUNT_ID,
-			bankConnection,
-			providerAccountId: 'seed-provider-account',
-			identificationHash: 'seed-identification-hash',
-			name: 'Main account',
-			details: null,
-			alias: 'Daily spending',
-			currency: 'EUR',
-			cashAccountType: 'CACC',
-			usage: 'PRIV',
-			maskedIdentifier: null,
-			currentBalanceAmount: '123.45000000',
-			currentBalanceType: 'AVAILABLE',
-			balanceUpdatedAt: new Date('2026-08-26T12:00:00.000Z'),
-			isActive: true,
-		}),
-	);
-
-	const bankSyncRun = await bankSyncRunRepository.save(
-		bankSyncRunRepository.create({
-			id: SEEDED_SYNC_RUN_ID,
-			bankConnection,
-			status: 'SUCCEEDED',
-			startedAt: new Date('2026-08-26T12:00:00.000Z'),
-			finishedAt: new Date('2026-08-26T12:00:02.000Z'),
-			requestedFrom: null,
-			requestedTo: '2026-08-26',
-			accountsFetched: 1,
-			balancesFetched: 2,
-			transactionsFetched: 13,
-			errorMessage: null,
-		}),
-	);
-
-	await balanceRepository.save([
-		balanceRepository.create({
+	const bankConnection = await fixtures.createConnection(account, {
+		id: SEEDED_BANK_CONNECTION_ID,
+		providerSessionId: 'seed-provider-session',
+		lastSyncedAt: new Date('2026-08-26T12:00:00.000Z'),
+	});
+	const bankAccount = await fixtures.createBankAccount(bankConnection, {
+		id: SEEDED_BANK_ACCOUNT_ID,
+		providerAccountId: 'seed-provider-account',
+		identificationHash: 'seed-identification-hash',
+		alias: 'Daily spending',
+		cashAccountType: 'CACC',
+		usage: 'PRIV',
+		currentBalanceAmount: '123.45000000',
+		currentBalanceType: 'AVAILABLE',
+		balanceUpdatedAt: new Date('2026-08-26T12:00:00.000Z'),
+	});
+	const bankSyncRun = await fixtures.createSyncRun(bankConnection, {
+		id: SEEDED_SYNC_RUN_ID,
+		startedAt: new Date('2026-08-26T12:00:00.000Z'),
+		finishedAt: new Date('2026-08-26T12:00:02.000Z'),
+		requestedTo: '2026-08-26',
+		accountsFetched: 1,
+		balancesFetched: 2,
+		transactionsFetched: 13,
+	});
+	const balances = await fixtures.createBalances(bankAccount, bankSyncRun, [
+		{
 			id: SEEDED_BALANCE_IDS[0],
-			bankAccountId: bankAccount.id,
-			bankAccount,
-			bankSyncRunId: bankSyncRun.id,
-			bankSyncRun,
 			name: 'Available balance',
 			balanceType: 'AVAILABLE',
 			amount: '123.45000000',
-			currency: 'EUR',
 			lastChangeDateTime: new Date('2026-08-26T12:00:00.000Z'),
 			referenceDate: '2026-08-26',
-			lastCommittedTransaction: null,
 			observedAt: new Date('2026-08-26T12:00:00.000Z'),
-		}),
-		balanceRepository.create({
+		},
+		{
 			id: SEEDED_BALANCE_IDS[1],
-			bankAccountId: bankAccount.id,
-			bankAccount,
-			bankSyncRunId: bankSyncRun.id,
-			bankSyncRun,
 			name: 'Booked balance',
 			balanceType: 'BOOKED',
 			amount: '120.00000000',
-			currency: 'EUR',
-			lastChangeDateTime: null,
 			referenceDate: '2026-08-26',
-			lastCommittedTransaction: null,
 			observedAt: new Date('2026-08-26T12:00:00.000Z'),
-		}),
+		},
 	]);
+	const transactions = await fixtures.createTransactions(bankAccount, createSeedTransactions());
 
-	await transactionRepository.save(
-		createSeedTransactions(bankAccount).map((transaction) => transactionRepository.create(transaction)),
-	);
+	return {bankConnection, bankAccount, bankSyncRun, balances, transactions};
 }
 
-function createSeedTransactions(bankAccount: BankAccount) {
-	const common = {
-		bankAccountId: bankAccount.id,
-		bankAccount,
-		currency: 'EUR',
-		transactionStatus: 'BOOK',
-		bankTransactionCode: null,
-		bankTransactionSubCode: null,
-		merchantCategoryCode: null,
-		remittanceInformation: null,
-		balanceAfterAmount: null,
-		balanceAfterCurrency: null,
-		instructedAmount: null,
-		instructedCurrency: null,
-		exchangeRate: null,
-		exchangeRateUnitCurrency: null,
-		exchangeRateType: null,
-		referenceNumber: null,
-		referenceNumberScheme: null,
-		category: null,
-		categoryStatus: 'PENDING',
-		categorySource: null,
-		categoryConfidence: null,
-		categoryInputHash: null,
-		categoryAppliedInputHash: null,
-		categoryProvider: null,
-		categoryModel: null,
-		categoryPromptVersion: null,
-		categoryUpdatedAt: null,
-		categoryLastError: null,
-		financialEventType: null,
-		financialEventSource: null,
-		financialEventRuleVersion: null,
-	};
-
+function createSeedTransactions() {
 	const transactions = [
 		{
 			id: '00000000-0000-4000-8000-000000000011',
@@ -236,14 +156,9 @@ function createSeedTransactions(bankAccount: BankAccount) {
 	];
 
 	return transactions.map((transaction) => ({
-		...common,
+		...transaction,
 		dedupeKey: `seed-${transaction.id}`,
 		providerTransactionId: transaction.id,
 		entryReference: transaction.id,
-		...transaction,
-		displayDescription: getBankTransactionDisplayDescription({
-			description: transaction.description,
-			counterpartyName: transaction.counterpartyName,
-		}),
 	}));
 }

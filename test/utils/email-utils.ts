@@ -34,6 +34,20 @@ export class EmailUtils {
 		}
 	}
 
+	static async getVerificationCode(recipientEmail: string, apiUrl: string) {
+		const email = await this.findEmailByRecipient(recipientEmail, apiUrl);
+		const code = this.extractCode(email?.Text);
+		expect(code).toMatch(/^\d{6}$/);
+		return code;
+	}
+
+	static async getToken(recipientEmail: string, apiUrl: string) {
+		const email = await this.findEmailByRecipient(recipientEmail, apiUrl);
+		const token = this.extractToken(email?.Text);
+		expect(token).toMatch(new RegExp(`^${UUID_REGEX.source}$`));
+		return token;
+	}
+
 	static extractCode(body?: string) {
 		if (!body) return '';
 		const pattern = new RegExp(`You can also manually enter the code below.?\\s*(${SIX_DIGIT_REGEX.source})`, 'i');

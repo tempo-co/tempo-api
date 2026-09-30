@@ -9,17 +9,12 @@ import {
 	PASSWORD_RESET_SUCCESS,
 	PASSWORD_SAME_AS_OLD,
 } from '@modules/auth/api/constants/api-messages.constants';
-import {PasswordResetRequestDto} from '@modules/auth/api/dtos/password-reset-request.dto';
 import {PasswordResetVerifyDto} from '@modules/auth/api/dtos/password-reset-verify.dto';
 
-import {
-	PW_RESET_ACCOUNT_EMAIL,
-	PW_RESET_ACCOUNT_PASSWORD,
-	VERIFIED_ACCOUNT_EMAIL,
-	VERIFIED_ACCOUNT_PASSWORD,
-} from '../../../scripts/seed-data/seed.constants';
-import {getApp, loginAgent} from '../../setup/e2e.setup';
+import {PW_RESET_ACCOUNT_EMAIL, PW_RESET_ACCOUNT_PASSWORD} from '../../../scripts/seed-data/seed.constants';
+import {getApp} from '../../setup/e2e.setup';
 import {UUID_VALIDATION_REGEX} from '../../types/regex.constants';
+import {expectValidationMessage} from '../../utils/auth-utils';
 import {EmailUtils} from '../../utils/email-utils';
 
 describe('AuthController - Reset Password', () => {
@@ -27,6 +22,8 @@ describe('AuthController - Reset Password', () => {
 	let passwordResetExpiration: string;
 	let webUrl: string;
 	let httpServer: Server;
+	// Successful resets change the seeded account's password; track it so later tests can log in.
+	let currentPassword = PW_RESET_ACCOUNT_PASSWORD;
 
 	beforeAll(async () => {
 		const app = getApp();
@@ -41,261 +38,117 @@ describe('AuthController - Reset Password', () => {
 		await EmailUtils.clearEmails(mailpitApiUrl);
 	});
 
-	describe('POST/auth/reset-password/request', () => {
-		let accountToResetEmail: string;
+	function requestReset(email: string) {
+		return request(httpServer).post('/auth/reset-password/request').send({email});
+	}
 
-		beforeAll(async () => {
-			accountToResetEmail = PW_RESET_ACCOUNT_EMAIL;
-			await loginAgent(httpServer, accountToResetEmail, PW_RESET_ACCOUNT_PASSWORD);
-		});
+	function verifyReset(body: Partial<PasswordResetVerifyDto>) {
+		return request(httpServer).post('/auth/reset-password/verify').send(body);
+	}
 
+	function login(password: string) {
+		return request(httpServer).post('/auth/login').send({email: PW_RESET_ACCOUNT_EMAIL, password});
+	}
+
+	describe('POST /auth/reset-password/request', () => {
 		it('should send a password reset email for an existing account', async () => {
-			const requestDto: PasswordResetRequestDto = {email: accountToResetEmail};
+			const response = await requestReset(PW_RESET_ACCOUNT_EMAIL).expect(200);
+			expect(response.body.message).toBe(PASSWORD_RESET_CONFIRMATION);
 
-			await request(httpServer)
-				.post('/auth/reset-password/request')
-				.send(requestDto)
-				.expect(200)
-				.expect((res) => {
-					expect(res.body.message).toBe(PASSWORD_RESET_CONFIRMATION);
-				});
-
-			const resetEmail = await EmailUtils.findEmailByRecipient(accountToResetEmail, mailpitApiUrl);
-			expect(resetEmail).toBeDefined();
-
-			const recipientEmail = resetEmail?.To[0].Address;
-			const subject = resetEmail?.Subject;
+			const resetEmail = await EmailUtils.findEmailByRecipient(PW_RESET_ACCOUNT_EMAIL, mailpitApiUrl);
 			const body = EmailUtils.normalizeEmailText(resetEmail?.Text);
 			const token = EmailUtils.extractToken(body);
-			const expectedBody = EmailUtils.getPasswordResetEmailBody(
-				requestDto.email,
-				webUrl,
-				token,
-				passwordResetExpiration,
-			);
 
-			expect(recipientEmail).toEqual(accountToResetEmail);
+			expect(resetEmail?.To[0].Address).toEqual(PW_RESET_ACCOUNT_EMAIL);
 			expect(token).toMatch(UUID_VALIDATION_REGEX);
-			expect(subject).toBe('Reset your Tempo password');
-			expect(body).toBe(expectedBody);
+			expect(resetEmail?.Subject).toBe('Reset your Tempo password');
+			expect(body).toBe(
+				EmailUtils.getPasswordResetEmailBody(PW_RESET_ACCOUNT_EMAIL, webUrl, token, passwordResetExpiration),
+			);
 		});
 
 		it('should return confirmation even if the email does not exist', async () => {
 			const nonExistentEmail = faker.internet.email();
-			const requestDto: PasswordResetRequestDto = {email: nonExistentEmail};
 
-			await request(httpServer)
-				.post('/auth/reset-password/request')
-				.send(requestDto)
-				.expect(200)
-				.expect((res) => {
-					expect(res.body.message).toBe(PASSWORD_RESET_CONFIRMATION);
-				});
+			const response = await requestReset(nonExistentEmail).expect(200);
+			expect(response.body.message).toBe(PASSWORD_RESET_CONFIRMATION);
 
-			// Verify no email was sent
-			const resetEmail = await EmailUtils.findEmailByRecipient(nonExistentEmail, mailpitApiUrl);
-			expect(resetEmail).toBeUndefined();
+			expect(await EmailUtils.findEmailByRecipient(nonExistentEmail, mailpitApiUrl)).toBeUndefined();
 		});
 
-		it('should fail with 400 Bad Request if email format is invalid', async () => {
-			const requestDto = {email: 'not-a-valid-email'};
-
-			await request(httpServer)
-				.post('/auth/reset-password/request')
-				.send(requestDto)
-				.expect(400)
-				.expect((res) => {
-					expect(res.body.message).toEqual(
-						expect.arrayContaining([expect.stringMatching(/email must be an email/i)]),
-					);
-				});
-		});
-
-		it('should fail with 400 Bad Request if email is missing', async () => {
-			await request(httpServer)
-				.post('/auth/reset-password/request')
-				.send({})
-				.expect(400)
-				.expect((res) => {
-					expect(res.body.message).toEqual(
-						expect.arrayContaining([expect.stringMatching(/email should not be empty/i)]),
-					);
-				});
+		it.each([
+			['email format is invalid', {email: 'not-a-valid-email'}, /email must be an email/i],
+			['email is missing', {}, /email should not be empty/i],
+		])('should fail with 400 Bad Request if %s', async (_case, body, message) => {
+			const response = await request(httpServer).post('/auth/reset-password/request').send(body).expect(400);
+			expectValidationMessage(response, message);
 		});
 	});
 
-	describe('POST/auth/reset-password/verify', () => {
-		let resetToken: string | null;
-		let accountToResetEmail: string;
-		let originalPassword: string;
+	describe('POST /auth/reset-password/verify', () => {
+		let resetToken: string;
 
 		beforeEach(async () => {
-			accountToResetEmail = VERIFIED_ACCOUNT_EMAIL;
-			originalPassword = VERIFIED_ACCOUNT_PASSWORD;
-
-			// 1. Request password reset to get a token
-			const requestDto: PasswordResetRequestDto = {email: accountToResetEmail};
-			await request(httpServer).post('/auth/reset-password/request').send(requestDto).expect(200);
-
-			// 2. Extract token from email
-			const resetEmail = await EmailUtils.findEmailByRecipient(accountToResetEmail, mailpitApiUrl);
-			expect(resetEmail).toBeDefined();
-			resetToken = EmailUtils.extractToken(resetEmail?.Text);
-			expect(resetToken).toBeDefined();
-			expect(resetToken).toMatch(UUID_VALIDATION_REGEX);
+			await requestReset(PW_RESET_ACCOUNT_EMAIL).expect(200);
+			resetToken = await EmailUtils.getToken(PW_RESET_ACCOUNT_EMAIL, mailpitApiUrl);
 		});
 
 		it('should fail with 400 Bad Request if new password is the same as the old password', async () => {
-			const verifyDto: PasswordResetVerifyDto = {token: resetToken!, newPassword: originalPassword};
+			const response = await verifyReset({token: resetToken, newPassword: currentPassword}).expect(400);
+			expect(response.body.message).toBe(PASSWORD_SAME_AS_OLD);
 
-			await request(httpServer)
-				.post('/auth/reset-password/verify')
-				.send(verifyDto)
-				.expect(400)
-				.expect((res) => {
-					expect(res.body.message).toBe(PASSWORD_SAME_AS_OLD);
-				});
-
-			await request(httpServer)
-				.post('/auth/login')
-				.send({email: accountToResetEmail, password: originalPassword})
-				.expect(200);
+			await login(currentPassword).expect(200);
 		});
 
 		it('should reset the password with a valid token and new password', async () => {
 			const newPassword = faker.internet.password({length: 12});
-			const verifyDto: PasswordResetVerifyDto = {token: resetToken!, newPassword: newPassword};
 
-			await request(httpServer)
-				.post('/auth/reset-password/verify')
-				.send(verifyDto)
-				.expect(200)
-				.expect((res) => {
-					expect(res.body.message).toBe(PASSWORD_RESET_SUCCESS);
-				});
+			const response = await verifyReset({token: resetToken, newPassword}).expect(200);
+			expect(response.body.message).toBe(PASSWORD_RESET_SUCCESS);
 
-			// Verify login fails with old password
-			await request(httpServer)
-				.post('/auth/login')
-				.send({email: accountToResetEmail, password: originalPassword})
-				.expect(401);
-
-			// Verify login succeeds with new password
-			await request(httpServer)
-				.post('/auth/login')
-				.send({email: accountToResetEmail, password: newPassword})
-				.expect(200);
-		});
-
-		it('should fail with 400 Bad Request for an invalid token', async () => {
-			const verifyDto: PasswordResetVerifyDto = {
-				token: faker.string.uuid(),
-				newPassword: faker.internet.password({length: 12}),
-			};
-
-			await request(httpServer)
-				.post('/auth/reset-password/verify')
-				.send(verifyDto)
-				.expect(400)
-				.expect((res) => {
-					expect(res.body.message).toBe(PASSWORD_RESET_INVALID_TOKEN);
-				});
+			await login(currentPassword).expect(401);
+			await login(newPassword).expect(200);
+			currentPassword = newPassword;
 		});
 
 		it('should fail with 400 Bad Request for a non-existent token', async () => {
-			const verifyDto: PasswordResetVerifyDto = {
+			const response = await verifyReset({
 				token: faker.string.uuid(),
 				newPassword: faker.internet.password({length: 12}),
-			};
-
-			await request(httpServer)
-				.post('/auth/reset-password/verify')
-				.send(verifyDto)
-				.expect(400)
-				.expect((res) => {
-					expect(res.body.message).toBe(PASSWORD_RESET_INVALID_TOKEN);
-				});
+			}).expect(400);
+			expect(response.body.message).toBe(PASSWORD_RESET_INVALID_TOKEN);
 		});
 
 		it('should fail with 400 Bad Request if the token has already been used', async () => {
-			const newPassword = faker.internet.password({length: 12});
-			const verifyDto: PasswordResetVerifyDto = {
-				token: resetToken!,
-				newPassword: newPassword,
-			};
+			const verifyDto = {token: resetToken, newPassword: faker.internet.password({length: 12})};
 
-			// Use the token once successfully
-			await request(httpServer).post('/auth/reset-password/verify').send(verifyDto).expect(200);
+			await verifyReset(verifyDto).expect(200);
+			currentPassword = verifyDto.newPassword;
 
-			// Attempt to use it again
-			await request(httpServer)
-				.post('/auth/reset-password/verify')
-				.send(verifyDto)
-				.expect(400)
-				.expect((res) => {
-					expect(res.body.message).toBe(PASSWORD_RESET_INVALID_TOKEN);
-				});
+			const response = await verifyReset(verifyDto).expect(400);
+			expect(response.body.message).toBe(PASSWORD_RESET_INVALID_TOKEN);
 		});
 
-		it('should fail with 400 Bad Request if new password is too short', async () => {
-			const verifyDto: PasswordResetVerifyDto = {token: resetToken!, newPassword: 'short'};
-
-			await request(httpServer)
-				.post('/auth/reset-password/verify')
-				.send(verifyDto)
-				.expect(400)
-				.expect((res) => {
-					expect(res.body.message).toEqual(
-						expect.arrayContaining([
-							expect.stringMatching(/newPassword must be longer than or equal to 8 characters/i),
-						]),
-					);
-				});
-		});
-
-		it('should fail with 400 Bad Request if token is missing', async () => {
-			const verifyDto = {newPassword: faker.internet.password({length: 12})};
-
-			await request(httpServer)
-				.post('/auth/reset-password/verify')
-				.send(verifyDto)
-				.expect(400)
-				.expect((res) => {
-					expect(res.body.message).toEqual(
-						expect.arrayContaining([expect.stringMatching(/token should not be empty/i)]),
-					);
-				});
-		});
-
-		it('should fail with 400 Bad Request if newPassword is missing', async () => {
-			const verifyDto = {token: resetToken!};
-
-			await request(httpServer)
-				.post('/auth/reset-password/verify')
-				.send(verifyDto)
-				.expect(400)
-				.expect((res) => {
-					expect(res.body.message).toEqual(
-						expect.arrayContaining([expect.stringMatching(/newPassword should not be empty/i)]),
-					);
-				});
-		});
-
-		it('should fail with 400 Bad Request if new password exceeds maximum length (255)', async () => {
-			const longPassword = faker.string.alpha(256);
-			const verifyDto: PasswordResetVerifyDto = {token: resetToken!, newPassword: longPassword};
-
-			await request(httpServer)
-				.post('/auth/reset-password/verify')
-				.send(verifyDto)
-				.expect(400)
-				.expect((res) => {
-					expect(res.body.message).toEqual(
-						expect.arrayContaining([
-							expect.stringMatching(/newPassword must be shorter than or equal to 255 characters/i),
-						]),
-					);
-				});
+		it.each<[string, (token: string) => Partial<PasswordResetVerifyDto>, RegExp]>([
+			[
+				'new password is too short',
+				(token) => ({token, newPassword: 'short'}),
+				/newPassword must be longer than or equal to 8 characters/i,
+			],
+			[
+				'new password exceeds maximum length (255)',
+				(token) => ({token, newPassword: faker.string.alpha(256)}),
+				/newPassword must be shorter than or equal to 255 characters/i,
+			],
+			[
+				'token is missing',
+				() => ({newPassword: faker.internet.password({length: 12})}),
+				/token should not be empty/i,
+			],
+			['newPassword is missing', (token) => ({token}), /newPassword should not be empty/i],
+		])('should fail with 400 Bad Request if %s', async (_case, buildBody, message) => {
+			const response = await verifyReset(buildBody(resetToken)).expect(400);
+			expectValidationMessage(response, message);
 		});
 	});
 });

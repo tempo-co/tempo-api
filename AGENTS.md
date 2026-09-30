@@ -27,8 +27,22 @@ Tempo API is a NestJS backend for personal-finance accounts, bank connections, b
 - Unit Jest: `npm run test` or `npm run test:cov`.
 - E2E Jest: `npm run test:e2e` or `npm run test:e2e:cov`. These first run `npm run docker:test:down`, then `npm run docker:test:up`, clear `dist`, and run `test/jest-e2e.json` serially with `--runInBand`.
 - Direct test-container commands are `npm run docker:test:up` and `npm run docker:test:down`.
-- Jest unit tests match `src/**/*.spec.ts`; E2E tests match `test/**/*.e2e.spec.ts`. E2E setup creates the Nest app, applies the global validation pipe, and seeds accounts.
+- Jest unit tests match `src/**/*.spec.ts`; E2E tests match `test/**/*.e2e.spec.ts`. A spec named any other way (for example `*.spec.ts.ts`, or a `test/` file without `.e2e.`) silently never runs. E2E setup creates the Nest app, applies the global validation pipe, and seeds accounts.
 - CI runs `npm ci`, lint/format checks, `npm run build`, `npm run test`, and `npm run test:e2e:cov`; coverage is uploaded to Coveralls.
+
+## Test helpers
+
+Reuse these instead of re-creating setup inline:
+
+- `test/setup/e2e.setup.ts`: `getApp()`, `loginAgent(httpServer, email, password)`, `getSessionCookie(response)`, and `enableAiCategorizationE2e()` / `enableAiCategorizationWebSearchE2e()` (call at module scope, before the app boots).
+- `test/utils/auth-utils.ts`: `createAccountCredentials()`, `createVerifiedAccount(httpServer, mailpitApiUrl)` (signs up, verifies through Mailpit, returns a logged-in agent), and `expectValidationMessage(response, pattern)` for `ValidationPipe` 400s.
+- `test/utils/email-utils.ts`: `EmailUtils.getVerificationCode(recipient, apiUrl)` / `getToken(recipient, apiUrl)` fetch and validate a code or token from Mailpit; `findEmailByRecipient` and the `get*EmailBody` builders check full email content.
+- `scripts/seed-data/seed.constants.ts`: seeded accounts. Use the one dedicated to a flow when a test changes account data (`PW_CHANGE`, `PW_RESET`, `EMAIL_CHANGE`, `SESSION_TEST`), not the shared `VERIFIED` account. `UNVERIFIED` covers email-verification cases.
+- `scripts/seed-data/banking-fixtures.ts`: `new BankingFixtures(app)` persists connections, bank accounts, sync runs, balances, and transactions with valid defaults, including the derived display description; pass only the fields a test depends on. It also exposes the repositories (`fixtures.transactions`, etc.).
+- `scripts/seed-data/seed-banking-data.ts`: `seedBankingData(app, {accountEmail})` seeds the full dev dataset (connection, account, sync run, 2 balances, 13 transactions) for one account. It is also used by `npm run db:seed`, so don't assert on its exact contents in specs that need stable data; build those rows with `BankingFixtures`.
+- `test/fixtures/bank-transaction.fixture.ts`: `createBankTransaction(overrides)` is an in-memory `BankTransaction` for unit tests. It lives outside `src/` so it stays out of the build.
+- Route authentication (401 unauthenticated, 403 `EMAIL_NOT_VERIFIED`) is covered once in `test/e2e/auth/auth-guard.e2e.spec.ts`. Add new protected routes to its tables instead of repeating those checks per spec.
+- For unit tests of services with many constructor dependencies, follow the named-dependency builders in `banking.service.spec.ts` and `banking-sync.service.spec.ts` rather than positional `{} as never` lists. Use `it.each` tables for validation cases.
 
 ## Layout and conventions
 

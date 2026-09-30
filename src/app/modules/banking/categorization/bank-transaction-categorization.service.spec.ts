@@ -5,6 +5,7 @@ import {
 	CATEGORIZE_BANK_TRANSACTIONS_JOB,
 } from '@core/queue/queue.constants';
 
+import {createBankTransaction} from '../../../../../test/fixtures/bank-transaction.fixture';
 import {BANK_TRANSACTION_FINANCIAL_EVENT_TYPES} from '../bank-transaction-financial-event';
 import {BankTransaction} from '../bank-transaction.entity';
 import {
@@ -20,59 +21,6 @@ import {
 	BankTransactionCategorizationResult,
 	BankTransactionCategorizationWebSearchInput,
 } from './bank-transaction-categorization.types';
-
-function createTransaction(overrides: Partial<BankTransaction> = {}): BankTransaction {
-	return {
-		id: 'transaction-id',
-		bankAccountId: 'account-id',
-		providerTransactionId: 'provider-id',
-		entryReference: 'entry-reference',
-		dedupeKey: 'dedupe-key',
-		transactionDate: '2026-09-01',
-		bookingDate: '2026-09-02',
-		valueDate: '2026-09-03',
-		amount: '-12.50',
-		currency: 'EUR',
-		creditDebitIndicator: 'DBIT',
-		transactionType: 'CARD_PAYMENT',
-		transactionStatus: 'BOOK',
-		bankTransactionCode: 'PMNT',
-		bankTransactionSubCode: 'CARD',
-		bankTransactionDescription: 'Card payment',
-		description: 'Coffee shop',
-		displayDescription: 'Coffee shop',
-		counterpartyName: 'Cafe',
-		merchantCategoryCode: null,
-		remittanceInformation: 'Morning coffee',
-		balanceAfterAmount: null,
-		balanceAfterCurrency: null,
-		instructedAmount: null,
-		instructedCurrency: null,
-		exchangeRate: null,
-		exchangeRateUnitCurrency: null,
-		exchangeRateType: null,
-		referenceNumber: null,
-		referenceNumberScheme: null,
-		category: null,
-		categoryStatus: 'PENDING',
-		categorySource: null,
-		categoryConfidence: null,
-		categoryInputHash: null,
-		categoryAppliedInputHash: null,
-		categoryProvider: null,
-		categoryModel: null,
-		categoryPromptVersion: null,
-		categoryUpdatedAt: null,
-		categoryLastError: null,
-		categorySearchTrace: null,
-		financialEventType: null,
-		financialEventSource: null,
-		financialEventRuleVersion: null,
-		createdAt: new Date('2026-09-01T00:00:00.000Z'),
-		updatedAt: new Date('2026-09-01T00:00:00.000Z'),
-		...overrides,
-	} as unknown as BankTransaction;
-}
 
 function createUpdateQueryBuilder(
 	results: readonly {affected: number; raw?: readonly {id: string}[]}[] = [{affected: 1}] as const,
@@ -207,7 +155,7 @@ describe('BankTransactionCategorizationService queue scheduling', () => {
 	});
 
 	it('changes the job ID when the categorization input hash changes', async () => {
-		const transaction = createTransaction({categoryInputHash: 'hash-a'});
+		const transaction = createBankTransaction({categoryInputHash: 'hash-a'});
 		const {service, queue} = createService({rows: [transaction]});
 
 		await service.enqueueForTransactions([transaction.id]);
@@ -228,11 +176,11 @@ describe('BankTransactionCategorizationService queue scheduling', () => {
 	});
 
 	it('does not enqueue financial-event rows for AI categorization', async () => {
-		const exchange = createTransaction({
+		const exchange = createBankTransaction({
 			id: 'exchange-transaction',
 			financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
 		});
-		const ordinary = createTransaction({id: 'ordinary-transaction'});
+		const ordinary = createBankTransaction({id: 'ordinary-transaction'});
 		const {service, queue} = createService({rows: [exchange, ordinary]});
 
 		await service.enqueueForTransactions([exchange.id, ordinary.id]);
@@ -256,7 +204,7 @@ describe('BankTransactionCategorizationService web-search reconciliation', () =>
 	});
 
 	it('does not enqueue financial-event rows found by reconciliation', async () => {
-		const exchange = createTransaction({
+		const exchange = createBankTransaction({
 			id: 'reconciled-exchange-transaction',
 			financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
 		});
@@ -272,7 +220,7 @@ describe('BankTransactionCategorizationService web-search reconciliation', () =>
 });
 describe('BankTransactionCategorizationService worker', () => {
 	it('does not send a stale financial-event job to the provider', async () => {
-		const transaction = createTransaction({
+		const transaction = createBankTransaction({
 			id: 'stale-exchange-transaction',
 			categoryStatus: 'PENDING',
 			financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
@@ -286,8 +234,8 @@ describe('BankTransactionCategorizationService worker', () => {
 	});
 
 	it('does not send a queued row after it becomes a financial event before provider invocation', async () => {
-		const transaction = createTransaction({id: 'reclassified-exchange-transaction'});
-		const reclassifiedTransaction = createTransaction({
+		const transaction = createBankTransaction({id: 'reclassified-exchange-transaction'});
+		const reclassifiedTransaction = createBankTransaction({
 			id: transaction.id,
 			financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
 		});
@@ -301,7 +249,7 @@ describe('BankTransactionCategorizationService worker', () => {
 	});
 
 	it('does not send a queued row that was deleted before provider invocation', async () => {
-		const transaction = createTransaction({id: 'deleted-transaction'});
+		const transaction = createBankTransaction({id: 'deleted-transaction'});
 		const {service, provider, repository} = createService({rows: [transaction]});
 		repository.find.mockResolvedValueOnce([transaction]).mockResolvedValueOnce([]);
 
@@ -312,8 +260,8 @@ describe('BankTransactionCategorizationService worker', () => {
 	});
 
 	it('does not send a reclassified row to web fallback after standard categorization', async () => {
-		const transaction = createTransaction({id: 'web-reclassified-transaction'});
-		const reclassifiedTransaction = createTransaction({
+		const transaction = createBankTransaction({id: 'web-reclassified-transaction'});
+		const reclassifiedTransaction = createBankTransaction({
 			id: transaction.id,
 			financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
 		});
@@ -334,8 +282,8 @@ describe('BankTransactionCategorizationService worker', () => {
 	});
 
 	it('sends only normal OTHER results to the web fallback and applies the web result', async () => {
-		const specific = createTransaction({id: 'specific-transaction', counterpartyName: 'Cafe'});
-		const other = createTransaction({id: 'other-transaction', counterpartyName: 'Ambiguous Cafe'});
+		const specific = createBankTransaction({id: 'specific-transaction', counterpartyName: 'Cafe'});
+		const other = createBankTransaction({id: 'other-transaction', counterpartyName: 'Ambiguous Cafe'});
 		const {service, provider} = createService({
 			rows: [specific, other],
 			webSearchEnabled: true,
@@ -371,7 +319,7 @@ describe('BankTransactionCategorizationService worker', () => {
 	});
 
 	it('passes the transaction ASPSP when normalizing provider-specific codes', async () => {
-		const transaction = createTransaction({
+		const transaction = createBankTransaction({
 			id: 'numeric-card-transaction',
 			transactionType: 'OTHER',
 			bankTransactionCode: '426',
@@ -391,7 +339,7 @@ describe('BankTransactionCategorizationService worker', () => {
 	});
 
 	it('persists NEEDS_REVIEW as a completed category', async () => {
-		const transaction = createTransaction({id: 'ambiguous-transaction'});
+		const transaction = createBankTransaction({id: 'ambiguous-transaction'});
 		const {service} = createService({
 			rows: [transaction],
 			providerResult: [{correlationId: transaction.id, category: 'NEEDS_REVIEW', confidence: 0.1}],
@@ -406,7 +354,7 @@ describe('BankTransactionCategorizationService worker', () => {
 	});
 
 	it('uses one web-search fallback for OTHER results in ordinary jobs', async () => {
-		const transaction = createTransaction({id: 'ordinary-other-transaction'});
+		const transaction = createBankTransaction({id: 'ordinary-other-transaction'});
 		const {service, provider} = createService({
 			rows: [transaction],
 			webSearchEnabled: true,
@@ -422,7 +370,7 @@ describe('BankTransactionCategorizationService worker', () => {
 	});
 
 	it('retries an unsupported transportation guess when card merchant evidence is weak', async () => {
-		const transaction = createTransaction({
+		const transaction = createBankTransaction({
 			id: 'vending-transaction',
 			counterpartyName: null,
 			merchantCategoryCode: 'not-an-mcc',
@@ -465,7 +413,7 @@ describe('BankTransactionCategorizationService worker', () => {
 	});
 
 	it('normalizes a weak transportation guess to NEEDS_REVIEW when web search is disabled', async () => {
-		const transaction = createTransaction({
+		const transaction = createBankTransaction({
 			id: 'weak-transportation-transaction',
 			counterpartyName: null,
 			merchantCategoryCode: null,
@@ -486,7 +434,7 @@ describe('BankTransactionCategorizationService worker', () => {
 	});
 
 	it('marks web Transportation without purchase evidence for review', async () => {
-		const transaction = createTransaction({id: 'web-transportation-transaction'});
+		const transaction = createBankTransaction({id: 'web-transportation-transaction'});
 		const searchTrace = {
 			queries: ['Opaque merchant'],
 			sourceDomains: ['example.com'],
@@ -515,7 +463,7 @@ describe('BankTransactionCategorizationService worker', () => {
 	});
 
 	it('normalizes web results with insufficient or conflicting evidence to NEEDS_REVIEW', async () => {
-		const transaction = createTransaction({id: 'conflicting-web-result-transaction'});
+		const transaction = createBankTransaction({id: 'conflicting-web-result-transaction'});
 		const {service} = createService({
 			rows: [transaction],
 			webSearchEnabled: true,
@@ -542,7 +490,7 @@ describe('BankTransactionCategorizationService worker', () => {
 	});
 
 	it('does not call web search when the fallback is disabled', async () => {
-		const transaction = createTransaction({id: 'other-transaction'});
+		const transaction = createBankTransaction({id: 'other-transaction'});
 		const {service, provider} = createService({
 			rows: [transaction],
 			providerResult: [{correlationId: transaction.id, category: 'OTHER', confidence: 0.5}],
@@ -557,7 +505,7 @@ describe('BankTransactionCategorizationService worker', () => {
 
 	it('uses one web-search fallback for every OTHER result in a normal batch', async () => {
 		const rows = Array.from({length: 6}, (_, index) =>
-			createTransaction({id: `other-transaction-${index}`, counterpartyName: `Merchant ${index}`}),
+			createBankTransaction({id: `other-transaction-${index}`, counterpartyName: `Merchant ${index}`}),
 		);
 		const {service, provider} = createService({
 			rows,
@@ -583,7 +531,7 @@ describe('BankTransactionCategorizationService worker', () => {
 
 	it('keeps valid results and terminalizes only failed web-search chunks', async () => {
 		const rows = Array.from({length: 5}, (_, index) =>
-			createTransaction({id: `other-transaction-${index}`, counterpartyName: `Merchant ${index}`}),
+			createBankTransaction({id: `other-transaction-${index}`, counterpartyName: `Merchant ${index}`}),
 		);
 		const failure = new BankTransactionCategorizationProviderError(
 			'OpenAI categorization request failed (503).',
@@ -636,7 +584,7 @@ describe('BankTransactionCategorizationService worker', () => {
 	});
 
 	it('skips OTHER rows without a usable merchant name', async () => {
-		const transaction = createTransaction({
+		const transaction = createBankTransaction({
 			id: 'merchantless-transaction',
 			counterpartyName: null,
 			description: null,
@@ -654,7 +602,7 @@ describe('BankTransactionCategorizationService worker', () => {
 	});
 
 	it('keeps the normal result when web-search fallback fails', async () => {
-		const transaction = createTransaction({
+		const transaction = createBankTransaction({
 			id: 'web-failure-transaction',
 			counterpartyName: null,
 			merchantCategoryCode: null,
@@ -690,7 +638,7 @@ describe('BankTransactionCategorizationService worker', () => {
 	});
 
 	it('preserves completed categories even when categorization hashes are missing', async () => {
-		const transaction = createTransaction({
+		const transaction = createBankTransaction({
 			category: 'OTHER',
 			categoryStatus: 'COMPLETED',
 			categorySource: 'AI',
@@ -710,7 +658,7 @@ describe('BankTransactionCategorizationService worker', () => {
 
 	it('splits more than 50 unresolved records into bounded provider calls', async () => {
 		const rows = Array.from({length: 51}, (_, index) =>
-			createTransaction({id: `transaction-${index}`, providerTransactionId: `provider-${index}`}),
+			createBankTransaction({id: `transaction-${index}`, providerTransactionId: `provider-${index}`}),
 		);
 		const {service, provider, queue} = createService({rows});
 
@@ -724,7 +672,7 @@ describe('BankTransactionCategorizationService worker', () => {
 
 	it('keeps ordinary categorization batches at the standard size when web search is enabled', async () => {
 		const rows = Array.from({length: 51}, (_, index) =>
-			createTransaction({id: `transaction-${index}`, providerTransactionId: `provider-${index}`}),
+			createBankTransaction({id: `transaction-${index}`, providerTransactionId: `provider-${index}`}),
 		);
 		const {service, provider, queue} = createService({
 			rows,
@@ -748,7 +696,7 @@ describe('BankTransactionCategorizationService worker', () => {
 
 	it('keeps overflow jobs as ordinary transaction batches', async () => {
 		const rows = Array.from({length: 51}, (_, index) =>
-			createTransaction({id: `backfill-transaction-${index}`, providerTransactionId: `provider-${index}`}),
+			createBankTransaction({id: `backfill-transaction-${index}`, providerTransactionId: `provider-${index}`}),
 		);
 		const {service, provider, queue} = createService({rows, webSearchEnabled: true});
 
@@ -761,7 +709,7 @@ describe('BankTransactionCategorizationService worker', () => {
 	});
 
 	it('excludes manual rows from claims and provider calls', async () => {
-		const transaction = createTransaction({
+		const transaction = createBankTransaction({
 			category: 'SHOPPING',
 			categoryStatus: 'COMPLETED',
 			categorySource: 'MANUAL',
@@ -779,7 +727,7 @@ describe('BankTransactionCategorizationService worker', () => {
 	});
 
 	it('does not categorize when a concurrent input hash update wins the race', async () => {
-		const transaction = createTransaction();
+		const transaction = createBankTransaction();
 		const {service, provider, repository} = createService({rows: [transaction]});
 		repository.update.mockResolvedValueOnce({affected: 0});
 
@@ -789,7 +737,7 @@ describe('BankTransactionCategorizationService worker', () => {
 	});
 
 	it('does not refresh the hash when a concurrent event reclassification wins the race', async () => {
-		const transaction = createTransaction();
+		const transaction = createBankTransaction();
 		const {service, provider, repository} = createService({rows: [transaction]});
 		repository.update.mockImplementationOnce(async (criteria) => {
 			expect(criteria).toEqual(expect.objectContaining({financialEventType: expect.anything()}));
@@ -802,7 +750,7 @@ describe('BankTransactionCategorizationService worker', () => {
 	});
 
 	it('does not reset a row after another worker claims it', async () => {
-		const transaction = createTransaction({
+		const transaction = createBankTransaction({
 			categoryStatus: 'PENDING',
 			categorySource: 'LEGACY',
 			categoryInputHash: 'old-input-hash',
@@ -820,7 +768,7 @@ describe('BankTransactionCategorizationService worker', () => {
 	});
 
 	it('does not apply a provider result after the claimed input hash changes', async () => {
-		const transaction = createTransaction();
+		const transaction = createBankTransaction();
 		const queryBuilder = createUpdateQueryBuilder([{affected: 1}, {affected: 0}]);
 		const {service, provider, repository} = createService({rows: [transaction], queryBuilder});
 
@@ -834,7 +782,7 @@ describe('BankTransactionCategorizationService worker', () => {
 	});
 
 	it('marks retryable provider failures as failed and rethrows them', async () => {
-		const transaction = createTransaction();
+		const transaction = createBankTransaction();
 		const failure = new BankTransactionCategorizationProviderError(
 			'OpenAI categorization request failed (503).',
 			true,
@@ -849,12 +797,12 @@ describe('BankTransactionCategorizationService worker', () => {
 	});
 
 	it('reclaims stale processing rows but leaves fresh claims alone', async () => {
-		const stale = createTransaction({
+		const stale = createBankTransaction({
 			id: 'stale-transaction',
 			categoryStatus: 'PROCESSING',
 			categoryUpdatedAt: new Date(Date.now() - 16 * 60 * 1000),
 		});
-		const fresh = createTransaction({
+		const fresh = createBankTransaction({
 			id: 'fresh-transaction',
 			categoryStatus: 'PROCESSING',
 			categoryUpdatedAt: new Date(Date.now() - 1 * 60 * 1000),

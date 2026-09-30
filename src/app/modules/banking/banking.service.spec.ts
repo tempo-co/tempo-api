@@ -1,37 +1,62 @@
 import {createHash} from 'node:crypto';
-import {Repository} from 'typeorm';
 
 import {BANKING_SERVICE_UNAVAILABLE} from './api/constants/banking-messages.constants';
 import {BankConnection} from './bank-connection.entity';
 import {BankingService} from './banking.service';
-import {BankingAuthorizationStateService} from './services/banking-authorization-state.service';
 
 function hashState(state: string): string {
 	return createHash('sha256').update(state).digest('hex');
 }
 
+const BANKING_SERVICE_DEPENDENCIES = [
+	'bankConnectionRepository',
+	'bankAccountRepository',
+	'bankAccountBalanceRepository',
+	'accountService',
+	'configurationService',
+	'dataSource',
+	'enableBankingClient',
+	'authorizationStateService',
+	'encryptionService',
+	'connectionLockService',
+	'bankingSyncQueueService',
+] as const;
+
+/** Builds the service with named test doubles; unspecified dependencies are empty objects. */
+function createBankingService(
+	dependencies: Partial<Record<(typeof BANKING_SERVICE_DEPENDENCIES)[number], unknown>> = {},
+): BankingService {
+	return new BankingService(
+		...(BANKING_SERVICE_DEPENDENCIES.map((name) => dependencies[name] ?? {}) as ConstructorParameters<
+			typeof BankingService
+		>),
+	);
+}
+
 describe('BankingService disabled integration', () => {
 	it('blocks provider authorization and callback state consumption when disabled', async () => {
+		const bankConnectionRepository = {findOne: jest.fn(), save: jest.fn()};
+		const enableBankingClient = {getAspsps: jest.fn(), startAuthorization: jest.fn()};
 		const authorizationStateService = {consumeWithStatus: jest.fn()};
-		const service = new BankingService(
-			{} as Repository<BankConnection>,
-			{} as never,
-			{} as never,
-			{} as never,
-			{get: jest.fn().mockReturnValue(false)} as never,
-			{} as never,
-			{} as never,
-			authorizationStateService as unknown as BankingAuthorizationStateService,
-			{} as never,
-			{} as never,
-			{} as never,
-		);
+		const service = createBankingService({
+			bankConnectionRepository,
+			configurationService: {
+				get: jest.fn((key: string) => (key === 'BANKING_INTEGRATION_ENABLED' ? false : undefined)),
+			},
+			enableBankingClient,
+			authorizationStateService,
+		});
 
-		await expect(service.startAuthorization('account-id', {} as never)).rejects.toThrow(
-			BANKING_SERVICE_UNAVAILABLE,
-		);
+		await expect(
+			service.startAuthorization('account-id', {aspspName: 'Example Bank', aspspCountry: 'NL'} as never),
+		).rejects.toMatchObject({status: 503, message: BANKING_SERVICE_UNAVAILABLE});
 		await expect(service.findSupportedAspsps()).rejects.toThrow(BANKING_SERVICE_UNAVAILABLE);
 		await expect(service.handleCallback({state: 'state', code: 'code'})).resolves.toBe('error');
+
+		expect(bankConnectionRepository.findOne).not.toHaveBeenCalled();
+		expect(bankConnectionRepository.save).not.toHaveBeenCalled();
+		expect(enableBankingClient.getAspsps).not.toHaveBeenCalled();
+		expect(enableBankingClient.startAuthorization).not.toHaveBeenCalled();
 		expect(authorizationStateService.consumeWithStatus).not.toHaveBeenCalled();
 	});
 });
@@ -44,19 +69,11 @@ describe('BankingService authorization state lifecycle', () => {
 		const connectionLockService = {
 			acquire: jest.fn(),
 		};
-		const service = new BankingService(
-			bankConnectionRepository as unknown as Repository<BankConnection>,
-			{} as never,
-			{} as never,
-			{} as never,
-			{} as never,
-			{} as never,
-			{} as never,
-			{} as never,
-			{} as never,
-			connectionLockService as never,
-			{enqueueInitialSync: jest.fn()} as never,
-		);
+		const service = createBankingService({
+			bankConnectionRepository,
+			connectionLockService,
+			bankingSyncQueueService: {enqueueInitialSync: jest.fn()},
+		});
 
 		await expect(service.removeConnection('owner-account-id', 'connection-id')).rejects.toMatchObject({
 			status: 404,
@@ -95,19 +112,12 @@ describe('BankingService authorization state lifecycle', () => {
 		const connectionLockService = {
 			acquire: jest.fn().mockResolvedValue(connectionLock),
 		};
-		const service = new BankingService(
-			bankConnectionRepository as unknown as Repository<BankConnection>,
-			{} as never,
-			{} as never,
-			{} as never,
-			{} as never,
-			dataSource as never,
-			{} as never,
-			{} as never,
-			{} as never,
-			connectionLockService as never,
-			{enqueueInitialSync: jest.fn()} as never,
-		);
+		const service = createBankingService({
+			bankConnectionRepository,
+			dataSource,
+			connectionLockService,
+			bankingSyncQueueService: {enqueueInitialSync: jest.fn()},
+		});
 
 		await expect(service.removeConnection('owner-account-id', connection.id, 'DELETE')).rejects.toThrow(
 			'deletion failed',
@@ -140,19 +150,12 @@ describe('BankingService authorization state lifecycle', () => {
 		const authorizationStateService = {
 			consumeWithStatus: jest.fn().mockResolvedValue(null),
 		};
-		const service = new BankingService(
-			bankConnectionRepository as unknown as Repository<BankConnection>,
-			{} as never,
-			{} as never,
-			{} as never,
-			{} as never,
-			{} as never,
-			{} as never,
-			authorizationStateService as unknown as BankingAuthorizationStateService,
-			{} as never,
-			{acquire: jest.fn()} as never,
-			{enqueueInitialSync: jest.fn()} as never,
-		);
+		const service = createBankingService({
+			bankConnectionRepository,
+			authorizationStateService,
+			connectionLockService: {acquire: jest.fn()},
+			bankingSyncQueueService: {enqueueInitialSync: jest.fn()},
+		});
 
 		await expect(service.handleCallback({state: expiredState, code: 'late-provider-code'})).resolves.toBe('error');
 
@@ -200,32 +203,28 @@ describe('BankingService authorization state lifecycle', () => {
 		const authorizationStateService = {
 			consumeWithStatus: jest.fn().mockResolvedValue({status: 'consumed', state}),
 		};
-		const service = new BankingService(
-			bankConnectionRepository as unknown as Repository<BankConnection>,
-			{} as never,
-			{} as never,
-			{} as never,
-			{} as never,
-			dataSource as never,
-			{
+		const service = createBankingService({
+			bankConnectionRepository,
+			dataSource,
+			enableBankingClient: {
 				createSession: jest.fn().mockResolvedValue({
 					sessionId: 'provider-session',
 					consentValidUntil: '2030-01-01T00:00:00.000Z',
 					aspsp: {name: 'ABN AMRO', country: 'NL'},
 					accounts: [],
 				}),
-			} as never,
-			authorizationStateService as unknown as BankingAuthorizationStateService,
-			{encrypt: jest.fn().mockReturnValue('encrypted-session')} as never,
-			{
+			},
+			authorizationStateService,
+			encryptionService: {encrypt: jest.fn().mockReturnValue('encrypted-session')},
+			connectionLockService: {
 				acquire: jest.fn().mockResolvedValue({
 					assertHealthy: jest.fn(),
 					stop: jest.fn(),
 					release: jest.fn().mockResolvedValue(undefined),
 				}),
-			} as never,
-			{enqueueInitialSync: jest.fn()} as never,
-		);
+			},
+			bankingSyncQueueService: {enqueueInitialSync: jest.fn()},
+		});
 
 		await expect(service.handleCallback({state: callbackState, code: 'provider-code'})).resolves.toBe('error');
 
@@ -291,19 +290,13 @@ describe('BankingService authorization state lifecycle', () => {
 		const connectionLockService = {
 			acquire: jest.fn().mockResolvedValue(connectionLock),
 		};
-		const service = new BankingService(
-			bankConnectionRepository as never,
-			{} as never,
-			{} as never,
-			{} as never,
-			{} as never,
-			dataSource as never,
-			{} as never,
-			authorizationStateService as never,
-			{} as never,
-			connectionLockService as never,
-			{enqueueInitialSync: jest.fn()} as never,
-		);
+		const service = createBankingService({
+			bankConnectionRepository,
+			dataSource,
+			authorizationStateService,
+			connectionLockService,
+			bankingSyncQueueService: {enqueueInitialSync: jest.fn()},
+		});
 
 		await service.removeConnection('account-id', connection.id, 'DELETE');
 
@@ -368,26 +361,22 @@ describe('BankingService authorization state lifecycle', () => {
 		const connectionLockService = {
 			acquire: jest.fn().mockResolvedValue(connectionLock),
 		};
-		const service = new BankingService(
-			bankConnectionRepository as never,
-			{} as never,
-			{} as never,
-			{} as never,
-			{} as never,
-			dataSource as never,
-			{
+		const service = createBankingService({
+			bankConnectionRepository,
+			dataSource,
+			enableBankingClient: {
 				createSession: jest.fn().mockResolvedValue({
 					sessionId: 'provider-session',
 					consentValidUntil: '2030-01-01T00:00:00.000Z',
 					aspsp: {name: 'ABN AMRO', country: 'NL'},
 					accounts: [],
 				}),
-			} as never,
-			authorizationStateService as never,
-			{encrypt: jest.fn().mockReturnValue('encrypted-session')} as never,
-			connectionLockService as never,
-			queueService as never,
-		);
+			},
+			authorizationStateService,
+			encryptionService: {encrypt: jest.fn().mockReturnValue('encrypted-session')},
+			connectionLockService,
+			bankingSyncQueueService: queueService,
+		});
 
 		await expect(service.handleCallback({state: callbackState, code: 'provider-code'})).resolves.toBe('connected');
 

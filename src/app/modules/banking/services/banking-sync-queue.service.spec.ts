@@ -4,6 +4,7 @@ import {Repository} from 'typeorm';
 import {ConfigurationService} from '@core/config/config.service';
 import {
 	BANK_CONNECTION_SYNC_QUEUE,
+	BANK_CONNECTION_SYNC_SCHEDULER_ID,
 	DISPATCH_BANK_CONNECTION_SYNCS_JOB,
 	SYNC_BANK_CONNECTION_JOB,
 } from '@core/queue/queue.constants';
@@ -147,5 +148,44 @@ describe('BankingSyncQueueService', () => {
 
 	it('uses the automatic sync queue name for the dispatcher and connection jobs', () => {
 		expect(BANK_CONNECTION_SYNC_QUEUE).toBe('bank-connection-sync');
+	});
+
+	describe('with banking integration disabled', () => {
+		function createDisabledService(removeJobScheduler: jest.Mock) {
+			const disabledQueue = {...queue, removeJobScheduler};
+			const disabledService = new BankingSyncQueueService(
+				bankConnectionRepository as unknown as Repository<BankConnection>,
+				disabledQueue as unknown as Queue,
+				{
+					get: jest.fn((key: string) => {
+						if (key === 'BANKING_INTEGRATION_ENABLED') return false;
+						if (key === 'NODE_ENV') return 'production';
+						return '10m';
+					}),
+				} as unknown as ConfigurationService,
+				connectionLockService as never,
+			);
+			return disabledService;
+		}
+
+		it('does not schedule or enqueue banking work', async () => {
+			const removeJobScheduler = jest.fn().mockResolvedValue(false);
+			const disabledService = createDisabledService(removeJobScheduler);
+
+			await disabledService.onModuleInit();
+			await disabledService.enqueueInitialSync('connection-id');
+			await expect(disabledService.dispatchDueConnections()).resolves.toBe(0);
+
+			expect(queue.upsertJobScheduler).not.toHaveBeenCalled();
+			expect(removeJobScheduler).toHaveBeenCalledWith(BANK_CONNECTION_SYNC_SCHEDULER_ID);
+			expect(queue.add).not.toHaveBeenCalled();
+			expect(bankConnectionRepository.createQueryBuilder).not.toHaveBeenCalled();
+		});
+
+		it('fails closed when the banking scheduler cannot be removed', async () => {
+			const disabledService = createDisabledService(jest.fn().mockRejectedValue(new Error('redis unavailable')));
+
+			await expect(disabledService.onModuleInit()).rejects.toThrow('redis unavailable');
+		});
 	});
 });

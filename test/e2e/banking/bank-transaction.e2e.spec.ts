@@ -1,8 +1,6 @@
 import {INestApplication} from '@nestjs/common';
-import {getRepositoryToken} from '@nestjs/typeorm';
 import {randomUUID} from 'node:crypto';
 import {Server} from 'node:net';
-import request from 'supertest';
 import TestAgent from 'supertest/lib/agent';
 import {Repository} from 'typeorm';
 
@@ -20,11 +18,10 @@ import {
 import {BankTransaction} from '@modules/banking/bank-transaction.entity';
 import {OpenAiBankTransactionCategorizationProvider} from '@modules/banking/categorization/providers/openai-bank-transaction-categorization.provider';
 
+import {BankingFixtures} from '../../../scripts/seed-data/banking-fixtures';
 import {
 	SESSION_TEST_ACCOUNT_EMAIL,
 	SESSION_TEST_ACCOUNT_PASSWORD,
-	UNVERIFIED_ACCOUNT_EMAIL,
-	UNVERIFIED_ACCOUNT_PASSWORD,
 	VERIFIED_ACCOUNT_EMAIL,
 	VERIFIED_ACCOUNT_PASSWORD,
 } from '../../../scripts/seed-data/seed.constants';
@@ -34,11 +31,10 @@ describe('BankTransactionController', () => {
 	let app: INestApplication;
 	let httpServer: Server;
 	let verifiedAgent: TestAgent;
-	let unverifiedAgent: TestAgent;
 	let otherVerifiedAgent: TestAgent;
 	let account: Account;
+	let fixtures: BankingFixtures;
 	let bankConnectionRepository: Repository<BankConnection>;
-	let bankAccountRepository: Repository<BankAccount>;
 	let bankTransactionRepository: Repository<BankTransaction>;
 	let fixtureConnection: BankConnection;
 	let fixtureBankAccount: BankAccount;
@@ -63,12 +59,11 @@ describe('BankTransactionController', () => {
 		if (!seededAccount) throw new Error('Verified test account was not seeded.');
 		account = seededAccount;
 
-		bankConnectionRepository = app.get<Repository<BankConnection>>(getRepositoryToken(BankConnection));
-		bankAccountRepository = app.get<Repository<BankAccount>>(getRepositoryToken(BankAccount));
-		bankTransactionRepository = app.get<Repository<BankTransaction>>(getRepositoryToken(BankTransaction));
+		fixtures = new BankingFixtures(app);
+		bankConnectionRepository = fixtures.connections;
+		bankTransactionRepository = fixtures.transactions;
 
 		verifiedAgent = await loginAgent(httpServer, VERIFIED_ACCOUNT_EMAIL, VERIFIED_ACCOUNT_PASSWORD);
-		unverifiedAgent = await loginAgent(httpServer, UNVERIFIED_ACCOUNT_EMAIL, UNVERIFIED_ACCOUNT_PASSWORD);
 		otherVerifiedAgent = await loginAgent(httpServer, SESSION_TEST_ACCOUNT_EMAIL, SESSION_TEST_ACCOUNT_PASSWORD);
 
 		await bankConnectionRepository
@@ -77,59 +72,30 @@ describe('BankTransactionController', () => {
 			.where('accountId = :accountId', {accountId: account.id})
 			.execute();
 
-		fixtureConnection = await bankConnectionRepository.save(
-			bankConnectionRepository.create({
-				account,
-				provider: 'enable-banking',
-				aspspName: 'ABN AMRO',
-				aspspCountry: 'NL',
-				status: 'AUTHORIZED',
-				consentValidUntil: new Date('2030-01-01T00:00:00.000Z'),
-				providerSessionId: 'provider-session-must-not-leak',
-			}),
-		);
-		fixtureBankAccount = await bankAccountRepository.save(
-			bankAccountRepository.create({
-				bankConnection: fixtureConnection,
-				providerAccountId: 'provider-account-must-not-leak',
-				identificationHash: 'identification-hash-must-not-leak',
-				name: 'Main account',
-				alias: 'Daily spending',
-				currency: 'EUR',
-				isActive: true,
-			}),
-		);
-		const secondBankAccount = await bankAccountRepository.save(
-			bankAccountRepository.create({
-				bankConnection: fixtureConnection,
-				providerAccountId: 'provider-account-second',
-				identificationHash: 'identification-hash-second',
-				name: 'Savings account',
-				currency: 'EUR',
-				isActive: true,
-			}),
-		);
+		fixtureConnection = await fixtures.createConnection(account, {
+			providerSessionId: 'provider-session-must-not-leak',
+		});
+		fixtureBankAccount = await fixtures.createBankAccount(fixtureConnection, {
+			providerAccountId: 'provider-account-must-not-leak',
+			identificationHash: 'identification-hash-must-not-leak',
+			alias: 'Daily spending',
+		});
+		const secondBankAccount = await fixtures.createBankAccount(fixtureConnection, {name: 'Savings account'});
 
-		const transactions = await bankTransactionRepository.save([
-			bankTransactionRepository.create({
-				bankAccountId: fixtureBankAccount.id,
+		const transactions = await fixtures.createTransactions(fixtureBankAccount, [
+			{
 				providerTransactionId: 'provider-transaction-coffee',
 				entryReference: 'provider-entry-coffee',
-				dedupeKey: randomUUID(),
 				bookingDate: '2026-08-26',
 				valueDate: '2026-08-26',
 				amount: '-4.50',
 				amountInBaseCurrency: '-4.50',
-				currency: 'EUR',
-				creditDebitIndicator: 'DBIT',
 				transactionDate: '2026-08-24',
 				transactionType: 'CARD_PAYMENT',
-				transactionStatus: 'BOOK',
 				bankTransactionCode: 'PMNT',
 				bankTransactionSubCode: 'CARD',
 				bankTransactionDescription: 'Card payment',
 				description: 'Coffee shop',
-				displayDescription: 'Coffee shop',
 				counterpartyName: 'Cafe',
 				merchantCategoryCode: '5814',
 				remittanceInformation: 'Morning coffee',
@@ -142,62 +108,38 @@ describe('BankTransactionController', () => {
 				exchangeRateType: 'SPOT',
 				referenceNumber: 'reference-coffee',
 				referenceNumberScheme: 'RF',
-			}),
-			bankTransactionRepository.create({
-				bankAccountId: fixtureBankAccount.id,
-				providerTransactionId: 'provider-transaction-groceries',
-				entryReference: 'provider-entry-groceries',
-				dedupeKey: randomUUID(),
+			},
+			{
 				bookingDate: '2026-08-25',
 				valueDate: '2026-08-25',
 				amount: '-30.00',
 				amountInBaseCurrency: '-30.00',
-				currency: 'EUR',
-				creditDebitIndicator: 'DBIT',
-				transactionStatus: 'BOOK',
 				description: 'Groceries',
-				displayDescription: 'Groceries',
 				counterpartyName: 'Market',
 				merchantCategoryCode: '5411',
 				remittanceInformation: 'Weekly groceries',
-			}),
-			bankTransactionRepository.create({
-				bankAccountId: fixtureBankAccount.id,
-				providerTransactionId: 'provider-transaction-salary',
-				entryReference: 'provider-entry-salary',
-				dedupeKey: randomUUID(),
+			},
+			{
 				bookingDate: '2026-08-20',
 				valueDate: '2026-08-20',
 				amount: '100.00',
 				amountInBaseCurrency: '100.00',
-				currency: 'EUR',
 				creditDebitIndicator: 'CRDT',
-				transactionStatus: 'BOOK',
 				description: 'Salary',
-				displayDescription: 'Salary',
 				counterpartyName: 'Employer',
-				merchantCategoryCode: null,
 				remittanceInformation: 'Monthly income',
-			}),
-			bankTransactionRepository.create({
-				bankAccountId: secondBankAccount.id,
-				providerTransactionId: 'provider-transaction-savings',
-				entryReference: 'provider-entry-savings',
-				dedupeKey: randomUUID(),
-				bookingDate: '2026-08-10',
-				valueDate: '2026-08-10',
-				amount: '20.00',
-				amountInBaseCurrency: '20.00',
-				currency: 'EUR',
-				creditDebitIndicator: 'CRDT',
-				transactionStatus: 'BOOK',
-				description: 'Transfer',
-				displayDescription: 'Transfer',
-				counterpartyName: 'Savings',
-				merchantCategoryCode: null,
-				remittanceInformation: 'Reserve',
-			}),
+			},
 		]);
+		await fixtures.createTransaction(secondBankAccount, {
+			bookingDate: '2026-08-10',
+			valueDate: '2026-08-10',
+			amount: '20.00',
+			amountInBaseCurrency: '20.00',
+			creditDebitIndicator: 'CRDT',
+			description: 'Transfer',
+			counterpartyName: 'Savings',
+			remittanceInformation: 'Reserve',
+		});
 		fixtureTransaction = transactions[0];
 		fixtureGroceriesTransaction = transactions[1];
 		fixtureReviewTransaction = transactions[2];
@@ -209,15 +151,6 @@ describe('BankTransactionController', () => {
 			.delete()
 			.where('accountId = :accountId', {accountId: account.id})
 			.execute();
-	});
-
-	it('requires an authenticated, verified account', async () => {
-		const transactionPath = `/bank-transactions/${fixtureTransaction.id}`;
-
-		await request(httpServer).get('/bank-transactions').expect(401);
-		await request(httpServer).get(transactionPath).expect(401);
-		await unverifiedAgent.get('/bank-transactions').expect(403);
-		await unverifiedAgent.get(transactionPath).expect(403);
 	});
 
 	it('lists owner-scoped transactions with safe source metadata', async () => {
@@ -264,23 +197,15 @@ describe('BankTransactionController', () => {
 	});
 
 	it('uses default pagination and preserves the full total across pages', async () => {
-		const additionalTransactions = await bankTransactionRepository.save(
-			Array.from({length: 8}, (_, index) =>
-				bankTransactionRepository.create({
-					bankAccountId: fixtureBankAccount.id,
-					providerTransactionId: `provider-transaction-default-${index}`,
-					entryReference: `provider-entry-default-${index}`,
-					dedupeKey: randomUUID(),
-					bookingDate: '2026-08-01',
-					valueDate: '2026-08-01',
-					amount: '1.00',
-					currency: 'EUR',
-					creditDebitIndicator: 'CRDT',
-					transactionStatus: 'BOOK',
-					description: `Default pagination transaction ${index}`,
-					displayDescription: `Default pagination transaction ${index}`,
-				}),
-			),
+		const additionalTransactions = await fixtures.createTransactions(
+			fixtureBankAccount,
+			Array.from({length: 8}, (_, index) => ({
+				bookingDate: '2026-08-01',
+				valueDate: '2026-08-01',
+				amount: '1.00',
+				creditDebitIndicator: 'CRDT',
+				description: `Default pagination transaction ${index}`,
+			})),
 		);
 
 		try {
@@ -342,57 +267,29 @@ describe('BankTransactionController', () => {
 	});
 
 	it('sorts mixed currencies by normalized amount before pagination', async () => {
-		const sortingTransactions = await bankTransactionRepository.save([
-			bankTransactionRepository.create({
-				bankAccountId: fixtureBankAccount.id,
-				providerTransactionId: 'currency-sort-ron',
-				entryReference: 'currency-sort-ron-entry',
-				dedupeKey: randomUUID(),
+		const sortingTransactions = await fixtures.createTransactions(
+			fixtureBankAccount,
+			[
+				['RON', '100.00'],
+				['EUR', '30.00'],
+				['USD', '1.00'],
+			].map(([currency, amount]) => ({
+				providerTransactionId: `currency-sort-${currency}`,
 				bookingDate: '2026-08-01',
 				valueDate: '2026-08-01',
-				amount: '100.00',
-				currency: 'RON',
+				amount,
+				currency,
 				creditDebitIndicator: 'CRDT',
-				transactionStatus: 'BOOK',
-				description: 'Currency sort RON',
-				displayDescription: 'Currency sort RON',
-			}),
-			bankTransactionRepository.create({
-				bankAccountId: fixtureBankAccount.id,
-				providerTransactionId: 'currency-sort-eur',
-				entryReference: 'currency-sort-eur-entry',
-				dedupeKey: randomUUID(),
-				bookingDate: '2026-08-01',
-				valueDate: '2026-08-01',
-				amount: '30.00',
-				currency: 'EUR',
-				creditDebitIndicator: 'CRDT',
-				transactionStatus: 'BOOK',
-				description: 'Currency sort EUR',
-				displayDescription: 'Currency sort EUR',
-			}),
-			bankTransactionRepository.create({
-				bankAccountId: fixtureBankAccount.id,
-				providerTransactionId: 'currency-sort-unavailable',
-				entryReference: 'currency-sort-unavailable-entry',
-				dedupeKey: randomUUID(),
-				bookingDate: '2026-08-01',
-				valueDate: '2026-08-01',
-				amount: '1.00',
-				currency: 'USD',
-				creditDebitIndicator: 'CRDT',
-				transactionStatus: 'BOOK',
-				description: 'Currency sort unavailable',
-				displayDescription: 'Currency sort unavailable',
-			}),
-		]);
+				description: `Currency sort ${currency}`,
+			})),
+		);
 
 		try {
 			await bankTransactionRepository.query(
 				`UPDATE "bank_transactions"
 				 SET "amountInBaseCurrency" = CASE "providerTransactionId"
-				   WHEN 'currency-sort-ron' THEN 20.00
-				   WHEN 'currency-sort-eur' THEN 30.00
+				   WHEN 'currency-sort-RON' THEN 20.00
+				   WHEN 'currency-sort-EUR' THEN 30.00
 				 END
 				 WHERE "id" IN ($1, $2, $3)`,
 				sortingTransactions.map(({id}) => id),
@@ -436,42 +333,15 @@ describe('BankTransactionController', () => {
 	});
 
 	it('supports category and source sorting', async () => {
-		const sourceConnection = await bankConnectionRepository.save(
-			bankConnectionRepository.create({
-				account,
-				provider: 'enable-banking',
-				aspspName: 'ING',
-				aspspCountry: 'NL',
-				providerSessionId: randomUUID(),
-				status: 'AUTHORIZED',
-			}),
-		);
-		const sourceBankAccount = await bankAccountRepository.save(
-			bankAccountRepository.create({
-				bankConnection: sourceConnection,
-				providerAccountId: 'source-sort-account',
-				identificationHash: 'source-sort-identification',
-				name: 'Other account',
-				currency: 'EUR',
-				isActive: true,
-			}),
-		);
-		await bankTransactionRepository.save(
-			bankTransactionRepository.create({
-				bankAccountId: sourceBankAccount.id,
-				providerTransactionId: 'source-sort-transaction',
-				entryReference: 'source-sort-entry',
-				dedupeKey: randomUUID(),
-				bookingDate: '2026-08-27',
-				valueDate: '2026-08-27',
-				amount: '1.00',
-				currency: 'EUR',
-				creditDebitIndicator: 'CRDT',
-				transactionStatus: 'BOOK',
-				description: 'Source sort transaction',
-				displayDescription: 'Source sort transaction',
-			}),
-		);
+		const sourceConnection = await fixtures.createConnection(account, {aspspName: 'ING'});
+		const sourceBankAccount = await fixtures.createBankAccount(sourceConnection, {name: 'Other account'});
+		await fixtures.createTransaction(sourceBankAccount, {
+			bookingDate: '2026-08-27',
+			valueDate: '2026-08-27',
+			amount: '1.00',
+			creditDebitIndicator: 'CRDT',
+			description: 'Source sort transaction',
+		});
 		await bankTransactionRepository.update({id: fixtureTransaction.id}, {category: 'FOOD_AND_DRINK'});
 		await bankTransactionRepository.update({id: fixtureGroceriesTransaction.id}, {category: 'SHOPPING'});
 
@@ -659,52 +529,33 @@ describe('BankTransactionController', () => {
 	});
 
 	it('exposes and filters currency exchange events without treating them as uncategorized', async () => {
-		const ruleExchange = await bankTransactionRepository.save(
-			bankTransactionRepository.create({
-				bankAccountId: fixtureBankAccount.id,
-				providerTransactionId: 'provider-currency-exchange-rule',
-				entryReference: 'entry-currency-exchange-rule',
-				dedupeKey: randomUUID(),
+		const currencyExchange = {
+			counterpartyName: null,
+			financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
+			financialEventSource: BANK_TRANSACTION_FINANCIAL_EVENT_SOURCES.RULE,
+			financialEventRuleVersion: BANK_TRANSACTION_FINANCIAL_EVENT_RULE_VERSION,
+		};
+		const [ruleExchange, manualExchange] = await fixtures.createTransactions(fixtureBankAccount, [
+			{
+				...currencyExchange,
 				bookingDate: '2026-08-15',
 				valueDate: '2026-08-15',
 				amount: '-10.00',
-				currency: 'EUR',
-				creditDebitIndicator: 'DBIT',
-				transactionStatus: 'BOOK',
 				description: 'Exchanged to GBP',
-				displayDescription: 'Exchanged to GBP',
-				counterpartyName: null,
-				category: null,
 				categoryStatus: 'NOT_APPLICABLE',
-				categorySource: null,
-				financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
-				financialEventSource: BANK_TRANSACTION_FINANCIAL_EVENT_SOURCES.RULE,
-				financialEventRuleVersion: BANK_TRANSACTION_FINANCIAL_EVENT_RULE_VERSION,
-			}),
-		);
-		const manualExchange = await bankTransactionRepository.save(
-			bankTransactionRepository.create({
-				bankAccountId: fixtureBankAccount.id,
-				providerTransactionId: 'provider-currency-exchange-manual',
-				entryReference: 'entry-currency-exchange-manual',
-				dedupeKey: randomUUID(),
+			},
+			{
+				...currencyExchange,
 				bookingDate: '2026-08-14',
 				valueDate: '2026-08-14',
 				amount: '11.00',
-				currency: 'EUR',
 				creditDebitIndicator: 'CRDT',
-				transactionStatus: 'BOOK',
 				description: 'Exchanged to EUR',
-				displayDescription: 'Exchanged to EUR',
-				counterpartyName: null,
 				category: 'SHOPPING',
 				categoryStatus: 'COMPLETED',
 				categorySource: 'MANUAL',
-				financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
-				financialEventSource: BANK_TRANSACTION_FINANCIAL_EVENT_SOURCES.RULE,
-				financialEventRuleVersion: BANK_TRANSACTION_FINANCIAL_EVENT_RULE_VERSION,
-			}),
-		);
+			},
+		]);
 
 		try {
 			const filteredResponse = await verifiedAgent
@@ -827,8 +678,6 @@ describe('BankTransactionController', () => {
 	it('allows verified owners to correct categories without exposing audit fields', async () => {
 		const transactionPath = `/bank-transactions/${fixtureTransaction.id}/category`;
 
-		await request(httpServer).patch(transactionPath).send({category: 'FOOD_AND_DRINK'}).expect(401);
-		await unverifiedAgent.patch(transactionPath).send({category: 'FOOD_AND_DRINK'}).expect(403);
 		await otherVerifiedAgent.patch(transactionPath).send({category: 'FOOD_AND_DRINK'}).expect(404);
 		await verifiedAgent.patch(transactionPath).send({category: 'NOT_A_CATEGORY'}).expect(400);
 

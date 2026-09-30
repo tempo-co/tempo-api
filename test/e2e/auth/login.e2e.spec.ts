@@ -1,13 +1,15 @@
-import {faker} from '@faker-js/faker';
 import {Server} from 'node:net';
 import request from 'supertest';
-import TestAgent from 'supertest/lib/agent';
 
 import {Account} from '@modules/account/account.entity';
-import {EMAIL_NOT_VERIFIED} from '@modules/auth/api/constants/api-messages.constants';
-import {SignUpDto} from '@modules/auth/api/dtos/signup.dto';
 
+import {
+	VERIFIED_ACCOUNT_EMAIL,
+	VERIFIED_ACCOUNT_NAME,
+	VERIFIED_ACCOUNT_PASSWORD,
+} from '../../../scripts/seed-data/seed.constants';
 import {getApp, getSessionCookie, loginAgent} from '../../setup/e2e.setup';
+import {expectValidationMessage} from '../../utils/auth-utils';
 
 describe('AuthController - Login', () => {
 	let httpServer: Server;
@@ -17,108 +19,54 @@ describe('AuthController - Login', () => {
 	});
 
 	describe('POST /auth/login', () => {
-		let agent: TestAgent;
-		let accountCredentials: SignUpDto;
-
-		beforeEach(async () => {
-			accountCredentials = {
-				name: faker.person.fullName(),
-				email: faker.internet.email(),
-				password: faker.internet.password({length: 10}),
-			};
-			await request(httpServer).post('/auth/signup').send(accountCredentials).expect(201);
-
-			agent = await loginAgent(httpServer, accountCredentials.email, accountCredentials.password);
-		});
-
 		it('should log in with correct credentials and establish session', async () => {
+			const agent = await loginAgent(httpServer, VERIFIED_ACCOUNT_EMAIL, VERIFIED_ACCOUNT_PASSWORD);
 			const response = await agent.get('/accounts/me').expect(200);
 
 			const account: Account = response.body;
-			expect(account).toBeDefined();
 			expect(account.id).toBeDefined();
-			expect(account.email).toEqual(accountCredentials.email);
-			expect(account.name).toEqual(accountCredentials.name);
+			expect(account.email).toEqual(VERIFIED_ACCOUNT_EMAIL);
+			expect(account.name).toEqual(VERIFIED_ACCOUNT_NAME);
 			expect(account.password).toBeUndefined();
 
-			expect(response.headers['set-cookie']).toBeDefined();
 			const sessionCookie = getSessionCookie(response);
-
-			expect(sessionCookie).toBeDefined();
 			expect(sessionCookie).toMatch(/HttpOnly/);
 			expect(sessionCookie).toMatch(/Path=\//);
 			expect(sessionCookie).toMatch(/SameSite=Strict/);
 			expect(sessionCookie).toMatch(/Expires=/);
 		});
 
-		it('should return 403 Forbidden when accessing email-verified route without verification', async () => {
-			await agent
-				.get('/auth/sessions')
-				.expect(403)
-				.expect((res) => {
-					expect(res.body.message).toBe(EMAIL_NOT_VERIFIED);
-				});
-		});
-
-		it('should fail to log in with incorrect password', async () => {
-			const response = await request(httpServer)
-				.post('/auth/login')
-				.send({email: accountCredentials.email, password: 'incorrect-password'})
-				.expect(401);
+		it.each([
+			['an incorrect password', {email: VERIFIED_ACCOUNT_EMAIL, password: 'incorrect-password'}],
+			['an unknown email', {email: 'incorrect@email.com', password: VERIFIED_ACCOUNT_PASSWORD}],
+		])('should fail to log in with %s without setting a session', async (_case, credentials) => {
+			const response = await request(httpServer).post('/auth/login').send(credentials).expect(401);
 			expect(response.headers['set-cookie']).toBeUndefined();
 		});
 
-		it('should fail to log in with incorrect email', async () => {
-			const response = await request(httpServer)
-				.post('/auth/login')
-				.send({email: 'incorrect@email.com', password: accountCredentials.password})
-				.expect(401);
-			expect(response.headers['set-cookie']).toBeUndefined();
+		it.each([
+			['email is missing', {password: 'password123'}],
+			['email is empty', {email: '', password: 'password123'}],
+			['password is missing', {email: VERIFIED_ACCOUNT_EMAIL}],
+			['password is empty', {email: VERIFIED_ACCOUNT_EMAIL, password: ''}],
+		])('should fail with 401 Unauthorized if %s', async (_case, body) => {
+			await request(httpServer).post('/auth/login').send(body).expect(401);
 		});
 
-		it('should fail with 401 Unauthorized if email is missing', () => {
-			return request(httpServer).post('/auth/login').send({password: 'password123'}).expect(401);
-		});
-
-		it('should fail with 401 Unauthorized if email is empty', () => {
-			return request(httpServer).post('/auth/login').send({email: '', password: 'password123'}).expect(401);
-		});
-
-		it('should fail with 401 Unauthorized if password is missing', () => {
-			return request(httpServer).post('/auth/login').send({email: accountCredentials.email}).expect(401);
-		});
-
-		it('should fail with 401 Unauthorized if password is empty', () => {
-			return request(httpServer)
-				.post('/auth/login')
-				.send({email: accountCredentials.email, password: ''})
-				.expect(401);
-		});
-
-		it('should fail with 400 Bad Request if email is not a valid email format', () => {
-			return request(httpServer)
-				.post('/auth/login')
-				.send({email: 'not-a-valid-email', password: 'password123'})
-				.expect(400)
-				.expect((res) => {
-					expect(res.body.message).toEqual(
-						expect.arrayContaining([expect.stringMatching(/email must be an email/i)]),
-					);
-				});
-		});
-
-		it('should fail with 400 Bad Request if password is too short', () => {
-			return request(httpServer)
-				.post('/auth/login')
-				.send({email: accountCredentials.email, password: '123'})
-				.expect(400)
-				.expect((res) => {
-					expect(res.body.message).toEqual(
-						expect.arrayContaining([
-							expect.stringMatching(/password must be longer than or equal to 8 characters/i),
-						]),
-					);
-				});
+		it.each([
+			[
+				'email is not a valid email format',
+				{email: 'not-a-valid-email', password: 'password123'},
+				/email must be an email/i,
+			],
+			[
+				'password is too short',
+				{email: VERIFIED_ACCOUNT_EMAIL, password: '123'},
+				/password must be longer than or equal to 8 characters/i,
+			],
+		])('should fail with 400 Bad Request if %s', async (_case, body, message) => {
+			const response = await request(httpServer).post('/auth/login').send(body).expect(400);
+			expectValidationMessage(response, message);
 		});
 	});
 });

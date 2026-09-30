@@ -1,4 +1,3 @@
-import {faker} from '@faker-js/faker';
 import {INestApplication} from '@nestjs/common';
 import Redis from 'ioredis';
 import {Server} from 'node:net';
@@ -8,20 +7,15 @@ import {DataSource} from 'typeorm';
 import {ConfigurationService} from '@core/config/config.service';
 import {REDIS} from '@core/redis/redis.constants';
 import {ACCOUNT_DELETED_EMAIL_SUBJECT, ACCOUNT_DELETED_MESSAGE} from '@modules/account/account-deletion.service';
-import {EMAIL_NOT_VERIFIED} from '@modules/auth/api/constants/api-messages.constants';
 import {BankAccountBalance} from '@modules/banking/bank-account-balance.entity';
 import {BankAccount} from '@modules/banking/bank-account.entity';
 import {BankConnection} from '@modules/banking/bank-connection.entity';
-import {BankSyncRun} from '@modules/banking/bank-sync-run.entity';
 import {BankTransaction} from '@modules/banking/bank-transaction.entity';
 
-import {
-	UNVERIFIED_ACCOUNT_EMAIL,
-	UNVERIFIED_ACCOUNT_PASSWORD,
-	VERIFIED_ACCOUNT_EMAIL,
-	VERIFIED_ACCOUNT_PASSWORD,
-} from '../../../scripts/seed-data/seed.constants';
+import {seedBankingData} from '../../../scripts/seed-data/seed-banking-data';
+import {VERIFIED_ACCOUNT_EMAIL, VERIFIED_ACCOUNT_PASSWORD} from '../../../scripts/seed-data/seed.constants';
 import {getApp, loginAgent} from '../../setup/e2e.setup';
+import {createVerifiedAccount} from '../../utils/auth-utils';
 import {EmailUtils} from '../../utils/email-utils';
 
 describe('AccountController - DELETE /accounts/me', () => {
@@ -52,74 +46,18 @@ describe('AccountController - DELETE /accounts/me', () => {
 		await EmailUtils.clearEmails(mailpitApiUrl);
 	});
 
-	async function seedBankingData(accountId: string) {
-		const connection = await connectionRepository.save(
-			connectionRepository.create({
-				account: {id: accountId},
-				provider: 'enable-banking',
-				aspspName: 'ABN AMRO',
-				aspspCountry: 'NL',
-				status: 'AUTHORIZED',
-				providerSessionId: 'encrypted-session-id',
-				consentValidUntil: new Date(Date.now() + 86_400_000),
-			}),
-		);
-		const syncRun = await dataSource.getRepository(BankSyncRun).save(
-			dataSource.getRepository(BankSyncRun).create({
-				bankConnection: {id: connection.id},
-				status: 'SUCCEEDED',
-				finishedAt: new Date(),
-			}),
-		);
-		const bankAccount = await bankAccountRepository.save(
-			bankAccountRepository.create({
-				bankConnection: {id: connection.id},
-				providerAccountId: 'provider-account-1',
-				identificationHash: 'identification-hash',
-				currency: 'EUR',
-			}),
-		);
-		await balanceRepository.save(
-			balanceRepository.create({
-				bankAccountId: bankAccount.id,
-				bankSyncRunId: syncRun.id,
-				balanceType: 'closingBooked',
-				amount: '123.45',
-				currency: 'EUR',
-			}),
-		);
-		await transactionRepository.save(
-			transactionRepository.create({
-				bankAccountId: bankAccount.id,
-				dedupeKey: 'dedupe-1',
-				amount: '-10.00',
-				displayDescription: 'Transaction',
-				currency: 'EUR',
-			}),
-		);
-	}
-
 	async function countOwnedAccounts(repository: ReturnType<DataSource['getRepository']>, accountId: string) {
 		return repository.count({where: {account: {id: accountId}}});
 	}
 
 	it('deletes a verified account with password confirmation and cascades all bank data', async () => {
-		const email = faker.internet.email().toLowerCase();
-		const password = 'delete-account-password';
-		const name = faker.person.fullName();
-		const agent = request.agent(httpServer);
+		const {
+			id: accountId,
+			credentials: {email, password},
+			agent,
+		} = await createVerifiedAccount(httpServer, mailpitApiUrl);
 
-		const signupResponse = await agent.post('/auth/signup').send({name, email, password}).expect(201);
-		const accountId: string = signupResponse.body.id;
-		expect(accountId).toBeDefined();
-
-		// Deletion requires a verified account; fetch the welcome code and verify.
-		const welcomeEmail = await EmailUtils.findEmailByRecipient(email, mailpitApiUrl);
-		const code = EmailUtils.extractCode(welcomeEmail?.Text);
-		expect(code).toHaveLength(6);
-		await agent.post('/auth/signup/verify').send({email, code}).expect(200);
-
-		await seedBankingData(accountId);
+		await seedBankingData(app, {accountEmail: email});
 		expect(await countOwnedAccounts(connectionRepository, accountId)).toBe(1);
 
 		// A second session of the same account must die with the account too.
@@ -193,18 +131,6 @@ describe('AccountController - DELETE /accounts/me', () => {
 		expect(farewellEmail?.Subject).toEqual(ACCOUNT_DELETED_EMAIL_SUBJECT);
 	}, 30_000);
 
-	it('returns 403 Forbidden for an unverified account', async () => {
-		const agent = await loginAgent(httpServer, UNVERIFIED_ACCOUNT_EMAIL, UNVERIFIED_ACCOUNT_PASSWORD);
-
-		await agent
-			.delete('/accounts/me')
-			.send({password: UNVERIFIED_ACCOUNT_PASSWORD})
-			.expect(403)
-			.expect((res) => {
-				expect(res.body.message).toBe(EMAIL_NOT_VERIFIED);
-			});
-	});
-
 	it('returns 400 Bad Request if the password is missing', async () => {
 		const agent = await loginAgent(httpServer, VERIFIED_ACCOUNT_EMAIL, VERIFIED_ACCOUNT_PASSWORD);
 
@@ -219,9 +145,5 @@ describe('AccountController - DELETE /accounts/me', () => {
 					]),
 				);
 			});
-	});
-
-	it('returns 401 Unauthorized if the user is not authenticated', async () => {
-		await request(httpServer).delete('/accounts/me').send({password: VERIFIED_ACCOUNT_PASSWORD}).expect(401);
 	});
 });

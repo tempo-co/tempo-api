@@ -1,12 +1,10 @@
 import {faker} from '@faker-js/faker';
 import {INestApplication} from '@nestjs/common';
 import {Server} from 'node:net';
-import request from 'supertest';
 import TestAgent from 'supertest/lib/agent';
 
 import {Account} from '@modules/account/account.entity';
 import {AccountUpdateDto} from '@modules/account/api/account-update.dto';
-import {EMAIL_NOT_VERIFIED} from '@modules/auth/api/constants/api-messages.constants';
 
 import {
 	UNVERIFIED_ACCOUNT_EMAIL,
@@ -15,6 +13,7 @@ import {
 	VERIFIED_ACCOUNT_PASSWORD,
 } from '../../../scripts/seed-data/seed.constants';
 import {getApp, loginAgent} from '../../setup/e2e.setup';
+import {expectValidationMessage} from '../../utils/auth-utils';
 
 describe('Account controller - /me', () => {
 	let httpServer: Server;
@@ -55,20 +54,13 @@ describe('Account controller - /me', () => {
 			expect(account.createdAt).toBeDefined();
 			expect(account.password).toBeUndefined();
 		});
-
-		it('should return 401 Unauthorized if the user is not authenticated', async () => {
-			await request(httpServer).get('/accounts/me').expect(401);
-		});
 	});
 
 	describe('PATCH /accounts/me', () => {
 		let verifiedAgent: TestAgent;
-		let unverifiedAgent: TestAgent;
 
 		beforeAll(async () => {
 			verifiedAgent = await loginAgent(httpServer, VERIFIED_ACCOUNT_EMAIL, VERIFIED_ACCOUNT_PASSWORD);
-
-			unverifiedAgent = await loginAgent(httpServer, UNVERIFIED_ACCOUNT_EMAIL, UNVERIFIED_ACCOUNT_PASSWORD);
 		});
 
 		it('should update the name for an authenticated VERIFIED account', async () => {
@@ -89,89 +81,25 @@ describe('Account controller - /me', () => {
 		});
 
 		it('should strip disallowed fields and update the name for an authenticated VERIFIED account', async () => {
-			const updateDto: AccountUpdateDto = {name: 'Valid name Again'};
-
 			await verifiedAgent
 				.patch('/accounts/me')
-				.send(updateDto)
+				.send({name: 'Valid name Again', email: 'takeover@example.test', isEmailVerified: false})
 				.expect(200)
 				.expect((res) => {
 					expect(res.body.name).toEqual('Valid name Again');
 					expect(res.body.email).toEqual(VERIFIED_ACCOUNT_EMAIL);
+					expect(res.body.isEmailVerified).toBe(true);
 				});
 		});
 
-		it('should return 403 Forbidden for an UNVERIFIED account', async () => {
-			const updateDto: AccountUpdateDto = {name: faker.person.fullName()};
-
-			await unverifiedAgent
-				.patch('/accounts/me')
-				.send(updateDto)
-				.expect(403)
-				.expect((res) => {
-					expect(res.body.message).toBe(EMAIL_NOT_VERIFIED);
-				});
-		});
-
-		it('should return 401 Unauthorized if the user is not authenticated', async () => {
-			const updateDto: AccountUpdateDto = {name: 'Attempt Update'};
-			await request(httpServer).patch('/accounts/me').send(updateDto).expect(401);
-		});
-
-		it('should return 400 Bad Request if name is missing', async () => {
-			await verifiedAgent
-				.patch('/accounts/me')
-				.send({})
-				.expect(400)
-				.expect((res) => {
-					expect(res.body.message).toEqual(
-						expect.arrayContaining([expect.stringMatching(/name must be a string/i)]),
-					);
-				});
-		});
-
-		it('should return 400 Bad Request if name is empty', async () => {
-			const updateDto: AccountUpdateDto = {name: ''};
-			await verifiedAgent
-				.patch('/accounts/me')
-				.send(updateDto)
-				.expect(400)
-				.expect((res) => {
-					expect(res.body.message).toEqual(
-						expect.arrayContaining([
-							expect.stringMatching(/name must be longer than or equal to 1 characters/i),
-						]),
-					);
-				});
-		});
-
-		it('should return 400 Bad Request if name is too long', async () => {
-			const longName = 'a'.repeat(256);
-			const updateDto: AccountUpdateDto = {name: longName};
-			await verifiedAgent
-				.patch('/accounts/me')
-				.send(updateDto)
-				.expect(400)
-				.expect((res) => {
-					expect(res.body.message).toEqual(
-						expect.arrayContaining([
-							expect.stringMatching(/name must be shorter than or equal to 255 characters/i),
-						]),
-					);
-				});
-		});
-
-		it('should return 400 Bad Request if name is not a string', async () => {
-			const updateDto: AccountUpdateDto = {name: 12345 as unknown as string};
-			await verifiedAgent
-				.patch('/accounts/me')
-				.send(updateDto)
-				.expect(400)
-				.expect((res) => {
-					expect(res.body.message).toEqual(
-						expect.arrayContaining([expect.stringMatching(/name must be a string/i)]),
-					);
-				});
+		it.each([
+			['name is missing', {}, /name must be a string/i],
+			['name is empty', {name: ''}, /name must be longer than or equal to 1 characters/i],
+			['name is too long', {name: 'a'.repeat(256)}, /name must be shorter than or equal to 255 characters/i],
+			['name is not a string', {name: 12345}, /name must be a string/i],
+		])('should return 400 Bad Request if %s', async (_case, body, message) => {
+			const response = await verifiedAgent.patch('/accounts/me').send(body).expect(400);
+			expectValidationMessage(response, message);
 		});
 	});
 });

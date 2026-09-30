@@ -1,3 +1,4 @@
+import {createBankTransaction} from '../../../../../test/fixtures/bank-transaction.fixture';
 import {BankTransaction} from '../bank-transaction.entity';
 import {
 	createBankTransactionCategorizationInputHash,
@@ -5,28 +6,14 @@ import {
 	toBankTransactionCategorizationWebSearchInput,
 } from './bank-transaction-categorization-input';
 
+// Raw provider-style values (padding, lowercase codes) so normalization is observable.
 function createTransaction(overrides: Partial<BankTransaction> = {}): BankTransaction {
-	return {
-		id: 'transaction-id',
-		bankAccountId: 'account-id',
-		providerTransactionId: 'provider-id',
-		entryReference: 'entry-reference',
-		dedupeKey: 'dedupe-key',
-		transactionDate: '2026-09-01',
-		bookingDate: '2026-09-02',
-		valueDate: '2026-09-03',
-		amount: '-12.50',
+	return createBankTransaction({
 		currency: 'eur',
 		creditDebitIndicator: 'dbit',
-		transactionType: 'CARD_PAYMENT',
-		transactionStatus: 'BOOK',
-		bankTransactionCode: 'PMNT',
-		bankTransactionSubCode: 'CARD',
 		bankTransactionDescription: ' Card payment ',
 		description: ' Coffee shop ',
-		displayDescription: 'Coffee shop',
 		counterpartyName: ' Cafe ',
-		merchantLocation: null,
 		merchantCategoryCode: '5814',
 		remittanceInformation: ' Morning coffee ',
 		balanceAfterAmount: '100.00',
@@ -38,11 +25,8 @@ function createTransaction(overrides: Partial<BankTransaction> = {}): BankTransa
 		exchangeRateType: 'SPOT',
 		referenceNumber: 'reference',
 		referenceNumberScheme: 'RF',
-		bankAccount: undefined,
-		createdAt: new Date('2026-09-01T00:00:00.000Z'),
-		updatedAt: new Date('2026-09-01T00:00:00.000Z'),
 		...overrides,
-	} as unknown as BankTransaction;
+	});
 }
 
 describe('bank transaction categorization input', () => {

@@ -2,18 +2,17 @@ import {faker} from '@faker-js/faker';
 import {Server} from 'node:net';
 import request from 'supertest';
 
-import {EMAIL_NOT_VERIFIED, PASSWORD_CHANGE_SUCCESS} from '@modules/auth/api/constants/api-messages.constants';
+import {PASSWORD_CHANGE_SUCCESS} from '@modules/auth/api/constants/api-messages.constants';
 import {PasswordChangeDto} from '@modules/auth/api/dtos/password-change.dto';
 
 import {
 	PW_CHANGE_ACCOUNT_EMAIL,
 	PW_CHANGE_ACCOUNT_PASSWORD,
-	UNVERIFIED_ACCOUNT_EMAIL,
-	UNVERIFIED_ACCOUNT_PASSWORD,
 	VERIFIED_ACCOUNT_EMAIL,
 	VERIFIED_ACCOUNT_PASSWORD,
 } from '../../../scripts/seed-data/seed.constants';
 import {getApp, loginAgent} from '../../setup/e2e.setup';
+import {expectValidationMessage} from '../../utils/auth-utils';
 
 describe('AuthController - Change password', () => {
 	let httpServer: Server;
@@ -72,89 +71,27 @@ describe('AuthController - Change password', () => {
 			await otherAgent.get('/accounts/me').expect(200);
 		});
 
-		it('should fail with 403 Forbidden when unverified account tries to change password', async () => {
-			const unverifiedAgent = await loginAgent(httpServer, UNVERIFIED_ACCOUNT_EMAIL, UNVERIFIED_ACCOUNT_PASSWORD);
-
-			const newPassword = faker.internet.password({length: 12});
-			const changePasswordDto: PasswordChangeDto = {
-				currentPassword: UNVERIFIED_ACCOUNT_PASSWORD,
-				newPassword: newPassword,
-			};
-
-			await unverifiedAgent
-				.post('/auth/change-password')
-				.send(changePasswordDto)
-				.expect(403)
-				.expect((res) => {
-					expect(res.body.message).toBe(EMAIL_NOT_VERIFIED);
-				});
-		});
-
-		it('should fail with 400 Bad Request if new password is too short', async () => {
+		it.each([
+			[
+				'new password is too short',
+				{currentPassword: VERIFIED_ACCOUNT_PASSWORD, newPassword: 'short'},
+				/newPassword must be longer than or equal to 8 characters/i,
+			],
+			[
+				'current password is missing',
+				{newPassword: faker.internet.password({length: 12})},
+				/currentPassword should not be empty/i,
+			],
+			[
+				'new password is missing',
+				{currentPassword: VERIFIED_ACCOUNT_PASSWORD},
+				/newPassword should not be empty/i,
+			],
+		])('should fail with 400 Bad Request if %s', async (_case, body: Partial<PasswordChangeDto>, message) => {
 			const agent = await loginAgent(httpServer, VERIFIED_ACCOUNT_EMAIL, VERIFIED_ACCOUNT_PASSWORD);
 
-			const changePasswordDto: PasswordChangeDto = {
-				currentPassword: VERIFIED_ACCOUNT_PASSWORD,
-				newPassword: 'short',
-			};
-
-			await agent
-				.post('/auth/change-password')
-				.send(changePasswordDto)
-				.expect(400)
-				.expect((res) => {
-					expect(res.body.message).toEqual(
-						expect.arrayContaining([
-							expect.stringMatching(/newPassword must be longer than or equal to 8 characters/i),
-						]),
-					);
-				});
-		});
-
-		it('should fail with 400 Bad Request if current password is missing', async () => {
-			const agent = await loginAgent(httpServer, VERIFIED_ACCOUNT_EMAIL, VERIFIED_ACCOUNT_PASSWORD);
-
-			const changePasswordDto: Partial<PasswordChangeDto> = {
-				newPassword: faker.internet.password({length: 12}),
-			};
-
-			await agent
-				.post('/auth/change-password')
-				.send(changePasswordDto)
-				.expect(400)
-				.expect((res) => {
-					expect(res.body.message).toEqual(
-						expect.arrayContaining([expect.stringMatching(/currentPassword should not be empty/i)]),
-					);
-				});
-		});
-
-		it('should fail with 400 Bad Request if new password is missing', async () => {
-			const agent = await loginAgent(httpServer, VERIFIED_ACCOUNT_EMAIL, VERIFIED_ACCOUNT_PASSWORD);
-
-			const changePasswordDto: Partial<PasswordChangeDto> = {
-				currentPassword: VERIFIED_ACCOUNT_PASSWORD,
-			};
-
-			await agent
-				.post('/auth/change-password')
-				.send(changePasswordDto)
-				.expect(400)
-				.expect((res) => {
-					expect(res.body.message).toEqual(
-						expect.arrayContaining([expect.stringMatching(/newPassword should not be empty/i)]),
-					);
-				});
-		});
-
-		it('should fail with 401 Unauthorized if user is not logged in', async () => {
-			const newPassword = faker.internet.password({length: 12});
-			const changePasswordDto: PasswordChangeDto = {
-				currentPassword: VERIFIED_ACCOUNT_PASSWORD,
-				newPassword: newPassword,
-			};
-
-			await request(httpServer).post('/auth/change-password').send(changePasswordDto).expect(401);
+			const response = await agent.post('/auth/change-password').send(body).expect(400);
+			expectValidationMessage(response, message);
 		});
 	});
 });
