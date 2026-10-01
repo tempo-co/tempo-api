@@ -1,4 +1,4 @@
-import {getBalancePreference, selectPreferredBalance} from './banking.utils';
+import {buildPostgresValuesList, chunkArray, getBalancePreference, selectPreferredBalance} from './banking.utils';
 import {EnableBankingBalance} from './enable-banking.types';
 
 describe('getBalancePreference', () => {
@@ -92,5 +92,32 @@ describe('selectPreferredBalance', () => {
 
 		expect(selectPreferredBalance([first, second])).toBe(second);
 		expect(selectPreferredBalance([second, first])).toBe(second);
+	});
+});
+
+describe('chunkArray', () => {
+	it.each([
+		[[], 2, []],
+		[[1, 2, 3], 2, [[1, 2], [3]]],
+		[[1, 2], 2, [[1, 2]]],
+	])('splits %j into chunks of %i', (items, size, expected) => {
+		expect(chunkArray(items, size)).toEqual(expected);
+	});
+});
+
+describe('buildPostgresValuesList', () => {
+	it('numbers placeholders across rows and casts each column', () => {
+		expect(
+			buildPostgresValuesList(
+				[
+					['a', null],
+					['b', '2'],
+				],
+				['uuid', 'numeric'],
+			),
+		).toEqual({
+			sql: '($1::uuid, $2::numeric), ($3::uuid, $4::numeric)',
+			parameters: ['a', null, 'b', '2'],
+		});
 	});
 });

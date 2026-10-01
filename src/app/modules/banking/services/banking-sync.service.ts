@@ -46,7 +46,14 @@ import {
 import {normalizeBankTransactionLocation} from '../bank-transaction-location';
 import {normalizeBankTransactionType} from '../bank-transaction-type';
 import {BankTransaction} from '../bank-transaction.entity';
-import {safeErrorName, selectPreferredBalance, truncate} from '../banking.utils';
+import {
+	BATCH_WRITE_CHUNK_SIZE,
+	buildPostgresValuesList,
+	chunkArray,
+	safeErrorName,
+	selectPreferredBalance,
+	truncate,
+} from '../banking.utils';
 import {
 	createBankTransactionCategorizationInputHash,
 	toBankTransactionCategorizationInput,
@@ -705,7 +712,25 @@ export class BankingSyncService {
 			return {id: transaction.id, stableIdentityKey, stableIdentityGroupKey};
 		});
 
-		await repository.save(identityUpdates);
+		for (const chunk of chunkArray(identityUpdates, BATCH_WRITE_CHUNK_SIZE)) {
+			const values = buildPostgresValuesList(
+				chunk.map(({id, stableIdentityKey, stableIdentityGroupKey}) => [
+					id,
+					stableIdentityKey,
+					stableIdentityGroupKey,
+				]),
+				['uuid', 'varchar', 'varchar'],
+			);
+			await repository.query(
+				`UPDATE "bank_transactions" AS t
+				SET "stableIdentityKey" = v."stableIdentityKey",
+					"stableIdentityGroupKey" = v."stableIdentityGroupKey",
+					"updatedAt" = CURRENT_TIMESTAMP
+				FROM (VALUES ${values.sql}) AS v("id", "stableIdentityKey", "stableIdentityGroupKey")
+				WHERE t."id" = v."id"`,
+				values.parameters,
+			);
+		}
 	}
 
 	private async persistTransactions(
@@ -812,6 +837,7 @@ export class BankingSyncService {
 		const transactionByStableIdentityKey = new Map(
 			transactionValues.map((value) => [value.stableIdentityKey, value]),
 		);
+		const staleCategorizationIds: string[] = [];
 		for (const existingTransaction of existingTransactions) {
 			if (!existingTransaction.stableIdentityKey) continue;
 			const currentValue = transactionByStableIdentityKey.get(existingTransaction.stableIdentityKey);
@@ -824,7 +850,11 @@ export class BankingSyncService {
 			) {
 				continue;
 			}
+			staleCategorizationIds.push(existingTransaction.id);
+		}
 
+		for (const ids of chunkArray(staleCategorizationIds, BATCH_WRITE_CHUNK_SIZE)) {
+			// The guards are evaluated per row, so one statement matches the former per-row updates exactly.
 			await repository
 				.createQueryBuilder()
 				.update(BankTransaction)
@@ -833,7 +863,7 @@ export class BankingSyncService {
 					categoryStatus: 'PENDING',
 					categoryUpdatedAt: null,
 				})
-				.where('id = :id', {id: existingTransaction.id})
+				.where('id IN (:...ids)', {ids})
 				.andWhere("categorySource IS DISTINCT FROM 'MANUAL'")
 				.andWhere('categoryStatus IS DISTINCT FROM :completedCategoryStatus', {
 					completedCategoryStatus: 'COMPLETED',

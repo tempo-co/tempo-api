@@ -29,7 +29,7 @@ describe('BankTransactionAmountConversionService', () => {
 		} as unknown as Repository<BankAccount>;
 		const bankTransactionRepository = {
 			find: jest.fn().mockResolvedValue(transactions),
-			update: jest.fn().mockResolvedValue(undefined),
+			query: jest.fn().mockResolvedValue(undefined),
 		} as unknown as Repository<BankTransaction>;
 		const fxRateService = {
 			ensureRates: jest.fn().mockResolvedValue(undefined),
@@ -50,6 +50,15 @@ describe('BankTransactionAmountConversionService', () => {
 		};
 	};
 
+	const expectBatchedConversions = (repository: Repository<BankTransaction>, ...parameters: string[][]) => {
+		expect(repository.query).toHaveBeenCalledTimes(1);
+		const [sql, values] = (repository.query as jest.Mock).mock.calls[0] as [string, unknown[]];
+		expect(sql).toContain('UPDATE "bank_transactions" AS t');
+		expect(sql).toContain('SET "amountInBaseCurrency" = v."amountInBaseCurrency"');
+		expect(sql).toContain('WHERE t."id" = v."id"');
+		expect(values).toEqual(parameters.flat());
+	};
+
 	it('selects and persists the account base currency, then prefers provider data', async () => {
 		const account = {id: 'account-id', baseCurrency: null} as Account;
 		const transaction = {
@@ -66,10 +75,7 @@ describe('BankTransactionAmountConversionService', () => {
 
 		await expect(service.backfill()).resolves.toEqual({scanned: 1, converted: 1});
 		expect(accountRepository.update).toHaveBeenCalledWith({id: 'account-id'}, {baseCurrency: 'EUR'});
-		expect(bankTransactionRepository.update).toHaveBeenCalledWith(
-			{id: 'transaction-id'},
-			{amountInBaseCurrency: '-20'},
-		);
+		expectBatchedConversions(bankTransactionRepository, ['transaction-id', '-20']);
 		expect(fxRateService.ensureRates).not.toHaveBeenCalled();
 	});
 
@@ -93,9 +99,38 @@ describe('BankTransactionAmountConversionService', () => {
 		expect(fxRateService.ensureRates).toHaveBeenCalledWith(new Set(['GBP']), '2026-08-24', '2026-08-24');
 		expect(fxRateService.getRateToEur).toHaveBeenNthCalledWith(1, 'GBP', '2026-08-24');
 		expect(fxRateService.getRateToEur).toHaveBeenNthCalledWith(2, 'EUR', '2026-08-24');
-		expect(bankTransactionRepository.update).toHaveBeenCalledWith(
-			{id: 'transaction-id'},
-			{amountInBaseCurrency: '117.647058823529'},
+		expectBatchedConversions(bankTransactionRepository, ['transaction-id', '117.647058823529']);
+	});
+
+	it('selects only the conversion columns and writes every converted row of an account in one statement', async () => {
+		const account = {id: 'account-id', baseCurrency: 'EUR'} as Account;
+		const createTransaction = (id: string, amount: string, currency: string) =>
+			({
+				id,
+				amount,
+				currency,
+				instructedAmount: null,
+				instructedCurrency: null,
+				transactionDate: null,
+				bookingDate: null,
+				bankAccount: {bankConnection: {account}},
+			}) as BankTransaction;
+		const {bankTransactionRepository, service} = createService([
+			createTransaction('first-id', '10', 'EUR'),
+			createTransaction('undated-id', '5', 'GBP'),
+			createTransaction('second-id', '-2.5', 'EUR'),
+		]);
+
+		await expect(service.backfill()).resolves.toEqual({scanned: 3, converted: 2});
+		expect(bankTransactionRepository.find).toHaveBeenCalledWith(
+			expect.objectContaining({
+				select: expect.objectContaining({
+					bankAccount: {id: true, bankConnection: {id: true, account: {id: true, baseCurrency: true}}},
+				}),
+			}),
 		);
+		expectBatchedConversions(bankTransactionRepository, ['first-id', '10'], ['second-id', '-2.5']);
+		const [sql] = (bankTransactionRepository.query as jest.Mock).mock.calls[0] as [string];
+		expect(sql).toContain('VALUES ($1::uuid, $2::numeric), ($3::uuid, $4::numeric)');
 	});
 });

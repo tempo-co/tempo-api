@@ -77,3 +77,32 @@ export function truncate(value: string | null | undefined, length: number): stri
 export function safeErrorName(error: unknown): string {
 	return error instanceof Error && error.name.length > 0 ? error.name : 'UnknownError';
 }
+
+export const BATCH_WRITE_CHUNK_SIZE = 1000;
+
+export function chunkArray<T>(items: readonly T[], size: number): T[][] {
+	const chunks: T[][] = [];
+	for (let index = 0; index < items.length; index += size) chunks.push(items.slice(index, index + size));
+	return chunks;
+}
+
+/**
+ * Builds a parameterized Postgres `VALUES` list, e.g. `($1::uuid, $2::varchar), ($3::uuid, $4::varchar)`.
+ * Every placeholder carries its column cast so the derived table has explicit types.
+ */
+export function buildPostgresValuesList(
+	rows: readonly (readonly unknown[])[],
+	casts: readonly string[],
+): {sql: string; parameters: unknown[]} {
+	const parameters: unknown[] = [];
+	const sql = rows
+		.map((row) => {
+			const placeholders = casts.map((cast, column) => {
+				parameters.push(row[column]);
+				return `$${parameters.length}::${cast}`;
+			});
+			return `(${placeholders.join(', ')})`;
+		})
+		.join(', ');
+	return {sql, parameters};
+}

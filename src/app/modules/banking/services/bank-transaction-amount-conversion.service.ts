@@ -6,6 +6,7 @@ import {Account} from '@modules/account/account.entity';
 
 import {BankAccount} from '../bank-account.entity';
 import {BankTransaction} from '../bank-transaction.entity';
+import {BATCH_WRITE_CHUNK_SIZE, buildPostgresValuesList, chunkArray} from '../banking.utils';
 import {
 	convertUsingHistoricalRates,
 	convertUsingProviderAmount,
@@ -37,6 +38,16 @@ export class BankTransactionAmountConversionService {
 
 	async backfill(): Promise<{scanned: number; converted: number}> {
 		const transactions = await this.bankTransactionRepository.find({
+			select: {
+				id: true,
+				amount: true,
+				currency: true,
+				instructedAmount: true,
+				instructedCurrency: true,
+				transactionDate: true,
+				bookingDate: true,
+				bankAccount: {id: true, bankConnection: {id: true, account: {id: true, baseCurrency: true}}},
+			},
 			where: {amountInBaseCurrency: IsNull()},
 			relations: {bankAccount: {bankConnection: {account: true}}},
 			order: {createdAt: 'ASC'},
@@ -71,16 +82,32 @@ export class BankTransactionAmountConversionService {
 			}
 
 			const rateCache = new Map<string, number | null>();
+			const conversions: [id: string, amountInBaseCurrency: string][] = [];
 			for (const transaction of accountTransactions) {
 				const amountInBaseCurrency = await this.convertTransaction(transaction, baseCurrency, rateCache);
 				if (amountInBaseCurrency === null) continue;
-				await this.bankTransactionRepository.update({id: transaction.id}, {amountInBaseCurrency});
-				converted += 1;
+				conversions.push([transaction.id, amountInBaseCurrency]);
 			}
+			await this.saveConversions(conversions);
+			converted += conversions.length;
 		}
 
 		this.logger.debug(`Converted ${converted} of ${transactions.length} bank transaction amounts.`);
 		return {scanned: transactions.length, converted};
+	}
+
+	private async saveConversions(conversions: readonly [id: string, amountInBaseCurrency: string][]): Promise<void> {
+		for (const chunk of chunkArray(conversions, BATCH_WRITE_CHUNK_SIZE)) {
+			const values = buildPostgresValuesList(chunk, ['uuid', 'numeric']);
+			await this.bankTransactionRepository.query(
+				`UPDATE "bank_transactions" AS t
+				SET "amountInBaseCurrency" = v."amountInBaseCurrency",
+					"updatedAt" = CURRENT_TIMESTAMP
+				FROM (VALUES ${values.sql}) AS v("id", "amountInBaseCurrency")
+				WHERE t."id" = v."id"`,
+				values.parameters,
+			);
+		}
 	}
 
 	private async convertTransaction(

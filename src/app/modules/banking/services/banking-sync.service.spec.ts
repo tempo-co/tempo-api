@@ -647,7 +647,7 @@ describe('BankingSyncService transaction event persistence', () => {
 		const repositoryFind = jest.fn().mockResolvedValueOnce([incompleteTransaction]).mockResolvedValueOnce([]);
 		const repository = {
 			find: repositoryFind,
-			save: jest.fn().mockResolvedValue(undefined),
+			query: jest.fn().mockResolvedValue(undefined),
 		} as unknown as Repository<BankTransaction>;
 
 		await (
@@ -665,12 +665,15 @@ describe('BankingSyncService transaction event persistence', () => {
 				]),
 			}),
 		);
-		const [savedIdentity] = (repository.save as jest.Mock).mock.calls[0][0] as Array<{
-			stableIdentityKey: string;
-			stableIdentityGroupKey: string;
-		}>;
-		expect(savedIdentity.stableIdentityKey).not.toBe('');
-		expect(savedIdentity.stableIdentityGroupKey).not.toBe('');
+		expect(repository.query).toHaveBeenCalledTimes(1);
+		const [sql, parameters] = (repository.query as jest.Mock).mock.calls[0] as [string, string[]];
+		expect(sql).toContain('UPDATE "bank_transactions" AS t');
+		expect(sql).toContain('FROM (VALUES ($1::uuid, $2::varchar, $3::varchar))');
+		expect(sql).toContain('WHERE t."id" = v."id"');
+		const [id, stableIdentityKey, stableIdentityGroupKey] = parameters;
+		expect(id).toBe('existing-transaction-id');
+		expect(stableIdentityKey).not.toBe('');
+		expect(stableIdentityGroupKey).not.toBe('');
 	});
 
 	it('uses the stable entry reference instead of a changing provider transaction ID', () => {
@@ -1196,6 +1199,64 @@ describe('BankingSyncService transaction event persistence', () => {
 		expect(eventUpdateQueryBuilder.set).toHaveBeenCalledWith(
 			expect.objectContaining({categoryStatus: 'NOT_APPLICABLE', categoryInputHash: null}),
 		);
+		expect(repository.createQueryBuilder).toHaveBeenCalledTimes(3);
+	});
+
+	it('resets stale categorization for all qualifying existing rows in one guarded update', async () => {
+		const service = createServiceForTransactionValues();
+		const queryBuilder = {
+			insert: jest.fn().mockReturnThis(),
+			into: jest.fn().mockReturnThis(),
+			values: jest.fn().mockReturnThis(),
+			orIgnore: jest.fn().mockReturnThis(),
+			orUpdate: jest.fn().mockReturnThis(),
+			returning: jest.fn().mockReturnThis(),
+			update: jest.fn().mockReturnThis(),
+			set: jest.fn().mockReturnThis(),
+			where: jest.fn().mockReturnThis(),
+			andWhere: jest.fn().mockReturnThis(),
+			execute: jest.fn().mockResolvedValue({raw: []}),
+		};
+		const bankAccount = {id: 'bank-account-id', currency: 'EUR'} as BankAccount;
+		const transactions = ['Synthetic grocer', 'Synthetic cafe', 'Synthetic bakery'].map((description, index) => ({
+			providerTransactionId: `provider-transaction-${index}`,
+			amount: `${index + 1}.00`,
+			currency: 'EUR',
+			creditDebitIndicator: 'DBIT',
+			bookingDate: '2026-09-01',
+			description,
+		}));
+		const existingTransactions = transactions.map((transaction, index) => ({
+			...toBankTransactionValues(service, transaction, bankAccount as unknown as Record<string, unknown>),
+			id: `existing-transaction-${index}`,
+			categoryInputHash: 'stale-input-hash',
+			categorySource: null,
+			categoryStatus: index === 2 ? 'COMPLETED' : 'FAILED',
+		}));
+		const repositoryFind = jest
+			.fn()
+			.mockResolvedValueOnce(existingTransactions)
+			.mockResolvedValueOnce(existingTransactions.map(({id}) => ({id})));
+		const repository = {
+			find: repositoryFind,
+			createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
+		} as unknown as Repository<BankTransaction>;
+
+		await (
+			service as unknown as {
+				persistTransactions: (...args: unknown[]) => Promise<unknown>;
+			}
+		).persistTransactions(repository, bankAccount, transactions, 'Synthetic Bank', 'enable-banking');
+
+		expect(queryBuilder.update).toHaveBeenCalledTimes(1);
+		expect(queryBuilder.set).toHaveBeenCalledWith(
+			expect.objectContaining({categoryStatus: 'PENDING', categoryUpdatedAt: null, category: null}),
+		);
+		expect(queryBuilder.where).toHaveBeenCalledWith('id IN (:...ids)', {
+			ids: ['existing-transaction-0', 'existing-transaction-1'],
+		});
+		expect(queryBuilder.andWhere).toHaveBeenCalledWith("categorySource IS DISTINCT FROM 'MANUAL'");
+		expect(queryBuilder.andWhere).toHaveBeenCalledWith('"financialEventType" IS NULL');
 		expect(repository.createQueryBuilder).toHaveBeenCalledTimes(3);
 	});
 
