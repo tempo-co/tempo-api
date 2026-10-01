@@ -223,18 +223,28 @@ except (OSError, json.JSONDecodeError) as error:
 
 if not isinstance(intent, dict):
     raise SystemExit('intent must be a JSON object')
-if set(intent) != {'schema_version', 'repository', 'component', 'environment', 'pr_number', 'head_sha', 'image', 'image_tag', 'workflow'}:
-    raise SystemExit('intent contains unexpected or missing top-level fields')
-if intent['schema_version'] != 1:
+version = intent.get('schema_version')
+if type(version) is not int or version not in (1, 2):
     raise SystemExit('unsupported intent schema version')
+expected_fields = {'schema_version', 'repository', 'component', 'environment', 'pr_number', 'head_sha', 'image', 'image_tag', 'workflow'}
+if version == 2:
+    expected_fields.add('source')
+if set(intent) != expected_fields:
+    raise SystemExit('intent contains unexpected or missing top-level fields')
+source = intent.get('source', 'pr')
+if source not in ('pr', 'main'):
+    raise SystemExit('intent source is invalid')
 if intent['repository'] != expected_repository:
     raise SystemExit('intent repository does not match the requested repository')
 if intent['component'] != expected_component:
     raise SystemExit('intent component does not match the requested component')
 if intent['environment'] != 'staging':
     raise SystemExit('intent environment is not staging')
-if not isinstance(intent['pr_number'], int) or isinstance(intent['pr_number'], bool) or intent['pr_number'] <= 0:
-    raise SystemExit('intent PR number is invalid')
+if source == 'pr':
+    if type(intent['pr_number']) is not int or intent['pr_number'] <= 0:
+        raise SystemExit('intent PR number is invalid')
+elif intent['pr_number'] is not None:
+    raise SystemExit('main intent must not contain a PR number')
 head_sha = intent['head_sha']
 if not isinstance(head_sha, str) or not re.fullmatch(r'[0-9a-f]{40}', head_sha):
     raise SystemExit('intent head SHA is invalid')
@@ -260,6 +270,8 @@ if not isinstance(workflow['run_id'], int) or isinstance(workflow['run_id'], boo
     raise SystemExit('intent workflow run ID is invalid')
 if not isinstance(workflow['dispatch_sha'], str) or not re.fullmatch(r'[0-9a-f]{40}', workflow['dispatch_sha']):
     raise SystemExit('intent dispatch workflow SHA is invalid')
+if source == 'main' and head_sha != workflow['dispatch_sha']:
+    raise SystemExit('main intent head must match the dispatch SHA')
 image_tag = intent['image_tag']
 expected_image_tag = f'{repository}:staging-{workflow["run_id"]}-{head_sha}'
 if image_tag != expected_image_tag:

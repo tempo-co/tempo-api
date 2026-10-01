@@ -29,16 +29,33 @@ wrapper for the existing production installation path.
 
 ## Promotion and polling
 
-A protected manual `workflow_dispatch` on the default branch accepts a
-same-repository PR number. It validates the exact PR head, base branch, trusted
-CI workflow revision, required terminal-success checks, and non-draft/merged
-state. It builds that exact head without registry write credentials, then an
-approval-gated job publishes immutable GHCR digests and creates a successful
-GitHub deployment record whose payload is the staging deployment intent.
+A protected manual `workflow_dispatch` must run from `main`. In Actions, open
+**Promote staging**, choose the `main` branch, and select a source:
+
+- `pr` (default): supply a positive PR number from this repository. Validation
+  keeps the exact PR head, base-main, CI-file parity, non-draft, open-or-merged,
+  and required successful check restrictions.
+- `main`: leave the PR number empty (zero is also accepted). Validation selects
+  the dispatch snapshot `GITHUB_SHA`, not a later moving branch head, and requires
+  that exact commit's latest trusted `push` CI run on `main` and the same required
+  successful checks. A nonzero PR number is rejected.
+
+The workflow builds the selected SHA without registry write credentials, then an
+approval-gated job publishes an immutable GHCR digest and creates a successful
+GitHub deployment record. New intents use schema v2 with `source: pr/main` and a
+positive integer PR number or `null` for main. Main intent head and dispatch SHAs
+must match; the host also continues to accept strict legacy v1 PR intents.
+
+**Activation gate:** an old installed host validator cannot consume schema v2.
+Separately review and authorize installation of the updated API
+`ops/tempo-deploy.sh` engine before activating either repository's new promotion
+workflow. A repository change alone does not update the installed engine. Host
+installation, workflow dispatch, live deployment, and the deployment-triggered
+production-backup refresh are separate authorized operations.
 
 The host poller reads only successful deployment records for the exact repository
 and component. It validates the payload schema, repository, component,
-environment, PR head SHA, immutable image digest, trusted workflow path/ref/event,
+environment, selected head SHA, immutable image digest, trusted workflow path/ref/event,
 workflow run ID, and successful workflow/check evidence before pulling anything.
 It uses the isolated rootless Docker socket, recreates only API/web, verifies
 routes and stateful-container identity, persists the approved image references

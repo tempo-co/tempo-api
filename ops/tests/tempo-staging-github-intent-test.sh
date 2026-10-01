@@ -374,6 +374,37 @@ assert_no_deployment_actions
 assert_image_reference "$STALE_API_TAG" absent
 assert_image_reference "$STALE_API_IMAGE" absent
 
+# Exercise v2 through the real GitHub reader and successful-run provenance gate.
+DISPATCH_API_SHA=$API_SHA
+export DISPATCH_API_SHA
+python3 - "$API_INTENT" "$WEB_INTENT" <<'PY'
+import json
+from pathlib import Path
+import sys
+for filename, source in zip(sys.argv[1:], ['main', 'pr']):
+    path = Path(filename)
+    intent = json.loads(path.read_text())
+    intent.update(schema_version=2, source=source)
+    if source == 'main':
+        intent['pr_number'] = None
+        intent['workflow']['dispatch_sha'] = intent['head_sha']
+    path.write_text(json.dumps(intent))
+PY
+: > "$DOCKER_LOG"
+bash "$SCRIPT" --target staging
+assert_no_deployment_actions
+# A successful promotion run for another dispatch SHA must still be rejected.
+DISPATCH_API_SHA=$(printf 'c%.0s' {1..40})
+export DISPATCH_API_SHA
+: > "$DOCKER_LOG"
+if bash "$SCRIPT" --target staging >/dev/null 2>&1; then
+    printf 'FAIL: main intent with mismatched promotion-run SHA was accepted\n' >&2
+    exit 1
+fi
+assert_no_docker_mutation
+DISPATCH_API_SHA=$API_SHA
+export DISPATCH_API_SHA
+
 chmod 644 "$HOME_FIXTURE/.config/tempo-staging/staging.env"
 : > "$DOCKER_LOG"
 if bash "$SCRIPT" --target staging >/dev/null 2>&1; then

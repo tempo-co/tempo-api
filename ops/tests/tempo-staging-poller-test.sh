@@ -139,6 +139,62 @@ run_systemd_target_test() {
 
 run_target_config_test
 run_intent_validation_test
+python3 - "$intent_file" "$TMP_DIR/main.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+intent = json.loads(Path(sys.argv[1]).read_text())
+intent.update(schema_version=2, source='main', pr_number=None)
+intent['workflow']['dispatch_sha'] = intent['head_sha']
+Path(sys.argv[2]).write_text(json.dumps(intent))
+PY
+output=$(bash "$SCRIPT" --validate-intent "$TMP_DIR/main.json" tempo-co/tempo-api api)
+assert_contains "$output" "head_sha=$SHA"
+python3 - "$SCRIPT" "$intent_file" "$TMP_DIR/main.json" <<'PY'
+import copy
+import json
+from pathlib import Path
+import subprocess
+import sys
+
+script, legacy_path, main_path = sys.argv[1:]
+legacy = json.loads(Path(legacy_path).read_text())
+main = json.loads(Path(main_path).read_text())
+pr = dict(legacy, schema_version=2, source='pr')
+path = Path(main_path).with_name('variant.json')
+def validate(intent, expected):
+    path.write_text(json.dumps(intent))
+    result = subprocess.run(['bash', script, '--validate-intent', str(path), 'tempo-co/tempo-api', 'api'], capture_output=True)
+    assert (result.returncode == 0) == expected, (intent, result.stderr.decode())
+for valid in [legacy, main, pr]:
+    validate(valid, True)
+for base in [legacy, main, pr]:
+    for field, value in [('extra', True), ('schema_version', True), ('schema_version', 2.0),
+                         ('schema_version', 3), ('repository', 'other/repo'), ('environment', 'production')]:
+        invalid = copy.deepcopy(base)
+        invalid[field] = value
+        validate(invalid, False)
+    for field, value in [('extra', True), ('ref', 'refs/heads/feature'), ('event', 'push'),
+                         ('path', 'untrusted.yml'), ('run_id', True), ('dispatch_sha', 'invalid')]:
+        invalid = copy.deepcopy(base)
+        invalid['workflow'][field] = value
+        validate(invalid, False)
+for base in [legacy, pr]:
+    for value in [None, True, 0, -1, '123', 1.5]:
+        validate(dict(base, pr_number=value), False)
+for value in [123, 0, True, 'null']:
+    validate(dict(main, pr_number=value), False)
+invalid = copy.deepcopy(main)
+invalid['workflow']['dispatch_sha'] = 'd' * 40
+validate(invalid, False)
+for value in [None, '', 'unknown', True]:
+    validate(dict(main, source=value), False)
+validate(dict(legacy, source='pr'), False)
+invalid = dict(pr)
+del invalid['source']
+validate(invalid, False)
+print('PASS: strict legacy v1 and source-specific v2 intent validation')
+PY
 run_systemd_target_test
 run_systemd_isolation_test
 printf 'PASS: tempo staging poller target and intent contracts\n'
