@@ -191,35 +191,40 @@ export class BankingService {
 			.orderBy('connection.createdAt', 'DESC')
 			.getMany();
 
-		return Promise.all(
-			connections.map(async (connection) => {
-				const bankAccounts = await this.bankAccountRepository.find({
-					where: {bankConnection: {id: connection.id}},
-					order: {createdAt: 'ASC'},
-				});
-				const accountsWithBalances = await Promise.all(
-					bankAccounts.map(async (bankAccount) => {
-						const latestBalances = await this.findLatestBalances(bankAccount.id);
-						return [bankAccount, latestBalances] as const;
-					}),
-				);
-				return {
-					id: connection.id,
-					provider: connection.provider,
-					aspspName: connection.aspspName,
-					aspspCountry: connection.aspspCountry,
-					status: connection.status,
-					consentValidUntil: connection.consentValidUntil,
-					lastSyncedAt: connection.lastSyncedAt,
-					lastSyncError: connection.lastSyncError,
-					nextSyncAt: connection.nextSyncAt,
-					syncStatus: connection.syncStatus,
-					bankAccounts: accountsWithBalances.map(([bankAccount, latestBalances]) =>
-						this.toBankAccountResponse(bankAccount, latestBalances),
-					),
-				};
-			}),
-		);
+		if (connections.length === 0) {
+			return [];
+		}
+
+		const bankAccounts = await this.bankAccountRepository
+			.createQueryBuilder('bankAccount')
+			.innerJoin('bankAccount.bankConnection', 'bankConnection')
+			.addSelect('bankConnection.id')
+			.where('bankConnection.id IN (:...connectionIds)', {connectionIds: connections.map(({id}) => id)})
+			.orderBy('bankAccount.createdAt', 'ASC')
+			.getMany();
+		const latestBalancesByAccountId = await this.findLatestBalancesByAccountId(bankAccounts.map(({id}) => id));
+		const bankAccountsByConnectionId = new Map<string, BankAccount[]>();
+		for (const bankAccount of bankAccounts) {
+			const connectionAccounts = bankAccountsByConnectionId.get(bankAccount.bankConnection.id) ?? [];
+			connectionAccounts.push(bankAccount);
+			bankAccountsByConnectionId.set(bankAccount.bankConnection.id, connectionAccounts);
+		}
+
+		return connections.map((connection) => ({
+			id: connection.id,
+			provider: connection.provider,
+			aspspName: connection.aspspName,
+			aspspCountry: connection.aspspCountry,
+			status: connection.status,
+			consentValidUntil: connection.consentValidUntil,
+			lastSyncedAt: connection.lastSyncedAt,
+			lastSyncError: connection.lastSyncError,
+			nextSyncAt: connection.nextSyncAt,
+			syncStatus: connection.syncStatus,
+			bankAccounts: (bankAccountsByConnectionId.get(connection.id) ?? []).map((bankAccount) =>
+				this.toBankAccountResponse(bankAccount, latestBalancesByAccountId.get(bankAccount.id) ?? []),
+			),
+		}));
 	}
 
 	async removeConnection(
@@ -600,15 +605,28 @@ export class BankingService {
 		};
 	}
 
-	private async findLatestBalances(bankAccountId: string): Promise<BankAccountBalance[]> {
-		return this.bankAccountBalanceRepository
+	private async findLatestBalancesByAccountId(bankAccountIds: string[]): Promise<Map<string, BankAccountBalance[]>> {
+		const latestBalancesByAccountId = new Map<string, BankAccountBalance[]>();
+		if (bankAccountIds.length === 0) {
+			return latestBalancesByAccountId;
+		}
+
+		const latestBalances = await this.bankAccountBalanceRepository
 			.createQueryBuilder('balance')
-			.distinctOn(['balance.balanceType'])
-			.where('balance.bankAccountId = :bankAccountId', {bankAccountId})
-			.orderBy('balance.balanceType', 'ASC')
+			.distinctOn(['balance.bankAccountId', 'balance.balanceType'])
+			.where('balance.bankAccountId IN (:...bankAccountIds)', {bankAccountIds})
+			.orderBy('balance.bankAccountId', 'ASC')
+			.addOrderBy('balance.balanceType', 'ASC')
 			.addOrderBy('balance.observedAt', 'DESC')
 			.addOrderBy('balance.id', 'DESC')
 			.getMany();
+		for (const balance of latestBalances) {
+			const accountBalances = latestBalancesByAccountId.get(balance.bankAccountId) ?? [];
+			accountBalances.push(balance);
+			latestBalancesByAccountId.set(balance.bankAccountId, accountBalances);
+		}
+
+		return latestBalancesByAccountId;
 	}
 
 	private toBankAccountResponse(account: BankAccount, latestBalances: BankAccountBalance[]): BankAccountResponseDto {
