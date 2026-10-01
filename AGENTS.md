@@ -1,6 +1,6 @@
 # Tempo API Agent Instructions
 
-Tempo API is a NestJS backend for personal-finance accounts, bank connections, bank accounts, bank statements, transactions, spending categorization, authentication, and file uploads. It runs on Node.js 22.x and uses PostgreSQL, Redis/BullMQ, Mailpit, and optional Enable Banking and OpenAI-backed integrations.
+Tempo API is a NestJS backend for personal-finance accounts, authentication, Enable Banking bank connections, synchronized bank accounts, balances, and transactions, base-currency conversion, and spending categorization. It runs on Node.js 22.x and uses PostgreSQL, Redis/BullMQ, Mailpit, and optional Enable Banking and OpenAI-backed integrations.
 
 ## Product direction and workflow
 
@@ -17,7 +17,8 @@ Tempo API is a NestJS backend for personal-finance accounts, bank connections, b
 - Development Swagger is at `http://localhost:3000/docs` when `PORT=3000`.
 - Configuration is validated by `src/app/core/config/config.schema.ts`. `NODE_ENV` selects `.env.development`, `.env.test`, or `.env.production`; the corresponding `.local` file takes precedence for Nest configuration.
 - `src/app/core/config/config.schema.ts` is the source of truth for required and optional environment variables. Use `.env.development` plus `.env.development.local` for local secrets, and keep credentials out of Git.
-- Optional AI categorization configuration is `AI_CATEGORIZATION_ENABLED` (default `false`), `AI_CATEGORIZATION_PROVIDER` (default `openai`), and `AI_CATEGORIZATION_MODEL` (default `gpt-6-luna`). `OPENAI_API_KEY` is required only when OpenAI categorization is enabled; keep it in the deployment secret/environment path, never in Git.
+- Optional AI categorization configuration is `AI_CATEGORIZATION_ENABLED` (default `false`), `AI_CATEGORIZATION_PROVIDER` (default `openai`), and `AI_CATEGORIZATION_MODEL` (default `gpt-6-luna`). `AI_CATEGORIZATION_WEB_SEARCH_ENABLED` (default `false`) enables the web-search fallback for transactions the standard pass leaves as `OTHER` or `NEEDS_REVIEW`. `OPENAI_API_KEY` is required only when OpenAI categorization is enabled; keep it in the deployment secret/environment path, never in Git.
+- Banking configuration: `BANKING_INTEGRATION_ENABLED` (default `true`) gates the Enable Banking integration. When enabled, configure exactly one of `ENABLE_BANKING_PRIVATE_KEY_B64` or `ENABLE_BANKING_PRIVATE_KEY_PATH` alongside the other `ENABLE_BANKING_*` values and `BANKING_SESSION_ENCRYPTION_KEY_B64`. Background sync timing uses `BANKING_SYNC_INTERVAL`, `BANKING_SYNC_DISPATCH_INTERVAL`, and `BANKING_SYNC_RUNNING_TIMEOUT`.
 
 ## Build, lint, format, and test
 
@@ -47,13 +48,13 @@ Reuse these instead of re-creating setup inline:
 ## Layout and conventions
 
 - `src/main.ts` bootstraps the app; `src/app.module.ts` imports global infrastructure from `src/app/core` and features from `src/app/modules`.
-- Core modules cover config, database, email, health, queues, rate limiting, Redis, and sessions. Feature modules include account, auth, bank-account, bank-statement, currency, file, and transaction.
-- Feature controllers and most DTOs live under `api/` (or `api/dtos/`); entities and services live at the feature root. Parser, mapper, and categorizer implementations are grouped in nested subdirectories.
+- Core modules cover config, database, email, health, pagination, queues, rate limiting, Redis, and sessions. Feature modules are `account`, `auth`, and `banking`.
+- Feature controllers and most DTOs live under `api/` (or `api/dtos/`); entities and the main feature service live at the feature root. In `banking`, supporting services, processors, and the Enable Banking client live under `services/`, and AI categorization lives under `categorization/` with provider implementations in `categorization/providers/`. Shared banking helpers belong in `banking.utils.ts`.
 - Use the observed aliases `@core/*` and `@modules/*` for cross-feature imports; use relative imports inside a feature. The import sorter groups third-party imports, aliases, then relative imports with blank-line separation.
 - TypeScript uses tabs, 4-space tab width, single quotes, trailing commas, LF endings, and a 120-column print width. Prettier also sorts imports and specifiers.
 - DTOs use `class-validator`; the app applies `ValidationPipe({whitelist: true, transform: true})`. Entities use TypeORM decorators and `class-transformer` `@Expose`/`@Exclude` for response serialization.
 - Services use injected TypeORM repositories and Nest HTTP exceptions (`NotFoundException`, `ConflictException`, `UnauthorizedException`, `BadRequestException`, or `UnprocessableEntityException`) for validated failure paths. Account-owned queries include the account ID.
-- BullMQ processors handle background bank-statement and email work. Add or change queue behavior in the relevant `core/queue` constants/module and feature processor/service together.
+- BullMQ processors handle background work: email delivery, bank connection sync, transaction categorization, and base-currency amount conversion. Add or change queue behavior in the relevant `core/queue` constants/module and feature processor/service together.
 - For external integrations, prefer E2E/integration coverage against the local Docker services over mocks.
 
 ## Pitfalls
