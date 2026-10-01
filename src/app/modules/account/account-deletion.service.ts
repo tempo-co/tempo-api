@@ -60,9 +60,9 @@ export class AccountDeletionService {
 	}
 
 	private async removeOutstandingTokens(accountId: Account['id'], email: Account['email']): Promise<void> {
-		for (const {prefix, owns} of this.ownershipMatchers(accountId, email)) {
-			await this.deleteOwnedKeys(`${prefix}:*`, owns);
-		}
+		await Promise.all(
+			this.ownershipMatchers(accountId, email).map(({prefix, owns}) => this.deleteOwnedKeys(`${prefix}:*`, owns)),
+		);
 	}
 
 	private ownershipMatchers(accountId: Account['id'], email: Account['email']) {

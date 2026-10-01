@@ -108,7 +108,7 @@ export class EmailVerifierService {
 		}
 
 		await this.accountService.validateEmailIsUnique(newEmail);
-		await this.accountService.update(account.id, {email: newEmail});
+		await this.accountService.updateFields(account.id, {email: newEmail});
 
 		await this._removeSecret(token);
 		return {message: EMAIL_CHANGE_SUCCESS};

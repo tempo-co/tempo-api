@@ -55,7 +55,7 @@ export class AuthService {
 		await this.accountService.verifyPassword(account.password, dto.currentPassword);
 
 		const hash = await this.accountService.hashPassword(dto.newPassword);
-		await this.accountService.update(account.id, {password: hash});
+		await this.accountService.updateFields(account.id, {password: hash});
 		await this.sessionService.revokeAllOtherSessions(account.id, currentSessionId);
 		return {message: PASSWORD_CHANGE_SUCCESS};
 	}

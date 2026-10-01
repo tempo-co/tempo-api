@@ -65,7 +65,7 @@ export class PasswordResetService {
 		await this._assertPasswordIsNew(accountId, password, key);
 
 		const hash = await this.accountService.hashPassword(password);
-		await this.accountService.update(accountId, {password: hash});
+		await this.accountService.updateFields(accountId, {password: hash});
 
 		await this.redisClient.del(key);
 		await this.sessionService.revokeAllOtherSessions(accountId, null);

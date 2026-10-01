@@ -60,8 +60,9 @@ export class BankingAuthorizationStateService {
 
 	async setAuthorizationId(state: string, authorizationId: string): Promise<void> {
 		const key = this.getKey(state);
-		const currentValue = await this.runRedisOperation(() => this.redis.get(key));
-		const ttl = await this.runRedisOperation(() => this.redis.ttl(key));
+		const [currentValue, ttl] = await this.runRedisOperation(() =>
+			Promise.all([this.redis.get(key), this.redis.ttl(key)]),
+		);
 
 		if (!currentValue || ttl <= 0) {
 			throw new BankingAuthorizationStateError('state_expired');

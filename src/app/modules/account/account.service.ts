@@ -51,7 +51,12 @@ export class AccountService {
 	}
 
 	async update(id: Account['id'], updates: Partial<Account>) {
-		await this.accountRepository.update({id}, updates);
+		await this.updateFields(id, updates);
 		return this.findById(id);
+	}
+
+	/** Like `update`, for callers that don't need the updated account back. */
+	async updateFields(id: Account['id'], updates: Partial<Account>): Promise<void> {
+		await this.accountRepository.update({id}, updates);
 	}
 }

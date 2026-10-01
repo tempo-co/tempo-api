@@ -276,39 +276,41 @@ export class BankTransactionCategorizationService {
 
 		for (const result of webResults) standardResultById.set(result.correlationId, result);
 		const webResultIds = new Set(webResults.map(({correlationId}) => correlationId));
-		for (const claimed of activeBatchAfterStandardCategorization) {
-			const result = standardResultById.get(claimed.input.correlationId);
-			if (!result) continue;
-			const promptVersion = webResultIds.has(claimed.input.correlationId)
-				? BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_PROMPT_VERSION
-				: skippedWebSearchIds.has(claimed.input.correlationId)
-					? BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_SKIPPED_PROMPT_VERSION
-					: failedWebSearchIds.has(claimed.input.correlationId)
-						? BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_FAILED_PROMPT_VERSION
-						: BANK_TRANSACTION_CATEGORIZATION_PROMPT_VERSION;
-			const completionValues = {
-				category: result.category,
-				categoryStatus: 'COMPLETED',
-				categorySource: 'AI',
-				categoryConfidence: String(result.confidence),
-				categoryAppliedInputHash: claimed.inputHash,
-				categoryProvider: this.configurationService.get('AI_CATEGORIZATION_PROVIDER'),
-				categoryModel: this.configurationService.get('AI_CATEGORIZATION_MODEL'),
-				categoryPromptVersion: promptVersion,
-				categorySearchTrace: result.searchTrace ?? null,
-				categoryLastError: null,
-			};
-			const applied = await this.updateCategorizationWithGuard(
-				claimed.transaction.id,
-				claimed.inputHash,
-				{
-					...completionValues,
-					categoryUpdatedAt: new Date(),
-				},
-				'PROCESSING',
-			);
-			if (applied) this.applyLocalUpdate(claimed.transaction, completionValues);
-		}
+		await Promise.all(
+			activeBatchAfterStandardCategorization.map(async (claimed) => {
+				const result = standardResultById.get(claimed.input.correlationId);
+				if (!result) return;
+				const promptVersion = webResultIds.has(claimed.input.correlationId)
+					? BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_PROMPT_VERSION
+					: skippedWebSearchIds.has(claimed.input.correlationId)
+						? BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_SKIPPED_PROMPT_VERSION
+						: failedWebSearchIds.has(claimed.input.correlationId)
+							? BANK_TRANSACTION_CATEGORIZATION_WEB_SEARCH_FAILED_PROMPT_VERSION
+							: BANK_TRANSACTION_CATEGORIZATION_PROMPT_VERSION;
+				const completionValues = {
+					category: result.category,
+					categoryStatus: 'COMPLETED',
+					categorySource: 'AI',
+					categoryConfidence: String(result.confidence),
+					categoryAppliedInputHash: claimed.inputHash,
+					categoryProvider: this.configurationService.get('AI_CATEGORIZATION_PROVIDER'),
+					categoryModel: this.configurationService.get('AI_CATEGORIZATION_MODEL'),
+					categoryPromptVersion: promptVersion,
+					categorySearchTrace: result.searchTrace ?? null,
+					categoryLastError: null,
+				};
+				const applied = await this.updateCategorizationWithGuard(
+					claimed.transaction.id,
+					claimed.inputHash,
+					{
+						...completionValues,
+						categoryUpdatedAt: new Date(),
+					},
+					'PROCESSING',
+				);
+				if (applied) this.applyLocalUpdate(claimed.transaction, completionValues);
+			}),
+		);
 	}
 
 	private async refreshInputHashAndResetStaleClassification(
