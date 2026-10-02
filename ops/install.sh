@@ -37,15 +37,16 @@ case ${1:-} in
         # Production runs exactly what is on main; fetch first as the normal user.
         [[ -z $(git status --porcelain) ]] || { echo 'checkout has uncommitted changes' >&2; exit 1; }
         [[ $VERSION == "$(git rev-parse origin/main)" ]] || { echo 'checkout is not origin/main; run git fetch and check out origin/main' >&2; exit 1; }
+        rendered=$(mktemp)
+        trap 'rm -f "$rendered"' EXIT
         install_script /usr/local/lib/tempo-deploy
         copy 644 "$REPO/docker-compose.production.yml" /etc/tempo/production.compose.yml
         for unit in tempo-deploy-production.service tempo-deploy-production.timer tempo-backup.service tempo-backup.timer; do
-            sed -e "s|@USER@|$SUDO_USER|g" -e "s|@HOME@|$home|g" "$REPO/ops/systemd/$unit" |
-                install -m 644 /dev/stdin "/etc/systemd/system/$unit"
-            echo "installed /etc/systemd/system/$unit"
+            # Rendered to a temp file: uutils `install` cannot overwrite from /dev/stdin.
+            sed -e "s|@USER@|$SUDO_USER|g" -e "s|@HOME@|$home|g" "$REPO/ops/systemd/$unit" >"$rendered"
+            copy 644 "$rendered" "/etc/systemd/system/$unit"
         done
         systemctl daemon-reload
-        echo 'first install only: systemctl disable --now tempo-production-deploy@<user>.timer && systemctl enable --now tempo-deploy-production.timer'
         ;;
     *)
         echo "usage: $0 <staging|production>" >&2

@@ -40,7 +40,7 @@ COPY --from=runtime-dependencies --chown=node:node /usr/src/app/ ./
 COPY --chown=node:node .env.test .env.test
 COPY --chown=node:node .env.development .env.development
 COPY --from=runtime-dependencies /tmp/dev-dependencies.json /tmp/dev-dependencies.json
-COPY ops/tests/tempo-runtime-image-smoke.js /tmp/runtime-image-smoke.js
+COPY ops/runtime-image-smoke.js /tmp/runtime-image-smoke.js
 RUN node /tmp/runtime-image-smoke.js \
     && rm /tmp/dev-dependencies.json /tmp/runtime-image-smoke.js
 

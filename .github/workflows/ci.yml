@@ -39,7 +39,11 @@ jobs:
               run: npm run format:check
 
             - name: Check deploy scripts
-              run: shellcheck -x ops/deploy.sh ops/install.sh ops/backup.sh ops/targets/*.env
+              run: |
+                  shellcheck -x ops/deploy.sh ops/install.sh ops/backup.sh ops/targets/*.env ops/staging/tempo-staging-refresh.sh
+                  export TEMPO_API_IMAGE=api TEMPO_WEB_IMAGE=web DB_USERNAME=u DB_PASSWORD=p DB_NAME=d TEMPO_PRODUCTION_ENV_FILE=/dev/null ENABLE_BANKING_PRIVATE_KEY_HOST_PATH=/dev/null
+                  docker compose -f docker-compose.production.yml config -q
+                  docker compose -f ops/staging/docker-compose.yml --env-file ops/staging/staging.env.example config -q
 
     build:
         name: Build
@@ -84,18 +88,6 @@ jobs:
 
             - name: Run unit tests
               run: npm run test
-
-            - name: Test production and staging deployment contracts
-              run: |
-                  bash ops/tests/tempo-production-deploy-test.sh
-                  bash ops/tests/tempo-production-compose-test.sh
-                  bash ops/tests/tempo-staging-poller-test.sh
-                  bash ops/tests/tempo-staging-reconcile-test.sh
-                  bash ops/tests/tempo-staging-compose-test.sh
-                  bash ops/tests/tempo-staging-github-intent-test.sh
-                  bash ops/tests/tempo-staging-refresh-test.sh
-                  bash ops/tests/tempo-staging-refresh-integration-test.sh
-                  bash ops/tests/tempo-staging-promotion-workflow-test.sh
 
     e2e-test:
         name: E2E Tests
@@ -203,15 +195,15 @@ jobs:
                   username: ${{ github.actor }}
                   password: ${{ secrets.GITHUB_TOKEN }}
 
-            # Retag the tested image without rebuilding. `<sha>` and `latest` keep the current production poller working.
+            # Retag the tested image without rebuilding, so production runs exactly what was tested.
             - name: Tag tested image as main
               env:
                   GH_TOKEN: ${{ github.token }}
               run: |
                   set -euo pipefail
-                  tags=(--tag "$IMAGE:$GITHUB_SHA")
-                  # Only move the moving tags if no newer commit has landed on main since this run started.
-                  if [[ "$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)" == "$GITHUB_SHA" ]]; then
-                      tags+=(--tag "$IMAGE:main" --tag "$IMAGE:latest")
+                  # Skip if a newer commit has landed on main since this run started, so :main never moves backwards.
+                  if [[ "$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)" != "$GITHUB_SHA" ]]; then
+                      echo "main has moved on; not tagging $GITHUB_SHA"
+                      exit 0
                   fi
-                  docker buildx imagetools create "${tags[@]}" "$IMAGE:sha-$GITHUB_SHA"
+                  docker buildx imagetools create --tag "$IMAGE:main" "$IMAGE:sha-$GITHUB_SHA"

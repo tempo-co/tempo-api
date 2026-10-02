@@ -1,139 +1,48 @@
 # Tempo operations
 
-## Deploying with `ops/deploy.sh`
+CI builds one image per commit, publishes `ghcr.io/tempo-co/tempo-{api,web}:pr-<n>` for every same-repo PR, and tags `:main` after tests pass on `main`. `ops/deploy.sh` deploys those images to both targets: it resolves tags to digests, recreates only API and web, waits for health, and restores the previous images if the new ones are unhealthy. Database migrations are not rolled back.
 
-CI publishes `ghcr.io/tempo-co/tempo-{api,web}:pr-<n>` for every PR and `:main` after tests pass on `main`. Deploy any pair to staging with one command:
+| File | Purpose |
+|---|---|
+| `deploy.sh` | Deploy script for both targets |
+| `targets/{production,staging}.env` | Non-secret per-target settings |
+| `backup.sh` | Validated `pg_dump`, scheduled and pre-deploy |
+| `install.sh` | Copies the above to the host |
+| `runtime-image-smoke.js` | Runtime image check run by the `Dockerfile` |
+| `systemd/` | Production deploy and backup timers (installed by `install.sh`); staging Docker daemon (user unit, installed once by hand) |
+| `staging/` | Staging Compose file, env template, database refresh |
+
+## Production
+
+`tempo-deploy-production.timer` runs `deploy.sh production` every 5 minutes and deploys `:main`. Before any API image change it takes a validated backup into `/var/lib/tempo-deploy/pre-deploy-backups` (newest 5 kept); a failed backup cancels the deploy. Images that fail to deploy are skipped until `:main` moves.
 
 ```bash
-ops/install.sh staging                        # once per change to ops/
-tempo-deploy staging --api pr-115 --web main  # an omitted component keeps its current image
+journalctl -u tempo-deploy-production.service -n 50   # what happened
+cat /var/lib/tempo-deploy/deployed.env                # what is deployed
 ```
 
-Tags resolve to digests before rollout, the previous images are restored if the new ones are not healthy, and a successful staging deploy refreshes the staging database from the newest production backup.
+`tempo-backup.timer` runs `backup.sh` every 2 days into `~/backups/tempo` (newest 7 timestamped archives kept; manual `tempo-pre-*.dump` files are never pruned). Staging refreshes from these archives.
 
-Production runs `deploy.sh production` from `tempo-deploy-production.timer` every 5 minutes and deploys `:main`. Before any API image change it takes a validated `pg_dump` into `/var/lib/tempo-deploy/pre-deploy-backups` (newest 5 kept); a failed backup cancels the deploy. Images that fail to deploy are skipped until `:main` moves. Install or update the host files from a `main` checkout:
+After changing anything in `ops/` or `docker-compose.production.yml`, install from a clean `main` checkout:
 
 ```bash
 git fetch && git checkout --detach origin/main
 sudo ops/install.sh production
-journalctl -u tempo-deploy-production.service -n 50
 ```
 
-Switching from the old poller is a one-time step after the first install. Both timers share the deploy lock but track different tags, so never leave both enabled:
+Production secrets live in `/etc/tempo/production.env` (mode 600), outside the repository. Email goes through authenticated Gmail SMTP (`smtp.gmail.com:587`, STARTTLS required).
+
+### Network boundary
+
+PostgreSQL, Redis and the API share the `default` network. The API also joins the internal `frontend` network; web joins `frontend` and the web-only `ingress` network that publishes its loopback port. Web therefore has no network path to the database or cache. Do not mark `default` internal: the API needs outbound access.
+
+## Staging
+
+An isolated rootless Docker daemon (`tempo-staging-docker.service`) runs a separate copy of the stack on `http://127.0.0.1:8119/tempo/`. Deploy any API/web pair with one command; an omitted component keeps its current image:
 
 ```bash
-sudo systemctl disable --now tempo-production-deploy@$USER.timer
-sudo systemctl enable --now tempo-deploy-production.timer
-sudo systemctl start tempo-deploy-production.service  # first run should log "no change"
+ops/install.sh staging                         # after changing ops/
+tempo-deploy staging --api pr-115 --web main
 ```
 
-The cleanup step removes any `ghcr.io/tempo-co` image no container uses, including ones pulled by hand on this host.
-
-`ops/backup.sh` is also the scheduled backup (`tempo-backup.timer`, every 2 days into `~/backups/tempo`, newest 7 kept).
-
-## Image deployment (old production path, removed after the cutover)
-
-`ops/tempo-deploy.sh` is the target-aware image reconciler. It keeps the
-production and staging contracts explicit:
-
-```bash
-# Existing production entrypoint, preserved for the installed systemd unit.
-/usr/local/libexec/tempo-production-deploy
-
-# Isolated staging poller.
-~/.local/bin/tempo-deploy --target staging
-```
-
-Production uses the rootful Docker socket, `/etc/tempo/production.compose.yml`,
-`/etc/tempo/production.env`, `/var/lib/tempo-deploy/`, and the existing
-production container names/routes. Staging uses the dedicated rootless socket,
-`tempo-staging` Compose project, separate state, separate volumes, and
-loopback port `8119`. The reconciler recreates only API/web and verifies the
-Postgres and Redis container IDs in production, plus staging Mailpit.
-
-### Production network boundary
-
-The production Compose project keeps PostgreSQL, Redis, and the API on the
-project's existing non-internal `default` network. The API also joins a separate
-`frontend` network marked `internal: true`; the web container joins `frontend`
-and a web-only, non-internal `ingress` network for its existing loopback-published
-host route. No stateful service or the API joins `ingress`. This preserves
-API-to-database/cache access and the Nginx-to-API route while removing the web
-container's direct network path to the database and cache. The API retains
-outbound access through `default`; do not mark that network internal.
-
-The host uses a reviewed Compose snapshot, so changing the repository file alone
-does not change live networking. Install the reviewed snapshot with separate
-approval before the next API image update. The production poller only applies
-Compose changes when an API or web image reference changes; during an API image
-update it recreates API first and waits for API health before recreating web.
-Until that web recreation completes, the old web container remains on `default`
-and retains direct network reachability to PostgreSQL and Redis. Isolation takes
-effect only after web has been recreated and the new memberships are verified.
-If the image update has already happened, or immediate containment is required,
-stop and coordinate a separately approved application-only reconciliation; the
-poller has no force-reconcile action. Do not run an ad hoc Compose command or
-assume restoring the manifest changes running containers. Never recreate or
-disconnect PostgreSQL or Redis for this network change.
-
-After activation, verify the resolved memberships (`web`: `frontend` and
-`ingress`; `api`: `default` and `frontend`; PostgreSQL/Redis: `default` only),
-that `frontend` is internal, `ingress` is non-internal and web-only, and that
-the API and web health routes pass. The poller's
-automatic rollback covers failed image/health rollouts, not a failed manual
-network-membership check. If that check fails, stop and coordinate a separately
-approved application-only recovery; restoring the previous manifest alone does
-not change live network attachments. Never use `down`, `down -v`, or a volume
-operation for this network change.
-
-Production sends email through authenticated Gmail SMTP at `smtp.gmail.com:587`
-with required STARTTLS. Keep `EMAIL_USERNAME`, `EMAIL_PASSWORD`, and `EMAIL_FROM`
-in the owner-controlled production env file; the checked-in Compose manifest
-sets only the non-secret transport requirements. Development and staging keep
-Mailpit and receive no Gmail credentials.
-
-Staging promotion is not based on a moving branch or mutable image tag. The
-protected manual workflows in the API and web repositories publish immutable
-GHCR image digests and a successful GitHub deployment record. The host poller
-validates the exact repository, component, PR head, image digest, workflow
-metadata, and check evidence before pulling.
-
-See [`staging/README.md`](staging/README.md) for the staging isolation,
-no-provider/no-AI policy, promotion workflow, and PostgreSQL-only refresh.
-
-## Production deployment reference
-
-The existing production service/timer invoke the installed
-`tempo-production-deploy` entrypoint. The repository wrapper delegates to the
-shared target-aware engine, while production configuration and Docker state stay
-outside the repository and are not modified by staging operations.
-
-The reviewed host snapshots must be updated separately after approval: install
-the production Compose/deployer changes and provision the SMTP credentials and
-sender in `/etc/tempo/production.env` before recreating the API. Keep the
-production Mailpit container until delivery is verified, then remove only that
-container; do not prune volumes or run a broad Compose teardown.
-
-The production deployment contract tests run entirely against fake Docker/Git
-and HTTP commands:
-
-```bash
-bash ops/tests/tempo-production-deploy-test.sh
-```
-
-They cover bootstrap, no-op, immutable main-image resolution, API-only and
-web-only changes, stateful-container protection, pull/rollout failure cleanup,
-rollback, health routes, and persistent state.
-
-## Host installation boundary
-
-A host installation must copy reviewed snapshots of the deployment script,
-refresh script, Compose manifest, env template, and systemd units into
-root-owned or owner-scoped paths with restrictive permissions. It must verify
-rootless Docker mode, the exact staging socket/data root, required utilities
-(`docker`, Compose, `curl`, `jq`/Python where used, `flock`), and free disk
-before enabling a timer.
-
-Do not install, enable, deploy, refresh, revoke credentials, remove the old
-SSH path, or rewrite public history as part of a repository test. Those are
-separate approved operations with read-back verification and rollback plans.
+A successful deploy refreshes the staging database from the newest production backup, so staging holds production data: keep it on loopback. See [`staging/README.md`](staging/README.md).

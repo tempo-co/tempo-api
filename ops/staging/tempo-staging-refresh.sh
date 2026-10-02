@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-readonly SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+readonly SCRIPT_DIR
 readonly PROJECT_NAME='tempo-staging'
 if [[ -f "$SCRIPT_DIR/docker-compose.yml" ]]; then
     readonly DEFAULT_COMPOSE_FILE="$SCRIPT_DIR/docker-compose.yml"
@@ -13,7 +14,6 @@ readonly DEFAULT_STATE_DIR="${HOME}/.local/state/tempo-staging"
 readonly DEFAULT_DOCKER_SOCKET="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/tempo-staging/docker.sock"
 readonly DEFAULT_DOCKER_CONFIG="$HOME/.config/tempo-staging/docker-config"
 readonly DEFAULT_BACKUP_DIR="$HOME/backups/tempo"
-readonly STAGING_POSTGRES_VOLUME='tempo-staging-postgres-data'
 readonly REFRESH_DATABASE='tempo_staging_refresh'
 readonly PREVIOUS_DATABASE='tempo_staging_previous'
 readonly FAILED_DATABASE='tempo_staging_failed'
