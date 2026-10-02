@@ -17,6 +17,7 @@ import {
 } from '@modules/banking/bank-transaction-financial-event';
 import {BankTransaction} from '@modules/banking/bank-transaction.entity';
 import {OpenAiBankTransactionCategorizationProvider} from '@modules/banking/categorization/providers/openai-bank-transaction-categorization.provider';
+import {OwnTransferService} from '@modules/banking/services/own-transfer.service';
 
 import {BankingFixtures} from '../../../scripts/seed-data/banking-fixtures';
 import {
@@ -605,6 +606,124 @@ describe('BankTransactionController', () => {
 			await bankTransactionRepository.delete([ruleExchange.id, manualExchange.id]);
 		}
 	});
+	it('exposes, filters and overrides own transfers', async () => {
+		const revolutConnection = await fixtures.createConnection(account, {aspspName: 'Revolut', aspspCountry: 'LT'});
+		const revolutAccount = await fixtures.createBankAccount(revolutConnection, {
+			name: 'Jane Example',
+			alias: 'Travel',
+		});
+		const outgoing = await fixtures.createTransaction(fixtureBankAccount, {
+			bookingDate: '2026-08-12',
+			valueDate: '2026-08-12',
+			amount: '-75.00',
+			amountInBaseCurrency: '-75.00',
+			description: 'SEPA Overboeking Naam: Jane Example Omschrijving: Travel',
+			counterpartyName: 'Jane Example',
+		});
+		const [incoming, gift] = await fixtures.createTransactions(revolutAccount, [
+			{
+				bookingDate: '2026-08-13',
+				valueDate: '2026-08-13',
+				amount: '75.00',
+				amountInBaseCurrency: '75.00',
+				creditDebitIndicator: 'CRDT',
+				description: 'Payment from Jane Example',
+			},
+			{
+				bookingDate: '2026-08-11',
+				valueDate: '2026-08-11',
+				amount: '33.33',
+				amountInBaseCurrency: '33.33',
+				creditDebitIndicator: 'CRDT',
+				description: 'Payment from A Friend',
+			},
+		]);
+		await app.get(OwnTransferService).recomputeForOwner(account.id);
+
+		const pairOf = (id: string, counterpartId: string) =>
+			expect.objectContaining({
+				id,
+				cashFlowTreatment: BANK_TRANSACTION_CASH_FLOW_TREATMENTS.INTERNAL,
+				ownTransferOverride: null,
+				ownTransfer: {evidence: 'NAME', counterpart: expect.objectContaining({id: counterpartId})},
+			});
+
+		try {
+			const filtered = await verifiedAgent
+				.get('/bank-transactions')
+				.query({'filter[financialEventTypes][]': 'OWN_TRANSFER'})
+				.expect(200);
+			expect(filtered.body.total).toBe(2);
+			expect(filtered.body.transactions).toEqual(
+				expect.arrayContaining([pairOf(outgoing.id, incoming.id), pairOf(incoming.id, outgoing.id)]),
+			);
+
+			const combined = await verifiedAgent
+				.get('/bank-transactions')
+				.query({
+					'filter[financialEventTypes][]': ['OWN_TRANSFER', 'CURRENCY_EXCHANGE'],
+					'filter[bankAccountIds][]': revolutAccount.id,
+				})
+				.expect(200);
+			expect(combined.body.transactions.map(({id}: {id: string}) => id)).toEqual([incoming.id]);
+
+			const detail = await verifiedAgent.get(`/bank-transactions/${outgoing.id}`).expect(200);
+			expect(detail.body.ownTransfer).toEqual({
+				evidence: 'NAME',
+				counterpart: {
+					id: incoming.id,
+					bankName: 'Revolut',
+					bankAccountName: 'Jane Example',
+					bankAccountAlias: 'Travel',
+					amount: '75.00000000',
+					currency: 'EUR',
+					bookingDate: '2026-08-13',
+				},
+			});
+			const unrelated = await verifiedAgent.get(`/bank-transactions/${gift.id}`).expect(200);
+			expect(unrelated.body).toMatchObject({ownTransfer: null, cashFlowTreatment: 'INCOME'});
+
+			const connectionResponse = await verifiedAgent
+				.get(`/bank-connections/${revolutConnection.id}/transactions?limit=100`)
+				.expect(200);
+			expect(connectionResponse.body.transactions).toEqual(
+				expect.arrayContaining([expect.objectContaining({id: incoming.id, cashFlowTreatment: 'INTERNAL'})]),
+			);
+
+			const overridePath = `/bank-transactions/${outgoing.id}/own-transfer`;
+			await otherVerifiedAgent.patch(overridePath).send({override: 'UNMARKED'}).expect(404);
+			await verifiedAgent.patch(overridePath).send({override: 'TRANSFER'}).expect(400);
+			await verifiedAgent.patch(overridePath).send({}).expect(400);
+			await verifiedAgent.patch('/bank-transactions/not-a-uuid/own-transfer').send({override: null}).expect(400);
+
+			const unmarked = await verifiedAgent.patch(overridePath).send({override: 'UNMARKED'}).expect(200);
+			expect(unmarked.body).toMatchObject({
+				ownTransfer: null,
+				ownTransferOverride: 'UNMARKED',
+				cashFlowTreatment: 'EXPENSE',
+			});
+			// The other leg keeps its own name evidence, now without a counterpart.
+			const freed = await verifiedAgent.get(`/bank-transactions/${incoming.id}`).expect(200);
+			expect(freed.body.ownTransfer).toEqual({evidence: 'NAME', counterpart: null});
+
+			const automatic = await verifiedAgent.patch(overridePath).send({override: null}).expect(200);
+			expect(automatic.body).toEqual(pairOf(outgoing.id, incoming.id));
+
+			const marked = await verifiedAgent
+				.patch(`/bank-transactions/${gift.id}/own-transfer`)
+				.send({override: 'MARKED'})
+				.expect(200);
+			expect(marked.body).toMatchObject({
+				ownTransfer: {evidence: 'MANUAL', counterpart: null},
+				ownTransferOverride: 'MARKED',
+				cashFlowTreatment: 'INTERNAL',
+			});
+		} finally {
+			await bankConnectionRepository.delete(revolutConnection.id);
+			await bankTransactionRepository.delete(outgoing.id);
+		}
+	});
+
 	it.each([
 		['a positive page index', 'pagination[pageIndex]', '1', 200],
 		['an existing allowed page size', 'pagination[pageSize]', '50', 200],

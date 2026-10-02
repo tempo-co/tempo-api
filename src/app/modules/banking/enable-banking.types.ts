@@ -26,6 +26,7 @@ export type StartEnableBankingAuthorizationResult = {
 export type EnableBankingAccount = {
 	uid?: string;
 	identificationHash: string;
+	iban?: string;
 	name?: string;
 	details?: string;
 	currency: string;
@@ -71,6 +72,7 @@ export type EnableBankingTransaction = {
 	valueDate?: string;
 	description?: string;
 	counterpartyName?: string;
+	counterpartyIban?: string;
 	counterpartyLocation?: BankTransactionLocation;
 	remittanceInformation?: string;
 	bankTransactionCode?: string;

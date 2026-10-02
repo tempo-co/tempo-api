@@ -76,6 +76,7 @@ import {
 	sanitizeRetryAfterSeconds,
 } from './banking-sync.constants';
 import {EnableBankingClient, EnableBankingClientError} from './enable-banking.client';
+import {OwnTransferService} from './own-transfer.service';
 
 const SUCCEEDED = BANK_SYNC_STATUSES.SUCCEEDED;
 const FAILED = BANK_SYNC_STATUSES.FAILED;
@@ -172,6 +173,7 @@ export class BankingSyncService {
 		private readonly connectionLockService: BankingConnectionLockService,
 		private readonly categorizationService: BankTransactionCategorizationService,
 		private readonly configurationService: ConfigurationService,
+		private readonly ownTransferService: OwnTransferService,
 	) {
 		this.bankingIntegrationEnabled = configurationService.get('BANKING_INTEGRATION_ENABLED') !== false;
 	}
@@ -280,6 +282,7 @@ export class BankingSyncService {
 					syncStartedAt,
 				);
 				await this.enqueuePersistedTransactions(persistenceResult.persistedTransactionIds);
+				await this.ownTransferService.recomputeForOwnerSafely(accountId);
 				lockLease.assertHealthy();
 
 				const completedRun = await this.bankSyncRunRepository.findOneBy({id: run.id});
@@ -982,6 +985,7 @@ export class BankingSyncService {
 		const currency = transaction.currency.toUpperCase();
 		const description = truncate(transaction.description, 500);
 		const counterpartyName = truncate(transaction.counterpartyName, 255);
+		const counterpartyIban = transaction.counterpartyIban ?? null;
 		const displayDescription = getBankTransactionDisplayDescription({description, counterpartyName});
 		const remittanceInformation = truncate(transaction.remittanceInformation, 10_000);
 		const transactionDate = this.toDateOnly(transaction.transactionDate);
@@ -1103,6 +1107,7 @@ export class BankingSyncService {
 			description,
 			displayDescription,
 			counterpartyName,
+			counterpartyIban,
 			merchantCategoryCode,
 			remittanceInformation,
 			merchantLocation,

@@ -20,16 +20,21 @@ const BANKING_SERVICE_DEPENDENCIES = [
 	'encryptionService',
 	'connectionLockService',
 	'bankingSyncQueueService',
+	'ownTransferService',
 ] as const;
+
+const DEFAULT_DEPENDENCIES: Partial<Record<string, unknown>> = {
+	ownTransferService: {recomputeForOwnerSafely: jest.fn().mockResolvedValue(undefined)},
+};
 
 /** Builds the service with named test doubles; unspecified dependencies are empty objects. */
 function createBankingService(
 	dependencies: Partial<Record<(typeof BANKING_SERVICE_DEPENDENCIES)[number], unknown>> = {},
 ): BankingService {
 	return new BankingService(
-		...(BANKING_SERVICE_DEPENDENCIES.map((name) => dependencies[name] ?? {}) as ConstructorParameters<
-			typeof BankingService
-		>),
+		...(BANKING_SERVICE_DEPENDENCIES.map(
+			(name) => dependencies[name] ?? DEFAULT_DEPENDENCIES[name] ?? {},
+		) as ConstructorParameters<typeof BankingService>),
 	);
 }
 

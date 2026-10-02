@@ -498,7 +498,12 @@ describe('BankConnectionController', () => {
 			consentValidUntil: '2030-01-01T00:00:00.000Z',
 			aspsp: {name: 'ABN AMRO', country: 'NL'},
 			accounts: [
-				{uid: 'provider-account-original', identificationHash: 'stable-account-reauth', currency: 'EUR'},
+				{
+					uid: 'provider-account-original',
+					identificationHash: 'stable-account-reauth',
+					iban: 'NL91ABNA0417164300',
+					currency: 'EUR',
+				},
 			],
 		});
 		await request(httpServer)
@@ -517,6 +522,7 @@ describe('BankConnectionController', () => {
 			where: {bankConnection: {id: originalConnection.id}},
 		});
 		if (!originalBankAccount) throw new Error('Bank account was not persisted.');
+		expect(originalBankAccount.iban).toBe('NL91ABNA0417164300');
 
 		const secondState = await authorize();
 		createSession.mockResolvedValueOnce({
@@ -550,6 +556,8 @@ describe('BankConnectionController', () => {
 		expect(refreshedBankAccounts[0].id).toBe(originalBankAccount.id);
 		expect(refreshedBankAccounts[0].providerAccountId).toBe('provider-account-rotated');
 		expect(refreshedBankAccounts[0].identificationHash).toBe('stable-account-reauth');
+		// The refreshed session reported no IBAN; the stored one is kept.
+		expect(refreshedBankAccounts[0].iban).toBe('NL91ABNA0417164300');
 	});
 
 	it('keeps the live connection untouched when re-authorization is cancelled', async () => {
@@ -1098,6 +1106,119 @@ describe('BankConnectionController', () => {
 		}
 	});
 
+	it('links own-transfer legs after synchronization and unlinks them when a connection is removed', async () => {
+		const revolutIban = 'GB82WEST12345698765432';
+		const {connection: revolutConnection, bankAccounts: revolutAccounts} = await createAuthorizedConnectionFixture(
+			'own-transfer-revolut-session',
+			[
+				{
+					providerAccountId: 'own-transfer-revolut-eur',
+					identificationHash: 'hash-own-transfer-revolut-eur',
+					currency: 'EUR',
+					iban: revolutIban,
+					name: 'Jane Example',
+				},
+			],
+			'Revolut',
+		);
+		const revolutLeg = await fixtures.createTransaction(revolutAccounts[0], {
+			providerTransactionId: 'own-transfer-revolut-leg',
+			amount: '250.00',
+			creditDebitIndicator: 'CRDT',
+			bookingDate: '2026-08-21',
+			description: 'Payment from Jane Example',
+		});
+		const {connection: abnConnection} = await createAuthorizedConnectionFixture('own-transfer-abn-session', [
+			{
+				providerAccountId: 'own-transfer-abn-eur',
+				identificationHash: 'hash-own-transfer-abn-eur',
+				currency: 'EUR',
+				name: 'Jane Example',
+			},
+		]);
+		const abnLeg: EnableBankingTransaction = {
+			providerTransactionId: 'own-transfer-abn-leg',
+			entryReference: 'entry-own-transfer-abn-leg',
+			amount: '250.00',
+			currency: 'EUR',
+			creditDebitIndicator: 'DBIT',
+			status: 'BOOK',
+			bookingDate: '2026-08-20',
+			valueDate: '2026-08-20',
+			description: 'Online banking transfer',
+			counterpartyIban: revolutIban,
+		};
+		const unrelatedPayment: EnableBankingTransaction = {
+			...abnLeg,
+			providerTransactionId: 'own-transfer-abn-unrelated',
+			entryReference: 'entry-own-transfer-abn-unrelated',
+			counterpartyIban: 'NL91ABNA0417164300',
+		};
+
+		getAccountBalances.mockResolvedValue([]);
+		getAccountTransactions.mockResolvedValueOnce([abnLeg, unrelatedPayment]);
+		await expect(app.get(BankingSyncService).synchronizeAutomatically(abnConnection.id)).resolves.toMatchObject({
+			status: 'SUCCEEDED',
+			transactionsAdded: 2,
+		});
+
+		const storedAbnLeg = await bankTransactionRepository.findOneByOrFail({
+			providerTransactionId: abnLeg.providerTransactionId,
+		});
+		expect(storedAbnLeg).toMatchObject({
+			counterpartyIban: revolutIban,
+			ownTransferEvidence: 'IBAN',
+			ownTransferCounterpartId: revolutLeg.id,
+		});
+		expect(await bankTransactionRepository.findOneByOrFail({id: revolutLeg.id})).toMatchObject({
+			ownTransferEvidence: 'IBAN',
+			ownTransferCounterpartId: storedAbnLeg.id,
+		});
+		expect(
+			await bankTransactionRepository.findOneByOrFail({
+				providerTransactionId: unrelatedPayment.providerTransactionId,
+			}),
+		).toMatchObject({ownTransferEvidence: null, ownTransferCounterpartId: null});
+
+		try {
+			// A resync with identical provider data keeps the owner's decision and changes nothing else.
+			await verifiedAgent
+				.patch(`/bank-transactions/${storedAbnLeg.id}/own-transfer`)
+				.send({override: 'UNMARKED'})
+				.expect(200);
+			getAccountTransactions.mockResolvedValueOnce([abnLeg, unrelatedPayment]);
+			await expect(app.get(BankingSyncService).synchronize(account.id, abnConnection.id)).resolves.toMatchObject({
+				status: 'SUCCEEDED',
+				transactionsAdded: 0,
+			});
+			expect(await bankTransactionRepository.findOneByOrFail({id: storedAbnLeg.id})).toMatchObject({
+				ownTransferOverride: 'UNMARKED',
+				ownTransferEvidence: null,
+				ownTransferCounterpartId: null,
+			});
+			await verifiedAgent
+				.patch(`/bank-transactions/${storedAbnLeg.id}/own-transfer`)
+				.send({override: null})
+				.expect(200);
+			expect(await bankTransactionRepository.findOneByOrFail({id: storedAbnLeg.id})).toMatchObject({
+				ownTransferEvidence: 'IBAN',
+				ownTransferCounterpartId: revolutLeg.id,
+			});
+
+			await verifiedAgent
+				.delete(`/bank-connections/${revolutConnection.id}`)
+				.send({confirmation: 'DELETE'})
+				.expect(204);
+
+			expect(await bankTransactionRepository.findOneByOrFail({id: storedAbnLeg.id})).toMatchObject({
+				ownTransferEvidence: null,
+				ownTransferCounterpartId: null,
+			});
+		} finally {
+			await bankConnectionRepository.delete([abnConnection.id, revolutConnection.id]);
+		}
+	});
+
 	it('backfills known exchange rows while preserving manual category fields', async () => {
 		const {connection, bankAccounts} = await createAuthorizedConnectionFixture(
 			'currency-exchange-backfill-session',
@@ -1390,6 +1511,8 @@ describe('BankConnectionController', () => {
 		identificationHash: string;
 		details?: string;
 		currency?: string;
+		iban?: string;
+		name?: string;
 	};
 
 	/** Starts an ABN AMRO authorization and returns the state the provider would echo back to the callback. */

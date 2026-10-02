@@ -16,6 +16,7 @@ import {
 	StartEnableBankingAuthorizationInput,
 	StartEnableBankingAuthorizationResult,
 } from '../enable-banking.types';
+import {normalizeIban, parseSepaDescriptionIban} from '../own-transfer/iban';
 import {isValidRetryAfterSeconds} from './banking-sync.constants';
 
 const JWT_TTL_SECONDS = 60 * 60;
@@ -293,6 +294,7 @@ export class EnableBankingClient {
 		const record = this.asRecord(rawAccount);
 		const identificationHash = this.asString(record?.identification_hash);
 		const currency = this.asString(record?.currency);
+		const iban = normalizeIban(this.asString(this.asRecord(record?.account_id)?.iban));
 
 		if (!identificationHash || !currency || currency.length !== 3) {
 			return [];
@@ -302,6 +304,7 @@ export class EnableBankingClient {
 			{
 				uid: this.asString(record?.uid),
 				identificationHash,
+				...(iban ? {iban} : {}),
 				name: this.asOptionalString(record?.name),
 				details: this.asOptionalString(record?.details),
 				currency,
@@ -389,6 +392,12 @@ export class EnableBankingClient {
 			creditDebitIndicator === 'CRDT' ? (debtorName ?? creditorName) : (creditorName ?? debtorName);
 		const counterpartyLocation = this.parseCounterpartyLocation(counterparty);
 		const remittanceInformation = this.parseRemittanceInformation(record?.remittance_information);
+		const counterpartyAccount =
+			creditDebitIndicator === 'DBIT'
+				? record?.creditor_account
+				: creditDebitIndicator === 'CRDT'
+					? record?.debtor_account
+					: undefined;
 		const bankTransactionCode = this.asRecord(record?.bank_transaction_code);
 		const balanceAfter = this.parseAmountAndCurrency(record?.balance_after_transaction);
 		const exchangeRate = this.asRecord(record?.exchange_rate);
@@ -398,6 +407,9 @@ export class EnableBankingClient {
 			remittanceInformation ??
 			this.asString(bankTransactionCode?.description) ??
 			counterpartyName;
+		const counterpartyIban =
+			normalizeIban(this.asString(this.asRecord(counterpartyAccount)?.iban)) ??
+			parseSepaDescriptionIban(description);
 
 		return [
 			{
@@ -414,6 +426,7 @@ export class EnableBankingClient {
 				valueDate: this.asOptionalString(record?.value_date) ?? this.asOptionalString(record?.transaction_date),
 				description,
 				counterpartyName,
+				...(counterpartyIban ? {counterpartyIban} : {}),
 				...(counterpartyLocation ? {counterpartyLocation} : {}),
 				remittanceInformation,
 				bankTransactionCode: this.asOptionalString(bankTransactionCode?.code),

@@ -13,10 +13,17 @@ import {
 	DEFAULT_BANK_TRANSACTION_PAGE_INDEX,
 	DEFAULT_BANK_TRANSACTION_PAGE_SIZE,
 } from '../api/dtos/bank-transaction-query.dto';
-import {BankTransactionResponseDto, BankTransactionsResponseDto} from '../api/dtos/bank-transaction-response.dto';
+import {
+	BankTransactionOwnTransferDto,
+	BankTransactionResponseDto,
+	BankTransactionsResponseDto,
+} from '../api/dtos/bank-transaction-response.dto';
 import {BankConnection} from '../bank-connection.entity';
 import {toBankTransactionDirection} from '../bank-transaction-direction';
-import {getBankTransactionCashFlowTreatment} from '../bank-transaction-financial-event';
+import {
+	BANK_TRANSACTION_OWN_TRANSFER_FILTER,
+	getBankTransactionCashFlowTreatment,
+} from '../bank-transaction-financial-event';
 import {BANK_TRANSACTION_TYPES} from '../bank-transaction-type';
 import {BankTransaction} from '../bank-transaction.entity';
 import {createBankTransactionCategorizationInputHash} from '../categorization/bank-transaction-categorization-input';
@@ -25,6 +32,8 @@ import {
 	BANK_TRANSACTION_UNCATEGORIZED,
 	type BankTransactionCategory,
 } from '../categorization/bank-transaction-category';
+import type {OwnTransferOverride} from '../own-transfer/own-transfer-detection';
+import {OwnTransferService} from './own-transfer.service';
 
 @Injectable()
 export class BankTransactionService {
@@ -33,6 +42,7 @@ export class BankTransactionService {
 		private readonly bankConnectionRepository: Repository<BankConnection>,
 		@InjectRepository(BankTransaction)
 		private readonly bankTransactionRepository: Repository<BankTransaction>,
+		private readonly ownTransferService: OwnTransferService,
 	) {}
 
 	async findAll(
@@ -85,10 +95,16 @@ export class BankTransactionService {
 			});
 		}
 
-		if (filter?.financialEventTypes && filter.financialEventTypes.length > 0) {
-			query.andWhere('transaction.financialEventType IN (:...financialEventTypes)', {
-				financialEventTypes: filter.financialEventTypes,
-			});
+		const eventFilters = filter?.financialEventTypes ?? [];
+		const financialEventTypes = eventFilters.filter((value) => value !== BANK_TRANSACTION_OWN_TRANSFER_FILTER);
+		const activityConditions = [
+			...(financialEventTypes.length > 0 ? ['transaction.financialEventType IN (:...financialEventTypes)'] : []),
+			...(eventFilters.includes(BANK_TRANSACTION_OWN_TRANSFER_FILTER)
+				? ['transaction.ownTransferEvidence IS NOT NULL']
+				: []),
+		];
+		if (activityConditions.length > 0) {
+			query.andWhere(`(${activityConditions.join(' OR ')})`, {financialEventTypes});
 		}
 
 		const search = filter?.search?.trim();
@@ -183,6 +199,16 @@ export class BankTransactionService {
 		return this.toResponse(transaction);
 	}
 
+	async updateOwnTransferOverride(
+		accountId: Account['id'],
+		id: BankTransaction['id'],
+		override: OwnTransferOverride | null,
+	): Promise<BankTransactionResponseDto> {
+		const updated = await this.ownTransferService.updateOverride(accountId, id, override);
+		if (!updated) throw new NotFoundException(BANKING_TRANSACTION_NOT_FOUND);
+		return this.findById(accountId, id);
+	}
+
 	private async findOwnedConnection(accountId: Account['id'], connectionId: BankConnection['id']) {
 		const connection = await this.bankConnectionRepository.findOne({
 			where: {id: connectionId, account: {id: accountId}},
@@ -200,12 +226,18 @@ export class BankTransactionService {
 	}
 
 	private createOwnerScopedQuery(accountId: Account['id']) {
-		return this.bankTransactionRepository
-			.createQueryBuilder('transaction')
-			.innerJoinAndSelect('transaction.bankAccount', 'bankAccount')
-			.innerJoinAndSelect('bankAccount.bankConnection', 'connection')
-			.innerJoin('connection.account', 'account')
-			.where('account.id = :accountId', {accountId});
+		return (
+			this.bankTransactionRepository
+				.createQueryBuilder('transaction')
+				.innerJoinAndSelect('transaction.bankAccount', 'bankAccount')
+				.innerJoinAndSelect('bankAccount.bankConnection', 'connection')
+				.innerJoin('connection.account', 'account')
+				// Recognition only links legs of the same owner.
+				.leftJoinAndSelect('transaction.ownTransferCounterpart', 'counterpart')
+				.leftJoinAndSelect('counterpart.bankAccount', 'counterpartBankAccount')
+				.leftJoinAndSelect('counterpartBankAccount.bankConnection', 'counterpartConnection')
+				.where('account.id = :accountId', {accountId})
+		);
 	}
 
 	private toResponse(transaction: BankTransaction): BankTransactionResponseDto {
@@ -228,6 +260,27 @@ export class BankTransactionService {
 			bankCountry: transaction.bankAccount.bankConnection.aspspCountry,
 			bankAccountName: transaction.bankAccount.name,
 			bankAccountAlias: transaction.bankAccount.alias,
+			ownTransfer: this.toOwnTransferResponse(transaction),
+			ownTransferOverride: transaction.ownTransferOverride ?? null,
+		};
+	}
+
+	private toOwnTransferResponse(transaction: BankTransaction): BankTransactionOwnTransferDto | null {
+		if (!transaction.ownTransferEvidence) return null;
+		const counterpart = transaction.ownTransferCounterpart;
+		return {
+			evidence: transaction.ownTransferEvidence,
+			counterpart: counterpart
+				? {
+						id: counterpart.id,
+						bankName: counterpart.bankAccount.bankConnection.aspspName,
+						bankAccountName: counterpart.bankAccount.name,
+						bankAccountAlias: counterpart.bankAccount.alias,
+						amount: counterpart.amount,
+						currency: counterpart.currency,
+						bookingDate: counterpart.bookingDate,
+					}
+				: null,
 		};
 	}
 
@@ -250,7 +303,11 @@ export class BankTransactionService {
 			financialEventType: transaction.financialEventType,
 			financialEventSource: transaction.financialEventSource,
 			financialEventRuleVersion: transaction.financialEventRuleVersion,
-			cashFlowTreatment: getBankTransactionCashFlowTreatment(transaction.financialEventType, direction),
+			cashFlowTreatment: getBankTransactionCashFlowTreatment(
+				transaction.financialEventType,
+				direction,
+				transaction.ownTransferEvidence,
+			),
 			categoryConfidence: transaction.categoryConfidence,
 			merchantCategoryCode: transaction.merchantCategoryCode,
 			remittanceInformation: transaction.remittanceInformation,

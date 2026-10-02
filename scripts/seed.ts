@@ -4,6 +4,7 @@ import {DataSource, QueryRunner} from 'typeorm';
 
 import {seedAccounts} from './seed-data/seed-accounts';
 import {seedBankingData} from './seed-data/seed-banking-data';
+import {seedOwnTransferData} from './seed-data/seed-own-transfer-data';
 
 seed();
 
@@ -14,6 +15,7 @@ async function seed() {
 	console.log('Seeding database...');
 	await seedAccounts(app);
 	await seedBankingData(app);
+	await seedOwnTransferData(app);
 
 	console.log('Seeding complete.');
 	await app.close();

@@ -204,6 +204,35 @@ describe('EnableBankingClient', () => {
 		expect(JSON.parse(String(requestInit.body))).toEqual({code: 'provider-code'});
 	});
 
+	it.each([
+		{name: 'a valid account IBAN', accountId: {iban: 'nl91 abna 0417 1643 00'}, expected: 'NL91ABNA0417164300'},
+		{name: 'an invalid account IBAN', accountId: {iban: 'NL91ABNA0417164301'}, expected: undefined},
+		{name: 'a missing account identifier', accountId: undefined, expected: undefined},
+	])('maps $name from the session account', async ({accountId, expected}) => {
+		fetchMock.mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({
+					session_id: 'session-id',
+					access: {valid_until: '2030-01-01T00:00:00.000Z'},
+					aspsp: {name: 'Example Bank', country: 'NL'},
+					accounts: [
+						{
+							uid: 'account-id',
+							identification_hash: 'account-hash',
+							currency: 'EUR',
+							account_id: accountId,
+						},
+					],
+				}),
+				{status: 200, headers: {'content-type': 'application/json'}},
+			),
+		);
+
+		const session = await client.createSession('provider-code');
+
+		expect(session.accounts[0].iban).toBe(expected);
+	});
+
 	it('requests ASPSPs for personal account-information access', async () => {
 		fetchMock.mockResolvedValueOnce(
 			new Response(
@@ -676,6 +705,66 @@ describe('EnableBankingClient', () => {
 
 		const secondUrl = new URL(String(fetchMock.mock.calls[1][0]));
 		expect(secondUrl.searchParams.get('continuation_key')).toBe('next-page');
+	});
+
+	it.each([
+		{
+			name: 'the creditor account IBAN for a debit',
+			transaction: {
+				credit_debit_indicator: 'DBIT',
+				creditor_account: {iban: 'GB82 WEST 1234 5698 7654 32'},
+				debtor_account: {iban: 'NL91ABNA0417164300'},
+			},
+			expected: 'GB82WEST12345698765432',
+		},
+		{
+			name: 'the debtor account IBAN for a credit',
+			transaction: {
+				credit_debit_indicator: 'CRDT',
+				creditor_account: {iban: 'NL91ABNA0417164300'},
+				debtor_account: {iban: 'DE89370400440532013000'},
+			},
+			expected: 'DE89370400440532013000',
+		},
+		{
+			name: 'nothing for an invalid account IBAN',
+			transaction: {credit_debit_indicator: 'DBIT', creditor_account: {iban: 'GB82WEST12345698765433'}},
+			expected: undefined,
+		},
+		{
+			name: 'the SEPA description IBAN when the provider omits the counterparty account',
+			transaction: {
+				credit_debit_indicator: 'DBIT',
+				remittance_information: ['SEPA Overboeking IBAN: GB82WEST12345698765432 BIC: TESTGB2L Naam: Example'],
+			},
+			expected: 'GB82WEST12345698765432',
+		},
+		{
+			name: 'nothing when no IBAN is present',
+			transaction: {credit_debit_indicator: 'DBIT', remittance_information: ['Groceries']},
+			expected: undefined,
+		},
+	])('maps $name as the counterparty IBAN', async ({transaction, expected}) => {
+		fetchMock.mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({
+					transactions: [
+						{
+							transaction_id: 'transaction-iban',
+							transaction_amount: {currency: 'EUR', amount: '10.00'},
+							status: 'BOOK',
+							booking_date: '2026-08-26',
+							...transaction,
+						},
+					],
+				}),
+				{status: 200, headers: {'content-type': 'application/json'}},
+			),
+		);
+
+		const [mappedTransaction] = await client.getAccountTransactions('account-id', {strategy: 'longest'});
+
+		expect(mappedTransaction.counterpartyIban).toBe(expected);
 	});
 
 	it('omits location when the direction-selected counterparty is missing', async () => {

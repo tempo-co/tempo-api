@@ -47,6 +47,7 @@ import {BankingEncryptionService} from './services/banking-encryption.service';
 import {BankingSyncQueueService} from './services/banking-sync-queue.service';
 import {BANK_CONNECTION_STATUSES, BANK_SYNC_STATUSES} from './services/banking-sync.constants';
 import {EnableBankingClient, EnableBankingClientError} from './services/enable-banking.client';
+import {OwnTransferService} from './services/own-transfer.service';
 
 const PROVIDER = 'enable-banking';
 const AUTHORIZATION_LOCK_WAIT_MS = 10_000;
@@ -80,6 +81,7 @@ export class BankingService {
 		private readonly encryptionService: BankingEncryptionService,
 		private readonly connectionLockService: BankingConnectionLockService,
 		private readonly bankingSyncQueueService: BankingSyncQueueService,
+		private readonly ownTransferService: OwnTransferService,
 	) {}
 
 	async startAuthorization(
@@ -318,6 +320,9 @@ export class BankingService {
 
 			await this.releaseLockSafely(connectionLock, 'Banking synchronization lock release failed');
 		}
+
+		// Remaining legs whose counterpart was deleted become one-sided or unlabelled.
+		await this.ownTransferService.recomputeForOwnerSafely(accountId);
 	}
 
 	async handleCallback(query: BankConnectionCallbackDto): Promise<BankConnectionCallbackResult> {
@@ -526,6 +531,8 @@ export class BankingService {
 		}
 
 		if (!authorizedConnectionId) return;
+		// Account IBANs may have changed.
+		await this.ownTransferService.recomputeForOwnerSafely(accountId);
 		try {
 			await this.bankingSyncQueueService.enqueueInitialSync(authorizedConnectionId);
 		} catch (error) {
@@ -597,6 +604,8 @@ export class BankingService {
 		return {
 			providerAccountId: account.uid as string,
 			identificationHash: account.identificationHash,
+			// A session without an IBAN keeps the stored one.
+			...(account.iban ? {iban: account.iban} : {}),
 			name: truncate(account.name, 255),
 			details: truncate(account.details, 255),
 			currency: account.currency.toUpperCase(),

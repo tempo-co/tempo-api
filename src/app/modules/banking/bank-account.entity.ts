@@ -49,6 +49,9 @@ export class BankAccount {
 	@Column({type: 'varchar', length: 255, nullable: true})
 	maskedIdentifier: string | null;
 
+	@Column({type: 'varchar', length: 34, nullable: true})
+	iban: string | null;
+
 	@Column({type: 'numeric', precision: 20, scale: 8, nullable: true})
 	currentBalanceAmount: string | null;
 

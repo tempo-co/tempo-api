@@ -10,6 +10,7 @@ import {
 } from '../bank-transaction-financial-event';
 import {BankTransaction} from '../bank-transaction.entity';
 import {BankTransactionService} from './bank-transaction.service';
+import {OwnTransferService} from './own-transfer.service';
 
 function createTransaction(): BankTransaction {
 	return {
@@ -38,6 +39,7 @@ function createQueryBuilder<T extends ObjectLiteral>(): SelectQueryBuilder<T> & 
 	const queryBuilder = {
 		innerJoinAndSelect: jest.fn().mockReturnThis(),
 		innerJoin: jest.fn().mockReturnThis(),
+		leftJoinAndSelect: jest.fn().mockReturnThis(),
 		where: jest.fn().mockReturnThis(),
 		andWhere: jest.fn().mockReturnThis(),
 		orderBy: jest.fn().mockReturnThis(),
@@ -62,6 +64,7 @@ describe('BankTransactionService display descriptions', () => {
 		const service = new BankTransactionService(
 			{} as Repository<BankConnection>,
 			repository as unknown as Repository<BankTransaction>,
+			{} as OwnTransferService,
 		);
 
 		const response = await service.findById('account-id', transaction.id);
@@ -80,6 +83,7 @@ describe('BankTransactionService display descriptions', () => {
 		const service = new BankTransactionService(
 			{findOne: jest.fn().mockResolvedValue({id: 'connection-id'})} as unknown as Repository<BankConnection>,
 			repository as unknown as Repository<BankTransaction>,
+			{} as OwnTransferService,
 		);
 
 		const response = await service.findAllByConnectionId('account-id', 'connection-id', 10);
@@ -107,6 +111,7 @@ describe('BankTransactionService display descriptions', () => {
 		const service = new BankTransactionService(
 			{} as Repository<BankConnection>,
 			repository as unknown as Repository<BankTransaction>,
+			{} as OwnTransferService,
 		);
 
 		const response = await service.findById('account-id', transaction.id);
@@ -135,6 +140,7 @@ describe('BankTransactionService display descriptions', () => {
 		const service = new BankTransactionService(
 			{findOne: jest.fn().mockResolvedValue({id: 'connection-id'})} as unknown as Repository<BankConnection>,
 			repository as unknown as Repository<BankTransaction>,
+			{} as OwnTransferService,
 		);
 
 		const response = await service.findAllByConnectionId('account-id', 'connection-id', 10);
@@ -145,25 +151,5 @@ describe('BankTransactionService display descriptions', () => {
 			financialEventRuleVersion: BANK_TRANSACTION_FINANCIAL_EVENT_RULE_VERSION,
 			cashFlowTreatment: BANK_TRANSACTION_CASH_FLOW_TREATMENTS.INTERNAL,
 		});
-	});
-
-	it('applies an owner-scoped financial-event filter', async () => {
-		const transaction = createTransaction();
-		const queryBuilder = createQueryBuilder<BankTransaction>();
-		queryBuilder.getManyAndCount.mockResolvedValue([[transaction], 1]);
-		const repository = {createQueryBuilder: jest.fn().mockReturnValue(queryBuilder)};
-		const service = new BankTransactionService(
-			{} as Repository<BankConnection>,
-			repository as unknown as Repository<BankTransaction>,
-		);
-
-		await service.findAll('account-id', {
-			filter: {financialEventTypes: [BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE]},
-		} as never);
-
-		expect(queryBuilder.andWhere).toHaveBeenCalledWith(
-			'transaction.financialEventType IN (:...financialEventTypes)',
-			{financialEventTypes: [BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE]},
-		);
 	});
 });

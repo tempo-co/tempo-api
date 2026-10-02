@@ -28,7 +28,7 @@ export function normalizeBankTransactionText(value: string | null | undefined): 
 	return normalizedValue || null;
 }
 
-function extractStructuredCounterpartyName(description: string): string | null {
+export function extractStructuredCounterpartyName(description: string): string | null {
 	const match = description.match(/^sepa\b.*?\bnaam:\s*(.+?)(?=\s+(?:omschrijving|kenmerk|machtiging|iban|bic):|$)/i);
 	return match?.[1]?.trim() || null;
 }

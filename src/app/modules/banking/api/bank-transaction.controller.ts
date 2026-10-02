@@ -6,6 +6,7 @@ import {CurrentAccount} from '@modules/auth/decorators/current-user.decorator';
 
 import {BankTransactionService} from '../services/bank-transaction.service';
 import {BankTransactionCategoryUpdateDto} from './dtos/bank-transaction-category-update.dto';
+import {BankTransactionOwnTransferUpdateDto} from './dtos/bank-transaction-own-transfer-update.dto';
 import {BankTransactionQueryDto} from './dtos/bank-transaction-query.dto';
 
 @ApiTags('Bank transactions')
@@ -30,5 +31,14 @@ export class BankTransactionController {
 		@Body() dto: BankTransactionCategoryUpdateDto,
 	) {
 		return this.bankTransactionService.updateCategory(account.id, id, dto.category);
+	}
+
+	@Patch(':id/own-transfer')
+	updateOwnTransfer(
+		@CurrentAccount() account: Account,
+		@Param('id', new ParseUUIDPipe({version: '4'})) id: string,
+		@Body() dto: BankTransactionOwnTransferUpdateDto,
+	) {
+		return this.bankTransactionService.updateOwnTransferOverride(account.id, id, dto.override);
 	}
 }

@@ -17,8 +17,10 @@ import type {
 import type {BankTransactionLocation} from './bank-transaction-location';
 import {BankTransactionType} from './bank-transaction-type';
 import type {BankTransactionCategorizationSearchTrace} from './categorization/bank-transaction-categorization.types';
+import type {OwnTransferEvidence, OwnTransferOverride} from './own-transfer/own-transfer-detection';
 
 @Entity('bank_transactions')
+@Index('idx_bank_transactions_own_transfer_counterpart', ['ownTransferCounterpartId'])
 @Index('idx_bank_transactions_account_dedupe', ['bankAccountId', 'dedupeKey'], {unique: true})
 @Index('idx_bank_transactions_account_stable_identity', ['bankAccountId', 'stableIdentityKey'], {unique: true})
 @Index('idx_bank_transactions_account_identity_group', ['bankAccountId', 'stableIdentityGroupKey'])
@@ -93,6 +95,24 @@ export class BankTransaction {
 
 	@Column({type: 'varchar', length: 255, nullable: true})
 	counterpartyName: string | null;
+
+	@Column({type: 'varchar', length: 34, nullable: true})
+	counterpartyIban: string | null;
+
+	/** Written only by own-transfer recognition, never by provider sync. */
+	@Column({type: 'varchar', length: 16, nullable: true})
+	ownTransferEvidence: OwnTransferEvidence | null;
+
+	@Column({type: 'uuid', nullable: true})
+	ownTransferCounterpartId: string | null;
+
+	@ManyToOne(() => BankTransaction, {onDelete: 'SET NULL', nullable: true})
+	@JoinColumn({name: 'ownTransferCounterpartId'})
+	ownTransferCounterpart?: BankTransaction | null;
+
+	/** Written only by the owner, never by provider sync or recognition. */
+	@Column({type: 'varchar', length: 16, nullable: true})
+	ownTransferOverride: OwnTransferOverride | null;
 
 	@Column({type: 'jsonb', nullable: true})
 	merchantLocation: BankTransactionLocation | null;

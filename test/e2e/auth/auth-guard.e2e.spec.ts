@@ -35,6 +35,7 @@ const VERIFIED_ROUTES: GuardedRoute[] = [
 	['get', '/bank-transactions'],
 	['get', `/bank-transactions/${RESOURCE_ID}`],
 	['patch', `/bank-transactions/${RESOURCE_ID}/category`],
+	['patch', `/bank-transactions/${RESOURCE_ID}/own-transfer`],
 	['post', '/bank-connections/authorize'],
 	['get', '/bank-connections/aspsps'],
 	['get', '/bank-connections'],

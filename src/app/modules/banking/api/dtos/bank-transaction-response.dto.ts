@@ -10,6 +10,23 @@ import type {
 	BankTransactionCategorizationStatus,
 } from '../../categorization/bank-transaction-categorization.types';
 import type {BankTransactionCategory} from '../../categorization/bank-transaction-category';
+import type {OwnTransferEvidence, OwnTransferOverride} from '../../own-transfer/own-transfer-detection';
+
+export class BankTransactionOwnTransferCounterpartDto {
+	id: string;
+	bankName: string;
+	bankAccountName: string | null;
+	bankAccountAlias: string | null;
+	amount: string;
+	currency: string;
+	bookingDate: string | null;
+}
+
+export class BankTransactionOwnTransferDto {
+	evidence: OwnTransferEvidence;
+	/** The other leg, or null when no matching transaction is in the connected accounts. */
+	counterpart: BankTransactionOwnTransferCounterpartDto | null;
+}
 
 export class BankTransactionResponseDto {
 	id: string;
@@ -32,6 +49,8 @@ export class BankTransactionResponseDto {
 	financialEventSource: BankTransactionFinancialEventSource | null;
 	financialEventRuleVersion: string | null;
 	cashFlowTreatment: BankTransactionCashFlowTreatment;
+	ownTransfer: BankTransactionOwnTransferDto | null;
+	ownTransferOverride: OwnTransferOverride | null;
 	categoryConfidence: string | null;
 	providerTransactionDescription: string | null;
 	merchantCategoryCode: string | null;

@@ -8,6 +8,14 @@ export const BANK_TRANSACTION_FINANCIAL_EVENT_TYPES = {
 export type BankTransactionFinancialEventType =
 	(typeof BANK_TRANSACTION_FINANCIAL_EVENT_TYPES)[keyof typeof BANK_TRANSACTION_FINANCIAL_EVENT_TYPES];
 
+/** Filter-only value: transactions recognized as transfers between the owner's own accounts. */
+export const BANK_TRANSACTION_OWN_TRANSFER_FILTER = 'OWN_TRANSFER' as const;
+export const BANK_TRANSACTION_FINANCIAL_EVENT_FILTER_VALUES = [
+	...Object.values(BANK_TRANSACTION_FINANCIAL_EVENT_TYPES),
+	BANK_TRANSACTION_OWN_TRANSFER_FILTER,
+] as const;
+export type BankTransactionFinancialEventFilterValue = (typeof BANK_TRANSACTION_FINANCIAL_EVENT_FILTER_VALUES)[number];
+
 export const BANK_TRANSACTION_FINANCIAL_EVENT_SOURCES = {
 	RULE: 'RULE',
 } as const;
@@ -71,8 +79,9 @@ export function detectBankTransactionFinancialEvent(
 export function getBankTransactionCashFlowTreatment(
 	financialEventType: BankTransactionFinancialEventType | string | null | undefined,
 	direction: BankTransactionDirection | string | null | undefined,
+	ownTransferEvidence?: string | null,
 ): BankTransactionCashFlowTreatment {
-	if (financialEventType === BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE) {
+	if (financialEventType === BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE || ownTransferEvidence) {
 		return BANK_TRANSACTION_CASH_FLOW_TREATMENTS.INTERNAL;
 	}
 	if (direction === BANK_TRANSACTION_CASH_FLOW_TREATMENTS.INCOME) {
