@@ -8,7 +8,7 @@ Tempo API is a NestJS backend for personal-finance accounts, authentication, Ena
 - The intended deployment model is a self-hosted 24/7 instance using real bank data fetched through Enable Banking, with access from other devices. Keep that separate from local development and test environments.
 - Do not push directly to `main`; use a pull request with passing CI. Use Conventional Commit-style messages such as `feat: ...` and `fix: ...`.
 - The adjacent frontend repository is `../tempo-web`; in task descriptions, “frontend” means `tempo-web` and “backend” means this `tempo-api`. For cross-repo work, inspect both repositories and their `AGENTS.md` files.
-- Pushes to API `main` publish `ghcr.io/tempo-co/tempo-api:latest`, which is consumed by `tempo-web/docker-compose.e2e.yml`; coordinate API contract changes with frontend E2E coverage.
+- CI publishes `ghcr.io/tempo-co/tempo-api:pr-<n>` for every same-repo PR and, after tests pass on `main`, tags that commit's image `:main`, `:<sha>` and `:latest` (the production poller pulls `:<sha>`). Frontend E2E uses `:main`, or `:pr-<n>` when the web PR body contains `Depends-on: tempo-api#<n>`; coordinate API contract changes with frontend E2E coverage.
 
 ## Dev environment
 
