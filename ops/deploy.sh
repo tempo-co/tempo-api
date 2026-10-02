@@ -40,7 +40,7 @@ SCRIPT_DIR=$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")
 # shellcheck source=targets/staging.env
 source "$SCRIPT_DIR/targets/$TARGET.env"
 [[ -n $DEFAULT_TAG || ${#REQUESTED[@]} -gt 0 ]] || usage
-# Health wait per service. A full failed run takes at most about 4x this plus the backup.
+# Health wait per service. A failed rollout plus rollback waits up to 4x this, plus ~2 min per health check.
 WAIT_TIMEOUT=${WAIT_TIMEOUT:-120}
 
 export DOCKER_HOST DOCKER_CONFIG

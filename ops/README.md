@@ -9,9 +9,29 @@ ops/install.sh staging                        # once per change to ops/
 tempo-deploy staging --api pr-115 --web main  # an omitted component keeps its current image
 ```
 
-Tags resolve to digests before rollout, the previous images are restored if the new ones are not healthy, and a successful staging deploy refreshes the staging database from the newest production backup. Production still uses `tempo-deploy.sh` below; do not run `deploy.sh production` until the production timer is switched to it.
+Tags resolve to digests before rollout, the previous images are restored if the new ones are not healthy, and a successful staging deploy refreshes the staging database from the newest production backup.
 
-## Image deployment (current production path)
+Production runs `deploy.sh production` from `tempo-deploy-production.timer` every 5 minutes and deploys `:main`. Before any API image change it takes a validated `pg_dump` into `/var/lib/tempo-deploy/pre-deploy-backups` (newest 5 kept); a failed backup cancels the deploy. Images that fail to deploy are skipped until `:main` moves. Install or update the host files from a `main` checkout:
+
+```bash
+git fetch && git checkout --detach origin/main
+sudo ops/install.sh production
+journalctl -u tempo-deploy-production.service -n 50
+```
+
+Switching from the old poller is a one-time step after the first install. Both timers share the deploy lock but track different tags, so never leave both enabled:
+
+```bash
+sudo systemctl disable --now tempo-production-deploy@$USER.timer
+sudo systemctl enable --now tempo-deploy-production.timer
+sudo systemctl start tempo-deploy-production.service  # first run should log "no change"
+```
+
+The cleanup step removes any `ghcr.io/tempo-co` image no container uses, including ones pulled by hand on this host.
+
+`ops/backup.sh` is also the scheduled backup (`tempo-backup.timer`, every 2 days into `~/backups/tempo`, newest 7 kept).
+
+## Image deployment (old production path, removed after the cutover)
 
 `ops/tempo-deploy.sh` is the target-aware image reconciler. It keeps the
 production and staging contracts explicit:

@@ -1,0 +1,11 @@
+[Unit]
+Description=Deploy new Tempo production images every 5 minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=5min
+RandomizedDelaySec=30s
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

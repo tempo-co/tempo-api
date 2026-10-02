@@ -39,7 +39,7 @@ jobs:
               run: npm run format:check
 
             - name: Check deploy scripts
-              run: shellcheck -x ops/deploy.sh ops/install.sh ops/targets/*.env
+              run: shellcheck -x ops/deploy.sh ops/install.sh ops/backup.sh ops/targets/*.env
 
     build:
         name: Build
