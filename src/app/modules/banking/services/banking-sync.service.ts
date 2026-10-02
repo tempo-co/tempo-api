@@ -814,6 +814,9 @@ export class BankingSyncService {
 			.values(transactionValues)
 			.orIgnore()
 			.returning('id')
+			// RETURNING lists only inserted rows, so merging it back by position would hand new ids to
+			// existing rows, and the upserts below would then overwrite their primary keys.
+			.updateEntity(false)
 			.execute();
 		const transactionsAdded = Array.isArray(insertResult.raw) ? insertResult.raw.length : insertResult.raw ? 1 : 0;
 
@@ -832,6 +835,8 @@ export class BankingSyncService {
 					parameters: {processingStatus: 'PROCESSING'},
 				},
 			})
+			// Rows skipped by the condition are missing from RETURNING; keep the values unmodified.
+			.updateEntity(false)
 			.execute();
 
 		const eventTransactionValues = transactionValues.filter(

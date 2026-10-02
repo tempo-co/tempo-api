@@ -388,6 +388,7 @@ describe('BankingSyncService synchronization lock', () => {
 			orIgnore: jest.fn().mockReturnThis(),
 			orUpdate: jest.fn().mockReturnThis(),
 			returning: jest.fn().mockReturnThis(),
+			updateEntity: jest.fn().mockReturnThis(),
 			execute: jest.fn().mockResolvedValue({raw: [{id: 'new-transaction-id'}]}),
 		};
 		transactionRepository.createQueryBuilder.mockReturnValue(insertQueryBuilder);
@@ -971,6 +972,7 @@ describe('BankingSyncService transaction event persistence', () => {
 			orIgnore: jest.fn().mockReturnThis(),
 			orUpdate: jest.fn().mockReturnThis(),
 			returning: jest.fn().mockReturnThis(),
+			updateEntity: jest.fn().mockReturnThis(),
 			execute: jest.fn().mockResolvedValue({raw: []}),
 		};
 		const repository = {
@@ -1013,6 +1015,7 @@ describe('BankingSyncService transaction event persistence', () => {
 			orIgnore: jest.fn().mockReturnThis(),
 			orUpdate: jest.fn().mockReturnThis(),
 			returning: jest.fn().mockReturnThis(),
+			updateEntity: jest.fn().mockReturnThis(),
 			execute: jest.fn().mockResolvedValue({raw: []}),
 		};
 		const bankAccount = {id: 'bank-account-id', currency: 'EUR'} as BankAccount;
@@ -1118,6 +1121,7 @@ describe('BankingSyncService transaction event persistence', () => {
 			orIgnore: jest.fn().mockReturnThis(),
 			orUpdate: jest.fn().mockReturnThis(),
 			returning: jest.fn().mockReturnThis(),
+			updateEntity: jest.fn().mockReturnThis(),
 			execute: jest.fn().mockResolvedValue({raw: []}),
 		};
 		const eventUpdateQueryBuilder = {
@@ -1218,6 +1222,7 @@ describe('BankingSyncService transaction event persistence', () => {
 			orIgnore: jest.fn().mockReturnThis(),
 			orUpdate: jest.fn().mockReturnThis(),
 			returning: jest.fn().mockReturnThis(),
+			updateEntity: jest.fn().mockReturnThis(),
 			update: jest.fn().mockReturnThis(),
 			set: jest.fn().mockReturnThis(),
 			where: jest.fn().mockReturnThis(),
@@ -1277,6 +1282,7 @@ describe('BankingSyncService transaction event persistence', () => {
 			orIgnore: jest.fn().mockReturnThis(),
 			orUpdate: jest.fn().mockReturnThis(),
 			returning: jest.fn().mockReturnThis(),
+			updateEntity: jest.fn().mockReturnThis(),
 			execute: jest.fn().mockResolvedValue({raw: []}),
 		};
 		const bankAccount = {id: 'bank-account-id', currency: 'EUR'} as BankAccount;

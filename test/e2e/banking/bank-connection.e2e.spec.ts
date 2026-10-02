@@ -1106,6 +1106,59 @@ describe('BankConnectionController', () => {
 		}
 	});
 
+	it('keeps stored transaction ids when a synchronization adds new transactions', async () => {
+		const {connection} = await createAuthorizedConnectionFixture('stable-id-session', [
+			{
+				providerAccountId: 'stable-id-account',
+				identificationHash: 'hash-stable-id-account',
+				currency: 'EUR',
+				name: 'Jane Example',
+			},
+		]);
+		const storedPayment: EnableBankingTransaction = {
+			providerTransactionId: 'stable-id-stored',
+			entryReference: 'entry-stable-id-stored',
+			amount: '12.50',
+			currency: 'EUR',
+			creditDebitIndicator: 'DBIT',
+			status: 'BOOK',
+			bookingDate: '2026-08-20',
+			valueDate: '2026-08-20',
+			description: 'Example Store',
+		};
+		const newPayment: EnableBankingTransaction = {
+			...storedPayment,
+			providerTransactionId: 'stable-id-new',
+			entryReference: 'entry-stable-id-new',
+			bookingDate: '2026-08-21',
+			valueDate: '2026-08-21',
+		};
+
+		try {
+			getAccountBalances.mockResolvedValue([]);
+			getAccountTransactions.mockResolvedValueOnce([storedPayment]);
+			await app.get(BankingSyncService).synchronizeAutomatically(connection.id);
+			const {id, createdAt} = await bankTransactionRepository.findOneByOrFail({
+				providerTransactionId: storedPayment.providerTransactionId,
+			});
+
+			// Providers list the newest booking first, so the new row precedes the stored one.
+			getAccountTransactions.mockResolvedValueOnce([newPayment, storedPayment]);
+			await expect(app.get(BankingSyncService).synchronize(account.id, connection.id)).resolves.toMatchObject({
+				status: 'SUCCEEDED',
+				transactionsAdded: 1,
+			});
+
+			expect(
+				await bankTransactionRepository.findOneByOrFail({
+					providerTransactionId: storedPayment.providerTransactionId,
+				}),
+			).toMatchObject({id, createdAt});
+		} finally {
+			await bankConnectionRepository.delete(connection.id);
+		}
+	});
+
 	it('links own-transfer legs after synchronization and unlinks them when a connection is removed', async () => {
 		const revolutIban = 'GB82WEST12345698765432';
 		const {connection: revolutConnection, bankAccounts: revolutAccounts} = await createAuthorizedConnectionFixture(
