@@ -27,7 +27,8 @@ export type BankTransactionIdentityInput = Pick<
 	| 'exchangeRateType'
 	| 'referenceNumber'
 	| 'referenceNumberScheme'
->;
+> &
+	Partial<Pick<BankTransaction, 'transactionStatus'>>;
 
 export type BankTransactionStableIdentityFields = {
 	stableIdentityGroupKey: string;
@@ -123,6 +124,7 @@ export function isLegacyBankTransactionDedupeKey(value: string | null | undefine
 export function assignBankTransactionStableIdentityKeys<T extends BankTransactionIdentityInput>(
 	transactions: T[],
 	existingTransactions: Array<BankTransactionIdentityInput & BankTransactionStoredStableIdentityFields> = [],
+	occupiedIdentityKeys: ReadonlySet<string> = new Set(),
 ): Array<T & BankTransactionStableIdentityFields> {
 	const incomingByGroup = new Map<string, Array<{index: number; transaction: T; contentKey: string}>>();
 	for (const [index, transaction] of transactions.entries()) {
@@ -153,11 +155,64 @@ export function assignBankTransactionStableIdentityKeys<T extends BankTransactio
 	}
 
 	const assignments = new Map<number, BankTransactionStableIdentityFields>();
+	const transitionKey = (transaction: BankTransactionIdentityInput) =>
+		JSON.stringify([
+			transaction.bankAccountId,
+			createBankTransactionCoreFingerprint({...transaction, valueDate: null}),
+			createBankTransactionContentFingerprint(transaction),
+		]);
+	const incomingByTransition = new Map<string, number[]>();
+	const existingByTransition = new Map<string, typeof existingTransactions>();
+	for (const [index, transaction] of transactions.entries()) {
+		const key = transitionKey(transaction);
+		const group = incomingByTransition.get(key) ?? [];
+		group.push(index);
+		incomingByTransition.set(key, group);
+	}
+	for (const transaction of existingTransactions) {
+		const key = transitionKey(transaction);
+		const group = existingByTransition.get(key) ?? [];
+		group.push(transaction);
+		existingByTransition.set(key, group);
+	}
+	const reusedKeys = new Set<string>();
+	for (const [key, indexes] of incomingByTransition) {
+		const candidates = existingByTransition.get(key) ?? [];
+		if (indexes.length !== 1 || candidates.length !== 1) continue;
+		const incoming = transactions[indexes[0]];
+		const existing = candidates[0];
+		// Enable Banking fills a missing value_date from transactionDate.
+		const existingValueDateDiffersFromTransactionDate =
+			existing.valueDate !== null &&
+			normalizeIdentityDate(existing.valueDate) !== normalizeIdentityDate(existing.transactionDate);
+		if (
+			incoming.transactionStatus !== 'BOOK' ||
+			existing.transactionStatus !== 'PDNG' ||
+			!incoming.entryReference?.trim() ||
+			existingValueDateDiffersFromTransactionDate ||
+			!normalizeIdentityDate(incoming.valueDate) ||
+			!existing.stableIdentityKey ||
+			!existing.stableIdentityGroupKey
+		)
+			continue;
+		assignments.set(indexes[0], {
+			stableIdentityGroupKey: createBankTransactionStableIdentityGroupKey(incoming),
+			stableIdentityKey: existing.stableIdentityKey,
+		});
+		reusedKeys.add(existing.stableIdentityKey);
+	}
+	const reservedKeys = new Set([
+		...occupiedIdentityKeys,
+		...existingTransactions.flatMap(({stableIdentityKey}) => (stableIdentityKey ? [stableIdentityKey] : [])),
+	]);
+	const usedKeys = new Set(reservedKeys);
 	for (const [groupKey, incomingGroup] of incomingByGroup) {
 		const existingGroup = [...(existingByGroup.get(groupKey) ?? [])].sort((left, right) =>
 			left.stableIdentityKey.localeCompare(right.stableIdentityKey),
 		);
-		const unmatchedExisting = new Set(existingGroup);
+		const unmatchedExisting = new Set(
+			existingGroup.filter(({stableIdentityKey}) => !reusedKeys.has(stableIdentityKey)),
+		);
 		const existingContentKeys = new Map(
 			existingGroup.map((existing) => [
 				existing,
@@ -172,6 +227,7 @@ export function assignBankTransactionStableIdentityKeys<T extends BankTransactio
 		const unmatchedIncoming: typeof incomingByContent = [];
 
 		for (const incoming of incomingByContent) {
+			if (assignments.has(incoming.index)) continue;
 			const matchingExisting = existingGroup.find(
 				(existing) =>
 					unmatchedExisting.has(existing) && existingContentKeys.get(existing) === incoming.contentKey,
@@ -200,7 +256,6 @@ export function assignBankTransactionStableIdentityKeys<T extends BankTransactio
 			unmatchedIncoming.length = 0;
 		}
 
-		const usedKeys = new Set(existingGroup.map(({stableIdentityKey}) => stableIdentityKey));
 		let nextOccurrence = 1;
 		for (const incoming of unmatchedIncoming) {
 			const allocation = allocateNextBankTransactionStableIdentityKey(groupKey, usedKeys, nextOccurrence);

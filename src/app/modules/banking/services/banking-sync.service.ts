@@ -110,6 +110,7 @@ const BANK_TRANSACTION_IDENTITY_SELECT: (keyof BankTransaction)[] = [
 	'referenceNumberScheme',
 	'stableIdentityKey',
 	'stableIdentityGroupKey',
+	'transactionStatus',
 ];
 
 type AccountFetchResult = {
@@ -691,13 +692,7 @@ export class BankingSyncService {
 		});
 		if (incompleteTransactions.length === 0) return;
 
-		const existingIdentityKeys = await repository.find({
-			select: ['stableIdentityKey'],
-			where: {bankAccountId: bankAccount.id, stableIdentityKey: Not(IsNull())},
-		});
-		const usedKeys = new Set(
-			existingIdentityKeys.flatMap(({stableIdentityKey}) => (stableIdentityKey ? [stableIdentityKey] : [])),
-		);
+		const usedKeys = await this.getOccupiedTransactionIdentityKeys(repository, bankAccount.id);
 		const identityUpdates = incompleteTransactions.map((transaction) => {
 			const stableIdentityGroupKey =
 				transaction.stableIdentityGroupKey || createBankTransactionStableIdentityGroupKey(transaction);
@@ -733,6 +728,19 @@ export class BankingSyncService {
 		}
 	}
 
+	private async getOccupiedTransactionIdentityKeys(
+		repository: Repository<BankTransaction>,
+		bankAccountId: string,
+	): Promise<Set<string>> {
+		const occupiedIdentities = await repository.find({
+			select: ['stableIdentityKey'],
+			where: {bankAccountId, stableIdentityKey: Not(IsNull())},
+		});
+		return new Set(
+			occupiedIdentities.flatMap(({stableIdentityKey}) => (stableIdentityKey ? [stableIdentityKey] : [])),
+		);
+	}
+
 	private async persistTransactions(
 		repository: Repository<BankTransaction>,
 		bankAccount: BankAccount,
@@ -746,6 +754,13 @@ export class BankingSyncService {
 		const stableIdentityGroupKeys = [
 			...new Set(unassignedTransactionValues.map(({stableIdentityGroupKey}) => stableIdentityGroupKey)),
 		];
+		const entryReferences = [
+			...new Set(
+				unassignedTransactionValues.flatMap(({entryReference}) =>
+					entryReference?.trim() ? [entryReference] : [],
+				),
+			),
+		];
 		const existingTransactions = await repository.find({
 			select: [
 				...BANK_TRANSACTION_IDENTITY_SELECT,
@@ -754,11 +769,22 @@ export class BankingSyncService {
 				'categorySource',
 				'categoryStatus',
 			],
-			where: {bankAccountId: bankAccount.id, stableIdentityGroupKey: In(stableIdentityGroupKeys)},
+			// Include every same-reference candidate, not just pending rows: repeated references
+			// and already-booked copies must make a cross-group transition ambiguous.
+			where: entryReferences.length
+				? [
+						{bankAccountId: bankAccount.id, stableIdentityGroupKey: In(stableIdentityGroupKeys)},
+						{bankAccountId: bankAccount.id, entryReference: In(entryReferences)},
+					]
+				: {bankAccountId: bankAccount.id, stableIdentityGroupKey: In(stableIdentityGroupKeys)},
 		});
+		// A booked row can retain a key from its former pending group while no longer
+		// matching the incoming group or reference. Reserve keys independently of matching.
+		const occupiedIdentityKeys = await this.getOccupiedTransactionIdentityKeys(repository, bankAccount.id);
 		const transactionValues = assignBankTransactionStableIdentityKeys(
 			unassignedTransactionValues,
 			existingTransactions,
+			occupiedIdentityKeys,
 		);
 		const stableIdentityKeys = transactionValues.map(({stableIdentityKey}) => stableIdentityKey);
 		const existingTransactionsByIdentity = new Map(

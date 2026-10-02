@@ -1,3 +1,4 @@
+import {createBankTransaction} from '../../../../test/fixtures/bank-transaction.fixture';
 import type {BankTransactionIdentityInput} from './bank-transaction-identity';
 import {
 	allocateNextBankTransactionStableIdentityKey,
@@ -7,6 +8,112 @@ import {
 } from './bank-transaction-identity';
 
 describe('bank transaction stable identity assignment', () => {
+	it.each([
+		['another bank account', {bankAccountId: '10000000-0000-4000-8000-000000000099'}],
+		['another reference', {entryReference: 'different-reference'}],
+		['an empty reference', {entryReference: ''}],
+		['another amount', {amount: '-99.00'}],
+		['another currency', {currency: 'USD'}],
+		['another direction', {creditDebitIndicator: 'CRDT'}],
+		['another booking date', {bookingDate: '2026-09-03'}],
+		['another transaction date', {transactionDate: '2026-09-03'}],
+		['changed payment content', {description: 'Different payment'}],
+		['a non-booked status', {transactionStatus: 'PDNG'}],
+	])('does not reconcile pending across groups with %s', (_label, overrides) => {
+		const pending = createBankTransaction({
+			entryReference: 'synthetic-transition',
+			transactionStatus: 'PDNG',
+			transactionDate: null,
+			bookingDate: '2026-09-01',
+			valueDate: null,
+		});
+		const [stored] = assignBankTransactionStableIdentityKeys([pending]);
+		const incoming = {...pending, transactionStatus: 'BOOK', valueDate: '2026-09-02', ...overrides};
+		const [updated] = assignBankTransactionStableIdentityKeys([incoming], [stored]);
+		expect(updated.stableIdentityKey).not.toBe(stored.stableIdentityKey);
+	});
+
+	it('reconciles a booked update when pending valueDate was derived from transactionDate', () => {
+		const pending = createBankTransaction({
+			entryReference: 'synthetic-value-date-fallback',
+			transactionStatus: 'PDNG',
+			transactionDate: '2026-09-01',
+			bookingDate: '2026-09-02',
+			valueDate: '2026-09-01',
+		});
+		const [stored] = assignBankTransactionStableIdentityKeys([pending]);
+		const booked = {...pending, transactionStatus: 'BOOK', valueDate: '2026-09-03'};
+		const [updated] = assignBankTransactionStableIdentityKeys([booked], [stored]);
+
+		expect(updated.stableIdentityKey).toBe(stored.stableIdentityKey);
+		expect(updated.stableIdentityGroupKey).not.toBe(stored.stableIdentityGroupKey);
+	});
+
+	it('does not reconcile when pending valueDate is distinct from transactionDate', () => {
+		const pending = createBankTransaction({
+			entryReference: 'synthetic-independent-value-date',
+			transactionStatus: 'PDNG',
+			transactionDate: '2026-09-01',
+			bookingDate: '2026-09-02',
+			valueDate: '2026-09-03',
+		});
+		const [stored] = assignBankTransactionStableIdentityKeys([pending]);
+		const booked = {...pending, transactionStatus: 'BOOK', valueDate: '2026-09-04'};
+		const [updated] = assignBankTransactionStableIdentityKeys([booked], [stored]);
+
+		expect(updated.stableIdentityKey).not.toBe(stored.stableIdentityKey);
+	});
+
+	it('does not reconcile ambiguous repeated pending or incoming booked occurrences', () => {
+		const pending = createBankTransaction({
+			entryReference: 'synthetic-repeated',
+			transactionStatus: 'PDNG',
+			valueDate: null,
+		});
+		const booked = {...pending, transactionStatus: 'BOOK', valueDate: '2026-09-02'};
+		const stored = assignBankTransactionStableIdentityKeys([pending, pending]);
+		const oldKeys = new Set(stored.map(({stableIdentityKey}) => stableIdentityKey));
+		expect(oldKeys.has(assignBankTransactionStableIdentityKeys([booked], stored)[0].stableIdentityKey)).toBe(false);
+		const [single] = stored;
+		const incoming = assignBankTransactionStableIdentityKeys([booked, booked], [single]);
+		expect(incoming.every(({stableIdentityKey}) => stableIdentityKey !== single.stableIdentityKey)).toBe(true);
+		expect(new Set(incoming.map(({stableIdentityKey}) => stableIdentityKey)).size).toBe(2);
+	});
+
+	it('keeps simultaneous pending and booked rows separate', () => {
+		const pending = createBankTransaction({
+			entryReference: 'synthetic-simultaneous',
+			transactionStatus: 'PDNG',
+			valueDate: null,
+		});
+		const [stored] = assignBankTransactionStableIdentityKeys([pending]);
+		const incoming = assignBankTransactionStableIdentityKeys(
+			[pending, {...pending, transactionStatus: 'BOOK', valueDate: '2026-09-02'}],
+			[stored],
+		);
+		expect(incoming[0].stableIdentityKey).toBe(stored.stableIdentityKey);
+		expect(incoming[1].stableIdentityKey).not.toBe(stored.stableIdentityKey);
+	});
+
+	it('reconciles distinct payment content independently despite a shared reference', () => {
+		const first = createBankTransaction({
+			entryReference: 'synthetic-shared',
+			transactionStatus: 'PDNG',
+			valueDate: null,
+			description: 'Payment A',
+		});
+		const second = {...first, description: 'Payment B'};
+		const stored = assignBankTransactionStableIdentityKeys([first, second]);
+		const incoming = assignBankTransactionStableIdentityKeys(
+			[second, first].map((row) => ({...row, transactionStatus: 'BOOK', valueDate: '2026-09-02'})),
+			stored,
+		);
+		expect(incoming.map(({stableIdentityKey}) => stableIdentityKey)).toEqual([
+			stored[1].stableIdentityKey,
+			stored[0].stableIdentityKey,
+		]);
+	});
+
 	it('assigns repeated-entry occurrences independently of provider response order', () => {
 		const sharedFields: BankTransactionIdentityInput = {
 			bankAccountId: '10000000-0000-4000-8000-000000000001',

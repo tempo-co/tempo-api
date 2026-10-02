@@ -614,6 +614,156 @@ describe('BankConnectionController', () => {
 		await verifiedAgent.get('/bank-connections/not-a-uuid/transactions').expect(400);
 	});
 
+	it('reconciles a pending payment when booking populates valueDate without losing manual category', async () => {
+		const {connection, bankAccount} = await createAuthorizedConnection('pending-booked-session');
+		const pendingProviderShape = makeTransactions('pending-booked')[0];
+		const pending: EnableBankingTransaction = {
+			...pendingProviderShape,
+			// EnableBankingClient fills a missing provider value_date from transaction_date.
+			valueDate: pendingProviderShape.transactionDate,
+			status: 'PDNG',
+		};
+		const synchronize = async (transaction: EnableBankingTransaction) => {
+			getAccountBalances.mockResolvedValueOnce(makeBalances());
+			getAccountTransactions.mockResolvedValueOnce([transaction]);
+			await bankConnectionRepository.update(connection.id, {
+				nextSyncAt: new Date(Date.now() - 1),
+				syncStatus: 'QUEUED',
+			});
+			return app.get(BankingSyncService).synchronizeAutomatically(connection.id);
+		};
+		expect(await synchronize(pending)).toMatchObject({status: 'SUCCEEDED', transactionsAdded: 1});
+		const stored = await bankTransactionRepository.findOneByOrFail({bankAccountId: bankAccount.id});
+		await bankTransactionRepository.update(stored.id, {
+			category: 'GROCERIES',
+			categorySource: 'MANUAL',
+			categoryStatus: 'COMPLETED',
+		});
+		const booked = {...pending, status: 'BOOK', valueDate: '2026-08-27'};
+		expect(await synchronize(booked)).toMatchObject({status: 'SUCCEEDED', transactionsAdded: 0});
+		expect(await synchronize(booked)).toMatchObject({status: 'SUCCEEDED', transactionsAdded: 0});
+		const rows = await bankTransactionRepository.findBy({bankAccountId: bankAccount.id});
+		expect(rows).toHaveLength(1);
+		expect(rows[0]).toMatchObject({
+			id: stored.id,
+			stableIdentityKey: stored.stableIdentityKey,
+			transactionDate: '2026-08-24',
+			bookingDate: '2026-08-26',
+			transactionStatus: 'BOOK',
+			valueDate: '2026-08-27',
+			category: 'GROCERIES',
+			categorySource: 'MANUAL',
+			categoryStatus: 'COMPLETED',
+		});
+		const response = await verifiedAgent.get(`/bank-connections/${connection.id}/transactions`).expect(200);
+		expect(response.body.transactions).toHaveLength(1);
+		expect(response.body.transactions[0].id).toBe(stored.id);
+	});
+
+	it.each([
+		['different-reference pending payment', 'payment-b'],
+		['missing-reference stale pending input', undefined],
+		['same-reference stale pending input', 'payment-a'],
+	])('reserves the booked owner identity key for %s', async (_scenario, entryReference) => {
+		const {connection, bankAccount} = await createAuthorizedConnection('reserved-booked-key-session');
+		const pending: EnableBankingTransaction = {
+			...makeTransactions('reserved-booked-key')[0],
+			providerTransactionId: undefined,
+			entryReference: 'payment-a',
+			transactionDate: undefined,
+			valueDate: undefined,
+			status: 'PDNG',
+		};
+		const synchronize = async (transaction: EnableBankingTransaction) => {
+			getAccountBalances.mockResolvedValueOnce(makeBalances());
+			getAccountTransactions.mockResolvedValueOnce([transaction]);
+			await bankConnectionRepository.update(connection.id, {
+				nextSyncAt: new Date(Date.now() - 1),
+				syncStatus: 'QUEUED',
+			});
+			return app.get(BankingSyncService).synchronizeAutomatically(connection.id);
+		};
+		expect(await synchronize(pending)).toMatchObject({status: 'SUCCEEDED', transactionsAdded: 1});
+		const stored = await bankTransactionRepository.findOneByOrFail({bankAccountId: bankAccount.id});
+		await bankTransactionRepository.update(stored.id, {
+			category: 'GROCERIES',
+			categorySource: 'MANUAL',
+			categoryStatus: 'COMPLETED',
+		});
+		expect(await synchronize({...pending, status: 'BOOK', valueDate: '2026-08-27'})).toMatchObject({
+			status: 'SUCCEEDED',
+			transactionsAdded: 0,
+		});
+		const booked = await bankTransactionRepository.findOneByOrFail({id: stored.id});
+		expect(booked).toMatchObject({
+			stableIdentityKey: stored.stableIdentityKey,
+			transactionStatus: 'BOOK',
+			valueDate: '2026-08-27',
+			category: 'GROCERIES',
+			categorySource: 'MANUAL',
+			categoryStatus: 'COMPLETED',
+		});
+		expect(booked.stableIdentityGroupKey).not.toBe(stored.stableIdentityGroupKey);
+
+		expect(await synchronize({...pending, entryReference})).toMatchObject({
+			status: 'SUCCEEDED',
+			transactionsAdded: 1,
+		});
+		const rows = await bankTransactionRepository.findBy({bankAccountId: bankAccount.id});
+		expect(rows).toHaveLength(2);
+		expect(await bankTransactionRepository.findOneByOrFail({id: stored.id})).toEqual(booked);
+		const newPending = rows.find(({id}) => id !== stored.id)!;
+		expect(newPending).toMatchObject({
+			entryReference: entryReference ?? null,
+			transactionStatus: 'PDNG',
+			valueDate: null,
+			stableIdentityGroupKey: stored.stableIdentityGroupKey,
+		});
+		expect(newPending.stableIdentityKey).not.toBe(booked.stableIdentityKey);
+		expect(await synchronize({...pending, entryReference})).toMatchObject({
+			status: 'SUCCEEDED',
+			transactionsAdded: 0,
+		});
+		expect(await bankTransactionRepository.countBy({bankAccountId: bankAccount.id})).toBe(2);
+		expect(await bankTransactionRepository.findOneByOrFail({id: stored.id})).toEqual(booked);
+	});
+
+	it('preserves ambiguous repeated pending payments when one booked occurrence arrives', async () => {
+		const {connection, bankAccount} = await createAuthorizedConnection('ambiguous-pending-session');
+		const pending: EnableBankingTransaction = {
+			...makeTransactions('ambiguous-pending')[0],
+			providerTransactionId: undefined,
+			transactionDate: undefined,
+			valueDate: undefined,
+			status: 'PDNG',
+		};
+		getAccountBalances.mockResolvedValueOnce(makeBalances());
+		getAccountTransactions.mockResolvedValueOnce([pending, pending]);
+		expect(await app.get(BankingSyncService).synchronizeAutomatically(connection.id)).toMatchObject({
+			status: 'SUCCEEDED',
+			transactionsAdded: 2,
+		});
+		const stored = await bankTransactionRepository.findBy({bankAccountId: bankAccount.id});
+		getAccountBalances.mockResolvedValueOnce(makeBalances());
+		getAccountTransactions.mockResolvedValueOnce([{...pending, status: 'BOOK', valueDate: '2026-08-27'}]);
+		await bankConnectionRepository.update(connection.id, {
+			nextSyncAt: new Date(Date.now() - 1),
+			syncStatus: 'QUEUED',
+		});
+		expect(await app.get(BankingSyncService).synchronizeAutomatically(connection.id)).toMatchObject({
+			status: 'SUCCEEDED',
+			transactionsAdded: 1,
+		});
+		const rows = await bankTransactionRepository.findBy({bankAccountId: bankAccount.id});
+		expect(rows).toHaveLength(3);
+		expect(
+			rows
+				.filter(({transactionStatus}) => transactionStatus === 'PDNG')
+				.map(({id}) => id)
+				.sort(),
+		).toEqual(stored.map(({id}) => id).sort());
+	});
+
 	it('synchronizes balances and transactions without exposing provider identifiers', async () => {
 		const {connection, bankAccount} = await createAuthorizedConnection('sync-provider-session');
 		await bankConnectionRepository.update(

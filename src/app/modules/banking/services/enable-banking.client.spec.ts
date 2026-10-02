@@ -638,6 +638,7 @@ describe('EnableBankingClient', () => {
 				},
 				remittanceInformation: 'Groceries',
 				transactionDate: '2026-08-24',
+				valueDate: '2026-08-24',
 				bankTransactionCode: 'PMNT',
 				bankTransactionSubCode: 'CARD',
 				bankTransactionDescription: 'Card payment',

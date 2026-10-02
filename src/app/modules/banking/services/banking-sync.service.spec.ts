@@ -1047,6 +1047,7 @@ describe('BankingSyncService transaction event persistence', () => {
 		const repositoryFind = jest
 			.fn()
 			.mockResolvedValueOnce([existingTransaction])
+			.mockResolvedValueOnce([existingTransaction])
 			.mockResolvedValueOnce([{id: existingTransaction.id}]);
 		const repository = {
 			find: repositoryFind,
@@ -1157,6 +1158,7 @@ describe('BankingSyncService transaction event persistence', () => {
 					categorySource: null,
 				},
 			])
+			.mockResolvedValueOnce([{stableIdentityKey: mappedValue.stableIdentityKey}])
 			.mockResolvedValueOnce([{id: 'existing-transaction-id'}]);
 
 		await (
@@ -1235,6 +1237,7 @@ describe('BankingSyncService transaction event persistence', () => {
 		}));
 		const repositoryFind = jest
 			.fn()
+			.mockResolvedValueOnce(existingTransactions)
 			.mockResolvedValueOnce(existingTransactions)
 			.mockResolvedValueOnce(existingTransactions.map(({id}) => ({id})));
 		const repository = {
@@ -1325,6 +1328,7 @@ describe('BankingSyncService transaction event persistence', () => {
 		const repository = {
 			find: jest
 				.fn()
+				.mockResolvedValueOnce(existingTransactions)
 				.mockResolvedValueOnce(existingTransactions)
 				.mockResolvedValueOnce(existingTransactions.map(({id}) => ({id}))),
 			createQueryBuilder: jest.fn().mockReturnValue(insertQueryBuilder),
