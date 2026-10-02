@@ -1,6 +1,17 @@
 # Tempo operations
 
-## Image deployment
+## Deploying with `ops/deploy.sh`
+
+CI publishes `ghcr.io/tempo-co/tempo-{api,web}:pr-<n>` for every PR and `:main` after tests pass on `main`. Deploy any pair to staging with one command:
+
+```bash
+ops/install.sh staging                        # once per change to ops/
+tempo-deploy staging --api pr-115 --web main  # an omitted component keeps its current image
+```
+
+Tags resolve to digests before rollout, the previous images are restored if the new ones are not healthy, and a successful staging deploy refreshes the staging database from the newest production backup. Production still uses `tempo-deploy.sh` below; do not run `deploy.sh production` until the production timer is switched to it.
+
+## Image deployment (current production path)
 
 `ops/tempo-deploy.sh` is the target-aware image reconciler. It keeps the
 production and staging contracts explicit:

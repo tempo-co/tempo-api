@@ -38,6 +38,9 @@ jobs:
             - name: Run format check
               run: npm run format:check
 
+            - name: Check deploy scripts
+              run: shellcheck -x ops/deploy.sh ops/install.sh ops/targets/*.env
+
     build:
         name: Build
         runs-on: ubuntu-latest
