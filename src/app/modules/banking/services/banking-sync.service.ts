@@ -839,6 +839,8 @@ export class BankingSyncService {
 			.updateEntity(false)
 			.execute();
 
+		await this.clearStaleBaseAmounts(repository, existingTransactions);
+
 		const eventTransactionValues = transactionValues.filter(
 			({financialEventType}) => financialEventType === BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
 		);
@@ -917,6 +919,49 @@ export class BankingSyncService {
 				: this.getInsertedTransactionIds(insertResult.raw);
 
 		return {transactionsAdded, persistedTransactionIds};
+	}
+
+	/**
+	 * Clears base-currency amounts whose conversion inputs the upsert just changed, so the conversion job
+	 * recomputes them. Compares the pre-sync snapshot with the stored row, so rows the upsert skipped keep theirs.
+	 */
+	private async clearStaleBaseAmounts(
+		repository: Repository<BankTransaction>,
+		previousTransactions: readonly BankTransaction[],
+	): Promise<void> {
+		const rows = previousTransactions.map((transaction) => [
+			transaction.id,
+			transaction.amount,
+			transaction.currency,
+			transaction.transactionDate,
+			transaction.bookingDate,
+			transaction.instructedAmount,
+			transaction.instructedCurrency,
+		]);
+		for (const chunk of chunkArray(rows, BATCH_WRITE_CHUNK_SIZE)) {
+			const values = buildPostgresValuesList(chunk, [
+				'uuid',
+				'numeric',
+				'varchar',
+				'date',
+				'date',
+				'numeric',
+				'varchar',
+			]);
+			await repository.query(
+				`UPDATE "bank_transactions" AS t
+				SET "amountInBaseCurrency" = NULL, "baseAmountMethod" = NULL, "baseAmountRateDate" = NULL
+				FROM (VALUES ${values.sql}) AS previous(
+					"id", "amount", "currency", "transactionDate", "bookingDate", "instructedAmount", "instructedCurrency"
+				)
+				WHERE t."id" = previous."id"
+					AND t."amountInBaseCurrency" IS NOT NULL
+					AND (t."amount", t."currency", t."transactionDate", t."bookingDate", t."instructedAmount", t."instructedCurrency")
+						IS DISTINCT FROM (previous."amount", previous."currency", previous."transactionDate",
+							previous."bookingDate", previous."instructedAmount", previous."instructedCurrency")`,
+				values.parameters,
+			);
+		}
 	}
 
 	private async enqueuePersistedTransactions(transactionIds: readonly string[]): Promise<void> {
