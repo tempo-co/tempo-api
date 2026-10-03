@@ -1,7 +1,4 @@
 <p align="center">
-  <a href="https://coveralls.io/github/tempo-co/tempo-api?branch=main" target="_blank">
-    <img src="https://coveralls.io/repos/github/tempo-co/tempo-api/badge.svg?branch=main" alt="Coverage Status" />
-  </a>
   <a href="https://github.com/tempo-co/tempo-api/actions" target="_blank">
     <img src="https://github.com/tempo-co/tempo-api/actions/workflows/ci.yml/badge.svg" alt="Build Status" />
   </a>

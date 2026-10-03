@@ -29,7 +29,7 @@ Tempo API is a NestJS backend for personal-finance accounts, authentication, Ena
 - E2E Jest: `npm run test:e2e` or `npm run test:e2e:cov`. These first run `npm run docker:test:down`, then `npm run docker:test:up`, clear `dist`, and run `test/jest-e2e.json` serially with `--runInBand`.
 - Direct test-container commands are `npm run docker:test:up` and `npm run docker:test:down`.
 - Jest unit tests match `src/**/*.spec.ts`; E2E tests match `test/**/*.e2e.spec.ts`. A spec named any other way (for example `*.spec.ts.ts`, or a `test/` file without `.e2e.`) silently never runs. E2E setup creates the Nest app, applies the global validation pipe, and seeds accounts.
-- CI runs `npm ci`, lint/format checks, `npm run build`, `npm run test`, and `npm run test:e2e:cov`; coverage is uploaded to Coveralls.
+- CI runs `npm ci`, lint/format checks, `npm run build`, `npm run test`, and `npm run test:e2e:cov`.
 
 ## Test helpers
 
