@@ -1,0 +1,46 @@
+name: GHCR retention
+
+# Weekly cleanup of old image versions (see ops/ghcr-retention.sh). tempo-web calls this
+# workflow for its own package. Scheduled runs are dry runs until the calling repository's
+# variable GHCR_RETENTION_DELETE is 'true'.
+on:
+    schedule:
+        - cron: '17 4 * * 1'
+    workflow_dispatch:
+        inputs:
+            delete:
+                description: Delete versions (otherwise dry run)
+                type: boolean
+                default: false
+    workflow_call:
+        inputs:
+            delete:
+                type: boolean
+                default: false
+
+permissions:
+    contents: read
+    packages: write
+    pull-requests: read
+
+jobs:
+    retention:
+        name: GHCR retention
+        runs-on: ubuntu-latest
+        concurrency: ghcr-retention-${{ github.repository }}
+        steps:
+            - name: Checkout retention script
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+              with:
+                  repository: tempo-co/tempo-api
+                  persist-credentials: false
+                  sparse-checkout: ops/ghcr-retention.sh
+                  sparse-checkout-cone-mode: false
+
+            - name: Delete old image versions
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  DELETE: ${{ inputs.delete || (github.event_name == 'schedule' && vars.GHCR_RETENTION_DELETE == 'true') }}
+              run: |
+                  if [[ "$DELETE" == true ]]; then set -- --delete; fi
+                  bash ops/ghcr-retention.sh "$GITHUB_REPOSITORY" "$@"

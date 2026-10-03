@@ -40,7 +40,7 @@ jobs:
 
             - name: Check deploy scripts
               run: |
-                  shellcheck -x ops/deploy.sh ops/install.sh ops/backup.sh ops/targets/*.env ops/staging/tempo-staging-refresh.sh
+                  shellcheck -x ops/deploy.sh ops/install.sh ops/backup.sh ops/targets/*.env ops/staging/tempo-staging-refresh.sh ops/ghcr-retention.sh
                   export TEMPO_API_IMAGE=api TEMPO_WEB_IMAGE=web DB_USERNAME=u DB_PASSWORD=p DB_NAME=d TEMPO_PRODUCTION_ENV_FILE=/dev/null ENABLE_BANKING_PRIVATE_KEY_HOST_PATH=/dev/null
                   docker compose -f docker-compose.production.yml config -q
                   docker compose -f ops/staging/docker-compose.yml --env-file ops/staging/staging.env.example config -q

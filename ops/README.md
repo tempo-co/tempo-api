@@ -9,6 +9,7 @@ CI builds one image per commit, publishes `ghcr.io/tempo-co/tempo-{api,web}:pr-<
 | `backup.sh` | Validated `pg_dump`, scheduled and pre-deploy |
 | `install.sh` | Copies the above to the host |
 | `runtime-image-smoke.js` | Runtime image check run by the `Dockerfile` |
+| `ghcr-retention.sh` | Weekly GHCR cleanup (`.github/workflows/ghcr-retention.yml`, also used by tempo-web): keeps `main`, open PRs' `pr-<n>` and anything newer than 30 days. Also keeps the last 5 `main` images as rollback targets. Dry run until the repo variable `GHCR_RETENTION_DELETE=true`; GitHub pauses scheduled workflows after 60 days without repo activity |
 | `systemd/` | Production deploy and backup timers (installed by `install.sh`); staging Docker daemon (user unit, installed once by hand) |
 | `staging/` | Staging Compose file, env template, database refresh |
 
