@@ -3,7 +3,7 @@ import {InjectRepository} from '@nestjs/typeorm';
 import {Repository} from 'typeorm';
 
 import {BankTransactionFxRate} from '../bank-transaction-fx-rate.entity';
-import {normalizeCurrency} from './bank-transaction-amount-conversion.utils';
+import {FX_RATE_MAX_AGE_DAYS, addDays, normalizeCurrency} from './bank-transaction-amount-conversion.utils';
 
 const ECB_DATA_API_URL = 'https://data-api.ecb.europa.eu/service/data/EXR';
 const ECB_PROVIDER = 'ECB';
@@ -39,6 +39,31 @@ export class FxRateService {
 					`Historical FX rate fetch failed for ${currency}: ${error instanceof Error ? error.message : 'unknown error'}`,
 				);
 			}
+		}
+	}
+
+	/**
+	 * Fetches rates published since the newest stored one, so currencies without recent transactions stay current.
+	 * A currency with no stored rate fetches the last {@link FX_RATE_MAX_AGE_DAYS} days.
+	 */
+	async ensureLatestRates(currencies: Iterable<string>, latestExpectedDate: string): Promise<void> {
+		for (const rawCurrency of new Set(currencies)) {
+			const currency = normalizeCurrency(rawCurrency);
+			if (!currency || currency === 'EUR') continue;
+
+			const latest = await this.fxRateRepository
+				.createQueryBuilder('fxRate')
+				.select(`to_char(MAX(fxRate.rateDate), 'YYYY-MM-DD')`, 'rateDate')
+				.where('fxRate.currency = :currency', {currency})
+				.getRawOne<{rateDate: string | null}>();
+			const latestDate = latest?.rateDate ?? null;
+			if (latestDate && latestDate >= latestExpectedDate) continue;
+
+			await this.ensureRates(
+				[currency],
+				latestDate ?? addDays(latestExpectedDate, -FX_RATE_MAX_AGE_DAYS),
+				latestExpectedDate,
+			);
 		}
 	}
 

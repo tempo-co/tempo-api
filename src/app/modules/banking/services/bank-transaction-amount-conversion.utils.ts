@@ -6,6 +6,37 @@ const DECIMAL_PATTERN = /^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/;
  */
 export const FX_RATE_MAX_AGE_DAYS = 7;
 
+/** ECB reference rates are published around 16:00 CET on TARGET business days. */
+const ECB_PUBLICATION_HOUR = 16;
+const ECB_TIME_ZONE = 'Europe/Berlin';
+
+/** The newest ECB rate date that should already be published at `now`. ECB holidays are not modelled. */
+export function latestExpectedEcbRateDate(now: Date): string {
+	const parts = Object.fromEntries(
+		new Intl.DateTimeFormat('en-CA', {
+			timeZone: ECB_TIME_ZONE,
+			year: 'numeric',
+			month: '2-digit',
+			day: '2-digit',
+			hour: '2-digit',
+			hourCycle: 'h23',
+		})
+			.formatToParts(now)
+			.map(({type, value}) => [type, value]),
+	);
+	const localDate = `${parts.year}-${parts.month}-${parts.day}`;
+	if (isBusinessDay(localDate) && Number(parts.hour) >= ECB_PUBLICATION_HOUR) return localDate;
+
+	let candidate = addDays(localDate, -1);
+	while (!isBusinessDay(candidate)) candidate = addDays(candidate, -1);
+	return candidate;
+}
+
+function isBusinessDay(date: string): boolean {
+	const weekday = new Date(`${date}T00:00:00.000Z`).getUTCDay();
+	return weekday >= 1 && weekday <= 5;
+}
+
 export function addDays(date: string, days: number): string {
 	const value = new Date(`${date}T00:00:00.000Z`);
 	value.setUTCDate(value.getUTCDate() + days);

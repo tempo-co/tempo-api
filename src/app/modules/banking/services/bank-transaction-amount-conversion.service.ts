@@ -13,6 +13,7 @@ import {
 	convertUsingHistoricalRates,
 	convertUsingProviderAmount,
 	getBankTransactionRateDate,
+	latestExpectedEcbRateDate,
 	normalizeCurrency,
 } from './bank-transaction-amount-conversion.utils';
 import {FxRateService} from './fx-rate.service';
@@ -38,7 +39,9 @@ export class BankTransactionAmountConversionService {
 		private readonly fxRateService: FxRateService,
 	) {}
 
-	async backfill(): Promise<{scanned: number; converted: number}> {
+	async backfill(now = new Date()): Promise<{scanned: number; converted: number}> {
+		await this.refreshAccountCurrencyRates(now);
+
 		const transactions = await this.bankTransactionRepository.find({
 			select: {
 				id: true,
@@ -97,6 +100,17 @@ export class BankTransactionAmountConversionService {
 
 		this.logger.debug(`Converted ${converted} of ${transactions.length} bank transaction amounts.`);
 		return {scanned: transactions.length, converted};
+	}
+
+	/** Keeps rates current for every currency a balance or base amount may need, even without new transactions. */
+	private async refreshAccountCurrencyRates(now: Date): Promise<void> {
+		const rows = await this.bankAccountRepository.query(
+			`SELECT DISTINCT UPPER("currency") AS "currency" FROM "bank_accounts" WHERE "isActive" = TRUE
+			UNION
+			SELECT DISTINCT UPPER("baseCurrency") FROM "accounts" WHERE "baseCurrency" IS NOT NULL`,
+		);
+		const currencies = (rows as Array<{currency: string}>).map(({currency}) => currency);
+		await this.fxRateService.ensureLatestRates(currencies, latestExpectedEcbRateDate(now));
 	}
 
 	private async saveConversions(conversions: readonly [id: string, amountInBaseCurrency: string][]): Promise<void> {

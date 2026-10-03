@@ -26,6 +26,7 @@ describe('BankTransactionAmountConversionService', () => {
 		const accountRepository = {update: jest.fn().mockResolvedValue(undefined)} as unknown as Repository<Account>;
 		const bankAccountRepository = {
 			createQueryBuilder: jest.fn().mockReturnValue(bankAccountQueryBuilder),
+			query: jest.fn().mockResolvedValue([]),
 		} as unknown as Repository<BankAccount>;
 		const bankTransactionRepository = {
 			find: jest.fn().mockResolvedValue(transactions),
@@ -33,6 +34,7 @@ describe('BankTransactionAmountConversionService', () => {
 		} as unknown as Repository<BankTransaction>;
 		const fxRateService = {
 			ensureRates: jest.fn().mockResolvedValue(undefined),
+			ensureLatestRates: jest.fn().mockResolvedValue(undefined),
 			getRateToEur: jest.fn().mockImplementation(async (currency: string) => (currency === 'GBP' ? 0.85 : 1)),
 		} as unknown as FxRateService;
 		return {
