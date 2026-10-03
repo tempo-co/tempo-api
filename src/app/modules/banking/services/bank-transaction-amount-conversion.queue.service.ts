@@ -12,7 +12,8 @@ import {
 
 export type BankTransactionAmountConversionJobData = Record<string, never>;
 
-const BACKFILL_JOB_ID = 'bank-transaction-amount-backfill-v1';
+// Bumped when a migration clears stored amounts, so they reconvert on deploy instead of on the next tick.
+const BACKFILL_JOB_ID = 'bank-transaction-amount-backfill-v2';
 const CONVERSION_INTERVAL_MS = 15 * 60 * 1000;
 
 @Injectable()

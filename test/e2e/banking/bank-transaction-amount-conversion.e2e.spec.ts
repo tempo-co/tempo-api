@@ -1,11 +1,12 @@
 import {INestApplication} from '@nestjs/common';
 import {getRepositoryToken} from '@nestjs/typeorm';
-import {Repository} from 'typeorm';
+import {DeepPartial, Repository} from 'typeorm';
 
 import {Account} from '@modules/account/account.entity';
 import {AccountService} from '@modules/account/account.service';
 import {BankAccount} from '@modules/banking/bank-account.entity';
 import {BankTransactionFxRate} from '@modules/banking/bank-transaction-fx-rate.entity';
+import {BankTransaction} from '@modules/banking/bank-transaction.entity';
 import {BankTransactionAmountConversionService} from '@modules/banking/services/bank-transaction-amount-conversion.service';
 
 import {BankingFixtures} from '../../../scripts/seed-data/banking-fixtures';
@@ -63,6 +64,14 @@ describe('BankTransactionAmountConversionService', () => {
 		return fixtures.createBankAccount(connection, {currency, ...overrides});
 	}
 
+	/** Rows default to the bank account's currency, so each test only spells out what it varies. */
+	function createRows(bankAccount: BankAccount, rows: DeepPartial<BankTransaction>[]) {
+		return fixtures.createTransactions(
+			bankAccount,
+			rows.map((row) => ({currency: bankAccount.currency, ...row})),
+		);
+	}
+
 	describe('rate refresh for account currencies', () => {
 		it('fetches rates since the newest stored one for active foreign-currency accounts', async () => {
 			await createBankAccount(owner, 'EUR');
@@ -93,6 +102,135 @@ describe('BankTransactionAmountConversionService', () => {
 			await service.backfill(NOW);
 
 			expect(ecbRequests).toEqual([]);
+		});
+	});
+
+	describe('conversion', () => {
+		async function stored(id: string) {
+			const {amountInBaseCurrency, baseAmountMethod, baseAmountRateDate} =
+				await fixtures.transactions.findOneByOrFail({id});
+			return {amountInBaseCurrency, baseAmountMethod, baseAmountRateDate};
+		}
+
+		it('stores exact cents with how each amount was converted', async () => {
+			await accounts.update({id: owner.id}, {baseCurrency: 'EUR'});
+			const eurAccount = await createBankAccount(owner, 'EUR');
+			const gbpAccount = await createBankAccount(owner, 'GBP');
+			const [same, instructed, weekday, saturday, transactionDateFirst, noRate, staleRate] = await createRows(
+				gbpAccount,
+				[
+					{currency: 'EUR', amount: '-12.34500000', bookingDate: '2026-09-04'},
+					{amount: '-10.00', instructedAmount: '11.94', instructedCurrency: 'eur', bookingDate: '2026-09-04'},
+					{amount: '-10.00', bookingDate: '2026-09-04'},
+					{amount: '-0.01', bookingDate: '2026-09-05'},
+					{amount: '20.00', transactionDate: '2026-09-05', bookingDate: '2026-09-07'},
+					{amount: '-10.00', currency: 'CHF', bookingDate: '2026-09-04'},
+					{amount: '-10.00', currency: 'NOK', bookingDate: '2026-09-04'},
+				],
+			);
+			const [eurRow] = await createRows(eurAccount, [{amount: '-1.005', bookingDate: '2026-09-04'}]);
+			// Ten days before the transaction: too old to stand in for a missing publication.
+			await fxRates.save({currency: 'NOK', rateDate: '2026-08-25', rateToEur: '11.5', provider: 'ECB'});
+
+			await expect(service.backfill(NOW)).resolves.toEqual({scanned: 8, converted: 6});
+
+			expect(await stored(same.id)).toEqual({
+				amountInBaseCurrency: '-12.35',
+				baseAmountMethod: 'SAME',
+				baseAmountRateDate: null,
+			});
+			expect(await stored(eurRow.id)).toEqual({
+				amountInBaseCurrency: '-1.01',
+				baseAmountMethod: 'SAME',
+				baseAmountRateDate: null,
+			});
+			expect(await stored(instructed.id)).toEqual({
+				amountInBaseCurrency: '-11.94',
+				baseAmountMethod: 'INSTRUCTED',
+				baseAmountRateDate: null,
+			});
+			expect(await stored(weekday.id)).toEqual({
+				amountInBaseCurrency: '-12.50',
+				baseAmountMethod: 'ECB',
+				baseAmountRateDate: '2026-09-04',
+			});
+			// -0.0125 EUR rounds half away from zero.
+			expect(await stored(saturday.id)).toEqual({
+				amountInBaseCurrency: '-0.01',
+				baseAmountMethod: 'ECB',
+				baseAmountRateDate: '2026-09-04',
+			});
+			expect(await stored(transactionDateFirst.id)).toEqual({
+				amountInBaseCurrency: '25.00',
+				baseAmountMethod: 'ECB',
+				baseAmountRateDate: '2026-09-04',
+			});
+			const unconverted = {amountInBaseCurrency: null, baseAmountMethod: null, baseAmountRateDate: null};
+			expect(await stored(noRate.id)).toEqual(unconverted);
+			expect(await stored(staleRate.id)).toEqual(unconverted);
+		});
+
+		it("converts through EUR into each owner's own base currency", async () => {
+			await accounts.update({id: owner.id}, {baseCurrency: 'EUR'});
+			await accounts.update({id: otherOwner.id}, {baseCurrency: 'USD'});
+			const [ownerRow] = await createRows(await createBankAccount(owner, 'GBP'), [
+				{amount: '-10.00', bookingDate: '2026-09-04'},
+			]);
+			const [otherRow] = await createRows(await createBankAccount(otherOwner, 'GBP'), [
+				{amount: '-10.00', bookingDate: '2026-09-04'},
+			]);
+
+			await service.backfill(NOW);
+
+			expect(await stored(ownerRow.id)).toEqual({
+				amountInBaseCurrency: '-12.50',
+				baseAmountMethod: 'ECB',
+				baseAmountRateDate: '2026-09-04',
+			});
+			// -10 GBP / 0.8 * 1.25 = -15.625 USD.
+			expect(await stored(otherRow.id)).toEqual({
+				amountInBaseCurrency: '-15.63',
+				baseAmountMethod: 'ECB',
+				baseAmountRateDate: '2026-09-04',
+			});
+		});
+
+		it('picks the most common active account currency as the base when none is set', async () => {
+			const connection = await fixtures.createConnection(otherOwner);
+			const [gbpAccount] = await fixtures.createBankAccounts(connection, [
+				{currency: 'GBP'},
+				{currency: 'GBP'},
+				{currency: 'EUR'},
+			]);
+			const [row] = await createRows(gbpAccount, [{amount: '-10.004', bookingDate: '2026-09-04'}]);
+
+			await service.backfill(NOW);
+
+			expect((await accounts.findOneByOrFail({id: otherOwner.id})).baseCurrency).toBe('GBP');
+			expect(await stored(row.id)).toEqual({
+				amountInBaseCurrency: '-10.00',
+				baseAmountMethod: 'SAME',
+				baseAmountRateDate: null,
+			});
+		});
+
+		it('leaves already converted rows untouched', async () => {
+			await accounts.update({id: owner.id}, {baseCurrency: 'EUR'});
+			const [row] = await createRows(await createBankAccount(owner, 'GBP'), [
+				{
+					amount: '-10.00',
+					bookingDate: '2026-09-04',
+					amountInBaseCurrency: '-11.00',
+					baseAmountMethod: 'INSTRUCTED',
+				},
+			]);
+
+			await expect(service.backfill(NOW)).resolves.toEqual({scanned: 0, converted: 0});
+			expect(await stored(row.id)).toEqual({
+				amountInBaseCurrency: '-11.00',
+				baseAmountMethod: 'INSTRUCTED',
+				baseAmountRateDate: null,
+			});
 		});
 	});
 });

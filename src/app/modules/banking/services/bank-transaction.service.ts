@@ -254,6 +254,8 @@ export class BankTransactionService {
 			exchangeRate: transaction.exchangeRate,
 			exchangeRateUnitCurrency: transaction.exchangeRateUnitCurrency,
 			exchangeRateType: transaction.exchangeRateType,
+			baseAmountMethod: transaction.baseAmountMethod,
+			baseAmountRateDate: transaction.baseAmountRateDate,
 			referenceNumber: transaction.referenceNumber,
 			referenceNumberScheme: transaction.referenceNumberScheme,
 			bankName: transaction.bankAccount.bankConnection.aspspName,

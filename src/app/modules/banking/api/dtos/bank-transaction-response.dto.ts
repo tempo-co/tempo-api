@@ -11,6 +11,7 @@ import type {
 } from '../../categorization/bank-transaction-categorization.types';
 import type {BankTransactionCategory} from '../../categorization/bank-transaction-category';
 import type {OwnTransferEvidence, OwnTransferOverride} from '../../own-transfer/own-transfer-detection';
+import type {BankTransactionBaseAmountMethod} from '../../services/bank-transaction-amount-conversion.utils';
 
 export class BankTransactionOwnTransferCounterpartDto {
 	id: string;
@@ -62,6 +63,10 @@ export class BankTransactionResponseDto {
 	exchangeRate: string | null;
 	exchangeRateUnitCurrency: string | null;
 	exchangeRateType: string | null;
+	/** How the base-currency amount was derived; null while unconverted. */
+	baseAmountMethod: BankTransactionBaseAmountMethod | null;
+	/** The ECB reference rate date used when `baseAmountMethod` is `ECB`. */
+	baseAmountRateDate: string | null;
 	referenceNumber: string | null;
 	referenceNumberScheme: string | null;
 	bankName: string;
