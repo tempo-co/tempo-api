@@ -107,18 +107,16 @@ healthy() {
 
 # Nginx resolves the API address at startup, so web is recreated whenever anything changes.
 rollout() {
-    local timeout=$4
     write_images "$1" "$2" || return 1
     if [[ $3 == 1 ]]; then
-        compose up -d --no-deps --wait --wait-timeout "$timeout" api || return 1
+        compose up -d --no-deps --wait --wait-timeout "$WAIT_TIMEOUT" api || return 1
     fi
-    compose up -d --no-deps --force-recreate --wait --wait-timeout "$timeout" web || return 1
+    compose up -d --no-deps --force-recreate --wait --wait-timeout "$WAIT_TIMEOUT" web || return 1
     healthy
 }
 
 current_api=$(running_image api)
 current_web=$(running_image web)
-[[ -f $IMAGES_FILE ]] || write_images "$current_api" "$current_web"
 
 declare -A target=([api]=$current_api [web]=$current_web)
 for component in api web; do
@@ -149,10 +147,10 @@ if ((api_changed)) && [[ -n ${BEFORE_API_CHANGE:-} ]]; then
     run_hook "$BEFORE_API_CHANGE" || die 'pre-deploy step failed; nothing was deployed'
 fi
 
-if ! rollout "${target[api]}" "${target[web]}" "$api_changed" "$WAIT_TIMEOUT"; then
+if ! rollout "${target[api]}" "${target[web]}" "$api_changed"; then
     log 'rollout failed; restoring the previous images' >&2
     echo "${target[api]} ${target[web]}" >"$FAILED_FILE"
-    if rollout "$current_api" "$current_web" "$api_changed" "$WAIT_TIMEOUT"; then
+    if rollout "$current_api" "$current_web" "$api_changed"; then
         die 'rolled back to the previous images (database migrations are not rolled back)'
     fi
     die 'ROLLBACK FAILED; the application is unhealthy and needs attention'

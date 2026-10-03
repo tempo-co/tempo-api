@@ -42,13 +42,11 @@ fi
 
 [[ ! -e $TARGET ]] || fail "timestamped backup already exists: $TARGET"
 TEMP_FILE=$(mktemp "$BACKUP_DIR/.tempo-$STAMP.XXXXXX.tmp")
-chmod 600 -- "$TEMP_FILE"
 
 # 2) Dump to a private temporary file. Custom format is compressed by pg_dump.
 if ! docker exec "$CONTAINER" pg_dump --format=custom -U "$DB_USER" "$DB_NAME" > "$TEMP_FILE"; then
     fail "pg_dump failed for database $DB_NAME"
 fi
-[[ -s $TEMP_FILE ]] || fail 'pg_dump produced an empty archive'
 size=$(stat -c%s -- "$TEMP_FILE")
 (( size >= 1000 )) || fail "suspiciously small archive ($size bytes)"
 
@@ -60,10 +58,9 @@ fi
 # 3) Publish atomically only after dump and archive validation succeed.
 mv -T -- "$TEMP_FILE" "$TARGET"
 TEMP_FILE=''
-chmod 600 -- "$TARGET"
 log "OK $TARGET ($size bytes)"
 
-# 4) Retain the newest $KEEP across new archives and legacy SQL/gzip backups.
+# 4) Retain the newest $KEEP timestamped archives.
 python3 - "$BACKUP_DIR" "$KEEP" "$LOG" <<'PY'
 from datetime import datetime
 from pathlib import Path
@@ -77,7 +74,7 @@ archives = [
     path
     for path in backup_dir.iterdir()
     # Only timestamped archives; manual dumps such as tempo-pre-<reason>-*.dump are never pruned.
-    if re.fullmatch(r'tempo-\d{8}-\d{6}\.(dump|sql\.gz)', path.name)
+    if re.fullmatch(r'tempo-\d{8}-\d{6}\.dump', path.name)
     and path.is_file()
     and not path.is_symlink()
 ]

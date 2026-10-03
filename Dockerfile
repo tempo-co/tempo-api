@@ -9,14 +9,12 @@ RUN npm ci
 COPY tsconfig*.json ./
 COPY src/ ./src/
 COPY scripts/ ./scripts/
-COPY test/ ./test/
 COPY nest-cli.json ./
 RUN npm run build
 
 FROM node:22-alpine AS runtime-dependencies
 
-RUN apk add --no-cache libstdc++ \
-    && apk add --no-cache --virtual .build-deps python3 make g++
+RUN apk add --no-cache python3 make g++
 
 WORKDIR /usr/src/app
 
@@ -24,11 +22,9 @@ COPY package*.json ./
 RUN node -e 'require("node:fs").writeFileSync("/tmp/dev-dependencies.json", JSON.stringify(Object.keys(require("./package.json").devDependencies)))' \
     && npm pkg delete devDependencies \
     && npm install --package-lock-only --ignore-scripts \
-    && npm ci --omit=dev --omit=peer \
-    && apk del .build-deps
+    && npm ci --omit=dev --omit=peer
 
 COPY --from=builder --chown=node:node /usr/src/app/dist ./dist
-COPY --chown=node:node tsconfig.json ./tsconfig.json
 
 FROM node:22-alpine AS runtime
 
