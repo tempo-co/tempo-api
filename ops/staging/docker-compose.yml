@@ -58,12 +58,17 @@ services:
     mailpit:
         image: axllent/mailpit@sha256:c96991d9bef73594c246d89ca81411d4e916f03e76a7d2d72fa2ab5dd3c9ce24
         restart: unless-stopped
-        command: ['--webroot=/tempo/mailpit/']
+        # The web UI is published on loopback so staging emails can be read. The API reaches
+        # SMTP over edge; Mailpit stays off backend so it has no route to postgres or redis.
+        ports:
+            - '127.0.0.1:8125:8025'
+        environment:
+            MP_DISABLE_VERSION_CHECK: 'true'
         networks:
-            - backend
             - edge
+            - ingress
         healthcheck:
-            test: ['CMD', '/mailpit', 'readyz', '--webroot', '/tempo/mailpit/']
+            test: ['CMD', '/mailpit', 'readyz']
             interval: 5s
             timeout: 5s
             retries: 12
@@ -112,7 +117,7 @@ services:
             EMAIL_PORT: '1025'
             EMAIL_SECURE: 'false'
             EMAIL_UI_PORT: '8025'
-            EMAIL_UI_URL: ${STAGING_PUBLIC_URL:?STAGING_PUBLIC_URL must be set}/mailpit/
+            EMAIL_UI_URL: http://127.0.0.1:8125/
             EMAIL_VERIFICATION_EXPIRATION: 24h
             EMAIL_VERIFICATION_REDIS_KEY: tempo-staging-email-verification
             PASSWORD_RESET_EXPIRATION: 24h
