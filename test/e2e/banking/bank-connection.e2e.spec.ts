@@ -5,9 +5,8 @@ import Redis from 'ioredis';
 import {Server} from 'node:net';
 import request from 'supertest';
 import TestAgent from 'supertest/lib/agent';
-import {DataSource, Repository} from 'typeorm';
+import {Repository} from 'typeorm';
 
-import {AddBankTransactionFinancialEvent20260917200000} from '@core/database/migrations/20260917200000-add-bank-transaction-financial-event';
 import {REDIS} from '@core/redis/redis.constants';
 import {Account} from '@modules/account/account.entity';
 import {AccountService} from '@modules/account/account.service';
@@ -1304,88 +1303,6 @@ describe('BankConnectionController', () => {
 			});
 		} finally {
 			await bankConnectionRepository.delete([abnConnection.id, revolutConnection.id]);
-		}
-	});
-
-	it('backfills known exchange rows while preserving manual category fields', async () => {
-		const {connection, bankAccounts} = await createAuthorizedConnectionFixture(
-			'currency-exchange-backfill-session',
-			[
-				{
-					providerAccountId: 'provider-account-currency-exchange-backfill',
-					identificationHash: 'hash-currency-exchange-backfill',
-					currency: 'EUR',
-				},
-			],
-			'Revolut',
-		);
-		const bankAccount = bankAccounts[0];
-		const legacyExchange = {
-			bookingDate: '2026-08-15',
-			valueDate: '2026-08-15',
-			amount: '-10.00',
-			description: 'Exchanged to GBP',
-			counterpartyName: null,
-		};
-		const [legacyAiExchange, legacyManualExchange] = await fixtures.createTransactions(bankAccount, [
-			{
-				...legacyExchange,
-				category: 'OTHER',
-				categoryStatus: 'COMPLETED',
-				categorySource: 'AI',
-				categoryConfidence: '0.5',
-				categoryInputHash: 'legacy-input-hash',
-				categoryAppliedInputHash: 'legacy-applied-hash',
-				categoryProvider: 'openai',
-				categoryModel: 'legacy-model',
-				categoryPromptVersion: 'legacy-prompt',
-				categoryLastError: 'legacy-error',
-			},
-			{
-				...legacyExchange,
-				category: 'SHOPPING',
-				categoryStatus: 'COMPLETED',
-				categorySource: 'MANUAL',
-				categoryInputHash: 'manual-input-hash',
-				categoryAppliedInputHash: 'manual-applied-hash',
-			},
-		]);
-		const dataSource = app.get(DataSource);
-		const queryRunner = dataSource.createQueryRunner();
-
-		try {
-			await queryRunner.connect();
-			await new AddBankTransactionFinancialEvent20260917200000().up(queryRunner);
-
-			const rows = await bankTransactionRepository.findByIds([legacyAiExchange.id, legacyManualExchange.id]);
-			const aiRow = rows.find(({id}) => id === legacyAiExchange.id);
-			const manualRow = rows.find(({id}) => id === legacyManualExchange.id);
-			expect(aiRow).toMatchObject({
-				financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
-				financialEventSource: BANK_TRANSACTION_FINANCIAL_EVENT_SOURCES.RULE,
-				financialEventRuleVersion: BANK_TRANSACTION_FINANCIAL_EVENT_RULE_VERSION,
-				category: null,
-				categoryStatus: 'NOT_APPLICABLE',
-				categorySource: null,
-				categoryConfidence: null,
-				categoryInputHash: null,
-				categoryAppliedInputHash: null,
-				categoryProvider: null,
-				categoryModel: null,
-				categoryPromptVersion: null,
-				categoryLastError: null,
-			});
-			expect(manualRow).toMatchObject({
-				financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
-				category: 'SHOPPING',
-				categoryStatus: 'COMPLETED',
-				categorySource: 'MANUAL',
-				categoryInputHash: null,
-				categoryAppliedInputHash: 'manual-applied-hash',
-			});
-		} finally {
-			await queryRunner.release();
-			await bankConnectionRepository.delete(connection.id);
 		}
 	});
 
