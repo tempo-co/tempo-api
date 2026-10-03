@@ -650,10 +650,8 @@ export class BankingService {
 	}
 
 	private async findBaseCurrency(accountId: Account['id']): Promise<string | null> {
-		const owner = await this.dataSource
-			.getRepository(Account)
-			.findOne({where: {id: accountId}, select: {id: true, baseCurrency: true}});
-		return owner?.baseCurrency?.trim().toUpperCase() || null;
+		const owner = await this.accountService.findById(accountId);
+		return owner.baseCurrency?.trim().toUpperCase() || null;
 	}
 
 	/**

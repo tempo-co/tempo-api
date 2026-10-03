@@ -23,6 +23,9 @@ const BANKING_SERVICE_DEPENDENCIES = [
 	'ownTransferService',
 ] as const;
 
+/** An owner whose base currency is not chosen yet, so balances are not converted. */
+const ownerWithoutBaseCurrency = {findById: jest.fn().mockResolvedValue({baseCurrency: null})};
+
 const DEFAULT_DEPENDENCIES: Partial<Record<string, unknown>> = {
 	ownTransferService: {recomputeForOwnerSafely: jest.fn().mockResolvedValue(undefined)},
 };
@@ -470,6 +473,7 @@ describe('BankingService findAll', () => {
 			bankConnectionRepository,
 			bankAccountRepository,
 			bankAccountBalanceRepository,
+			accountService: ownerWithoutBaseCurrency,
 		});
 
 		const result = await service.findAll('owner-account-id');
@@ -530,6 +534,7 @@ describe('BankingService findAll', () => {
 			},
 			bankAccountRepository: {createQueryBuilder: jest.fn(() => createQueryBuilderMock([]))},
 			bankAccountBalanceRepository,
+			accountService: ownerWithoutBaseCurrency,
 		});
 
 		const result = await service.findAll('owner-account-id');
