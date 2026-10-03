@@ -1,9 +1,39 @@
 import {Brackets, SelectQueryBuilder} from 'typeorm';
 
 import type {BankTransactionFilterQueryDto} from '../api/dtos/bank-transaction-query.dto';
-import {BANK_TRANSACTION_OWN_TRANSFER_FILTER} from '../bank-transaction-financial-event';
+import {
+	BANK_TRANSACTION_OWN_TRANSFER_FILTER,
+	type BankTransactionCashFlowFilterValue,
+} from '../bank-transaction-financial-event';
 import type {BankTransaction} from '../bank-transaction.entity';
+import type {BankTransactionCategoryStatusFilterValue} from '../categorization/bank-transaction-categorization.types';
 import {BANK_TRANSACTION_UNCATEGORIZED} from '../categorization/bank-transaction-category';
+
+const INDICATOR_SQL = `UPPER("transaction"."creditDebitIndicator")`;
+/** Own transfers and currency exchanges move money between the owner's accounts. */
+// Null-safe on purpose: these predicates are negated, and `NOT (NULL OR FALSE)` would drop ordinary rows.
+export const SQL_INTERNAL = `("transaction"."financialEventType" IS NOT DISTINCT FROM 'CURRENCY_EXCHANGE' OR "transaction"."ownTransferEvidence" IS NOT NULL)`;
+/** Debits, including payments to other people, plus refund credits, which reduce spending. */
+export const SQL_SPENDING = `(NOT ${SQL_INTERNAL} AND (${INDICATOR_SQL} = 'DBIT' OR (${INDICATOR_SQL} = 'CRDT' AND "transaction"."category" = 'REFUND')))`;
+export const SQL_INCOME = `(NOT ${SQL_INTERNAL} AND ${INDICATOR_SQL} = 'CRDT' AND "transaction"."category" IS DISTINCT FROM 'REFUND')`;
+export const SQL_UNKNOWN_DIRECTION = `(NOT ${SQL_INTERNAL} AND COALESCE(${INDICATOR_SQL}, '') NOT IN ('CRDT', 'DBIT'))`;
+
+const CASH_FLOW_SQL: Record<BankTransactionCashFlowFilterValue, string> = {
+	SPENDING: SQL_SPENDING,
+	INCOME: SQL_INCOME,
+	INTERNAL: SQL_INTERNAL,
+	UNKNOWN: SQL_UNKNOWN_DIRECTION,
+};
+
+export const SQL_CATEGORIZATION_FAILED = `("transaction"."categoryStatus" = 'FAILED' AND "transaction"."category" IS NULL)`;
+export const SQL_CATEGORIZING = `("transaction"."categoryStatus" IN ('PENDING', 'PROCESSING') AND "transaction"."category" IS NULL AND "transaction"."financialEventType" IS NULL)`;
+
+const CATEGORY_STATUS_SQL: Record<BankTransactionCategoryStatusFilterValue, string> = {
+	FAILED: SQL_CATEGORIZATION_FAILED,
+	CATEGORIZING: SQL_CATEGORIZING,
+};
+
+const anyOf = (conditions: string[]) => `(${conditions.join(' OR ')})`;
 
 /**
  * Applies the Transactions list filters to an owner-scoped query whose transaction alias is `transaction` and whose
@@ -62,6 +92,18 @@ export function applyBankTransactionFilters(
 	];
 	if (activityConditions.length > 0) {
 		query.andWhere(`(${activityConditions.join(' OR ')})`, {financialEventTypes});
+	}
+
+	if (filter?.cashFlows && filter.cashFlows.length > 0) {
+		query.andWhere(anyOf(filter.cashFlows.map((cashFlow) => CASH_FLOW_SQL[cashFlow])));
+	}
+	if (filter?.baseAmount) {
+		query.andWhere(
+			`"transaction"."amountInBaseCurrency" IS ${filter.baseAmount === 'PRESENT' ? 'NOT NULL' : 'NULL'}`,
+		);
+	}
+	if (filter?.categoryStatuses && filter.categoryStatuses.length > 0) {
+		query.andWhere(anyOf(filter.categoryStatuses.map((status) => CATEGORY_STATUS_SQL[status])));
 	}
 
 	const search = filter?.search?.trim();

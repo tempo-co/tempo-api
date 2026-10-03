@@ -18,12 +18,18 @@ import {DEFAULT_PAGE_INDEX, DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS} from '@core/pa
 import {transformStrictDecimalInteger} from '@core/pagination/pagination.transform';
 
 import {
+	BANK_TRANSACTION_BASE_AMOUNT_FILTER_VALUES,
+	BANK_TRANSACTION_CASH_FLOW_FILTER_VALUES,
 	BANK_TRANSACTION_FINANCIAL_EVENT_FILTER_VALUES,
+	type BankTransactionBaseAmountFilterValue,
+	type BankTransactionCashFlowFilterValue,
 	type BankTransactionFinancialEventFilterValue,
 } from '../../bank-transaction-financial-event';
 import {
 	BANK_TRANSACTION_CATEGORIZATION_SOURCES,
+	BANK_TRANSACTION_CATEGORY_STATUS_FILTER_VALUES,
 	type BankTransactionCategorizationSource,
+	type BankTransactionCategoryStatusFilterValue,
 } from '../../categorization/bank-transaction-categorization.types';
 import {
 	BANK_TRANSACTION_CATEGORY_FILTER_VALUES,
@@ -111,6 +117,20 @@ export class BankTransactionFilterQueryDto {
 	@IsArray()
 	@IsIn(BANK_TRANSACTION_FINANCIAL_EVENT_FILTER_VALUES, {each: true})
 	financialEventTypes?: BankTransactionFinancialEventFilterValue[];
+
+	@IsOptional()
+	@IsArray()
+	@IsIn(BANK_TRANSACTION_CASH_FLOW_FILTER_VALUES, {each: true})
+	cashFlows?: BankTransactionCashFlowFilterValue[];
+
+	@IsOptional()
+	@IsIn(BANK_TRANSACTION_BASE_AMOUNT_FILTER_VALUES)
+	baseAmount?: BankTransactionBaseAmountFilterValue;
+
+	@IsOptional()
+	@IsArray()
+	@IsIn(BANK_TRANSACTION_CATEGORY_STATUS_FILTER_VALUES, {each: true})
+	categoryStatuses?: BankTransactionCategoryStatusFilterValue[];
 }
 
 export class BankTransactionQueryDto {

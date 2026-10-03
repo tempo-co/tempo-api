@@ -724,6 +724,128 @@ describe('BankTransactionController', () => {
 		}
 	});
 
+	it('filters by cash flow, base amount and categorization status', async () => {
+		const june = (day: number) => `2026-06-${String(day).padStart(2, '0')}`;
+		const completed = {categoryStatus: 'COMPLETED', categorySource: 'AI'} as const;
+		const exchange = {
+			financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
+			financialEventSource: BANK_TRANSACTION_FINANCIAL_EVENT_SOURCES.RULE,
+			financialEventRuleVersion: BANK_TRANSACTION_FINANCIAL_EVENT_RULE_VERSION,
+		};
+		const rows = await fixtures.createTransactions(fixtureBankAccount, [
+			{
+				bookingDate: june(1),
+				amount: '-10.00',
+				amountInBaseCurrency: '-10.00',
+				category: 'SHOPPING',
+				...completed,
+			},
+			{
+				bookingDate: june(2),
+				amount: '-20.00',
+				amountInBaseCurrency: '-20.00',
+				category: 'TRANSFER_OUT',
+				...completed,
+			},
+			{
+				bookingDate: june(3),
+				amount: '5.00',
+				amountInBaseCurrency: '5.00',
+				creditDebitIndicator: 'CRDT',
+				category: 'REFUND',
+				...completed,
+			},
+			{
+				bookingDate: june(4),
+				amount: '1000.00',
+				amountInBaseCurrency: '1000.00',
+				creditDebitIndicator: 'CRDT',
+				category: 'INCOME',
+				...completed,
+			},
+			{
+				bookingDate: june(5),
+				amount: '-50.00',
+				amountInBaseCurrency: '-50.00',
+				ownTransferEvidence: 'IBAN',
+				...completed,
+			},
+			{
+				bookingDate: june(6),
+				amount: '50.00',
+				amountInBaseCurrency: '50.00',
+				creditDebitIndicator: 'crdt',
+				ownTransferEvidence: 'IBAN',
+				...completed,
+			},
+			{
+				bookingDate: june(7),
+				amount: '-30.00',
+				amountInBaseCurrency: '-30.00',
+				categoryStatus: 'NOT_APPLICABLE',
+				...exchange,
+			},
+			{
+				bookingDate: june(8),
+				amount: '-1.00',
+				amountInBaseCurrency: '-1.00',
+				creditDebitIndicator: null,
+				category: 'SHOPPING',
+				...completed,
+			},
+			{bookingDate: june(9), amount: '-7.00', amountInBaseCurrency: null, category: 'SHOPPING', ...completed},
+			{bookingDate: june(10), amount: '-3.00', amountInBaseCurrency: '-3.00', categoryStatus: 'FAILED'},
+			{bookingDate: june(11), amount: '-4.00', amountInBaseCurrency: '-4.00', categoryStatus: 'PENDING'},
+		]);
+		const [
+			expense,
+			transferOut,
+			refund,
+			salary,
+			ownOut,
+			ownIn,
+			currencyExchange,
+			unknown,
+			unconverted,
+			failed,
+			pending,
+		] = rows.map(({id}) => id);
+		const idsFor = async (filter: Record<string, string | string[]>) => {
+			const response = await verifiedAgent
+				.get('/bank-transactions')
+				.query({
+					'filter[bookingDate][from]': june(1),
+					'filter[bookingDate][to]': june(30),
+					'pagination[pageSize]': '100',
+					...filter,
+				})
+				.expect(200);
+			return response.body.transactions.map(({id}: {id: string}) => id).sort();
+		};
+		const sorted = (...ids: string[]) => [...ids].sort();
+
+		try {
+			expect(await idsFor({'filter[cashFlows][]': 'SPENDING'})).toEqual(
+				sorted(expense, transferOut, refund, unconverted, failed, pending),
+			);
+			expect(await idsFor({'filter[cashFlows][]': 'INCOME'})).toEqual([salary]);
+			expect(await idsFor({'filter[cashFlows][]': 'INTERNAL'})).toEqual(sorted(ownOut, ownIn, currencyExchange));
+			expect(await idsFor({'filter[cashFlows][]': 'UNKNOWN'})).toEqual([unknown]);
+			expect(await idsFor({'filter[cashFlows][]': ['INCOME', 'UNKNOWN']})).toEqual(sorted(salary, unknown));
+			expect(await idsFor({'filter[cashFlows][]': 'SPENDING', 'filter[baseAmount]': 'PRESENT'})).toEqual(
+				sorted(expense, transferOut, refund, failed, pending),
+			);
+			expect(await idsFor({'filter[baseAmount]': 'MISSING'})).toEqual([unconverted]);
+			expect(await idsFor({'filter[categoryStatuses][]': 'FAILED'})).toEqual([failed]);
+			expect(await idsFor({'filter[categoryStatuses][]': 'CATEGORIZING'})).toEqual([pending]);
+			expect(await idsFor({'filter[categoryStatuses][]': ['FAILED', 'CATEGORIZING']})).toEqual(
+				sorted(failed, pending),
+			);
+		} finally {
+			await bankTransactionRepository.delete(rows.map(({id}) => id));
+		}
+	});
+
 	it.each([
 		['a positive page index', 'pagination[pageIndex]', '1', 200],
 		['an existing allowed page size', 'pagination[pageSize]', '50', 200],
@@ -747,6 +869,9 @@ describe('BankTransactionController', () => {
 		['an unsupported category', {'filter[categories][]': 'NOT_A_CATEGORY'}],
 		['an unsupported categorization source', {'filter[categorySources][]': 'RULE'}],
 		['an unsupported financial event', {'filter[financialEventTypes][]': 'TRANSFER'}],
+		['an unsupported cash flow', {'filter[cashFlows][]': 'EXPENSE'}],
+		['an unsupported base amount state', {'filter[baseAmount]': 'ANY'}],
+		['an unsupported categorization status', {'filter[categoryStatuses][]': 'PENDING'}],
 	])('rejects %s', async (_case, query) => {
 		await verifiedAgent.get('/bank-transactions').query(query).expect(400);
 	});
