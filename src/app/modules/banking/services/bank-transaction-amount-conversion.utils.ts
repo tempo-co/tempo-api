@@ -1,5 +1,17 @@
 const DECIMAL_PATTERN = /^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/;
 
+/**
+ * The oldest reference rate a conversion may use, in days before the transaction date. It spans the longest
+ * ECB publication gap (a holiday weekend) and is also the lookback when fetching rates for a date range.
+ */
+export const FX_RATE_MAX_AGE_DAYS = 7;
+
+export function addDays(date: string, days: number): string {
+	const value = new Date(`${date}T00:00:00.000Z`);
+	value.setUTCDate(value.getUTCDate() + days);
+	return value.toISOString().slice(0, 10);
+}
+
 export type BankTransactionAmountConversionInput = {
 	amount: string;
 	currency: string;

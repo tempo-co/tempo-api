@@ -8,6 +8,8 @@ import {BankAccount} from '../bank-account.entity';
 import {BankTransaction} from '../bank-transaction.entity';
 import {BATCH_WRITE_CHUNK_SIZE, buildPostgresValuesList, chunkArray} from '../banking.utils';
 import {
+	FX_RATE_MAX_AGE_DAYS,
+	addDays,
 	convertUsingHistoricalRates,
 	convertUsingProviderAmount,
 	getBankTransactionRateDate,
@@ -74,9 +76,10 @@ export class BankTransactionAmountConversionService {
 				.filter((date): date is string => date !== null)
 				.sort();
 			if (rateDates.length > 0) {
+				// Weekend and holiday transactions use the previous publication, so fetch from before the first date.
 				await this.fxRateService.ensureRates(
 					new Set(historicalTransactions.map(({currency}) => currency)),
-					rateDates[0],
+					addDays(rateDates[0], -FX_RATE_MAX_AGE_DAYS),
 					rateDates[rateDates.length - 1],
 				);
 			}

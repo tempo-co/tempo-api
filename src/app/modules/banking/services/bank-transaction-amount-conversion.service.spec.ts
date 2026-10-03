@@ -96,7 +96,7 @@ describe('BankTransactionAmountConversionService', () => {
 		const {bankTransactionRepository, fxRateService, service} = createService([transaction]);
 
 		await expect(service.backfill()).resolves.toEqual({scanned: 1, converted: 1});
-		expect(fxRateService.ensureRates).toHaveBeenCalledWith(new Set(['GBP']), '2026-08-24', '2026-08-24');
+		expect(fxRateService.ensureRates).toHaveBeenCalledWith(new Set(['GBP']), '2026-08-17', '2026-08-24');
 		expect(fxRateService.getRateToEur).toHaveBeenNthCalledWith(1, 'GBP', '2026-08-24');
 		expect(fxRateService.getRateToEur).toHaveBeenNthCalledWith(2, 'EUR', '2026-08-24');
 		expectBatchedConversions(bankTransactionRepository, ['transaction-id', '117.647058823529']);
