@@ -1,0 +1,235 @@
+import {BadRequestException, Injectable} from '@nestjs/common';
+import {InjectRepository} from '@nestjs/typeorm';
+import {Repository} from 'typeorm';
+
+import {Account} from '@modules/account/account.entity';
+
+import {BANKING_TRANSACTION_SUMMARY_FUTURE_MONTH} from '../api/constants/banking-messages.constants';
+import type {BankTransactionSummaryQueryDto} from '../api/dtos/bank-transaction-summary-query.dto';
+import type {
+	BankTransactionReviewCountsResponseDto,
+	BankTransactionSummaryCategoryDto,
+	BankTransactionSummaryResponseDto,
+} from '../api/dtos/bank-transaction-summary-response.dto';
+import {BankTransaction} from '../bank-transaction.entity';
+import {
+	BANK_TRANSACTION_UNCATEGORIZED,
+	type BankTransactionCategoryFilterValue,
+} from '../categorization/bank-transaction-category';
+import {
+	averageCents,
+	buildSpendingPace,
+	daysInMonth,
+	formatCents,
+	parseCents,
+	previousMonths,
+} from '../summary/bank-transaction-summary';
+import {
+	SQL_CATEGORIZATION_FAILED,
+	SQL_CATEGORIZING,
+	SQL_INCOME,
+	SQL_INTERNAL,
+	SQL_SPENDING,
+	SQL_UNKNOWN_DIRECTION,
+} from './bank-transaction-filters';
+
+const BASELINE_MONTHS = 3;
+const BASE_AMOUNT = '"transaction"."amountInBaseCurrency"';
+const SQL_MISSING_BASE_AMOUNT = `(NOT ${SQL_INTERNAL} AND ${BASE_AMOUNT} IS NULL)`;
+/** Keys whose month-to-month average says nothing useful. */
+const NO_BASELINE_CATEGORIES = new Set<string>(['REFUND', 'NEEDS_REVIEW', BANK_TRANSACTION_UNCATEGORIZED]);
+
+type FlowRow = {
+	month: string;
+	day: number;
+	flow: 'SPENDING' | 'INCOME';
+	category: string;
+	amount: string;
+	count: number;
+};
+type CategoryTotal = {cents: bigint; count: number};
+
+@Injectable()
+export class BankTransactionSummaryService {
+	constructor(
+		@InjectRepository(BankTransaction)
+		private readonly bankTransactionRepository: Repository<BankTransaction>,
+		@InjectRepository(Account)
+		private readonly accountRepository: Repository<Account>,
+	) {}
+
+	async getSummary(
+		accountId: Account['id'],
+		{month, asOf}: BankTransactionSummaryQueryDto,
+	): Promise<BankTransactionSummaryResponseDto> {
+		const monthDays = daysInMonth(month);
+		const monthStart = `${month}-01`;
+		const monthEnd = `${month}-${monthDays}`;
+		if (asOf < monthStart) throw new BadRequestException(BANKING_TRANSACTION_SUMMARY_FUTURE_MONTH);
+		const through = asOf < monthEnd ? asOf : monthEnd;
+		const throughDay = Number(through.slice(8));
+
+		const [account, firstBookingDate] = await Promise.all([
+			this.accountRepository.findOneByOrFail({id: accountId}),
+			this.findFirstBookingDate(accountId),
+		]);
+		const baselineMonths = firstBookingDate
+			? previousMonths(month, BASELINE_MONTHS).filter(
+					(baselineMonth) => `${baselineMonth}-${daysInMonth(baselineMonth)}` >= firstBookingDate,
+				)
+			: [];
+		const capDay = (baselineMonth: string) => Math.min(throughDay, daysInMonth(baselineMonth));
+
+		const [flows, period] = await Promise.all([
+			this.findFlows(accountId, baselineMonths.length > 0 ? `${baselineMonths[0]}-01` : monthStart, through),
+			this.findPeriodCounts(accountId, monthStart, through),
+		]);
+
+		const daily = new Map<number, bigint>();
+		const categories = new Map<string, CategoryTotal>();
+		let income = 0n;
+		const baselineDaily = new Map(
+			baselineMonths.map((baselineMonth) => [baselineMonth, new Map<number, bigint>()]),
+		);
+		const baselineCategories = new Map<string, Map<string, bigint>>();
+		const baselineIncome = new Map<string, bigint>();
+
+		for (const row of flows) {
+			const cents = parseCents(row.amount);
+			const viewed = row.month === month;
+			if (row.flow === 'INCOME') {
+				if (viewed) income += cents;
+				else if (row.day <= capDay(row.month)) addTo(baselineIncome, row.month, cents);
+				continue;
+			}
+			const spending = -cents;
+			if (viewed) {
+				addTo(daily, row.day, spending);
+				const total = categories.get(row.category) ?? {cents: 0n, count: 0};
+				categories.set(row.category, {cents: total.cents + spending, count: total.count + row.count});
+				continue;
+			}
+			addTo(baselineDaily.get(row.month)!, row.day, spending);
+			if (row.day <= capDay(row.month)) {
+				const byMonth = baselineCategories.get(row.category) ?? new Map<string, bigint>();
+				baselineCategories.set(row.category, addTo(byMonth, row.month, spending));
+			}
+		}
+
+		const pace = buildSpendingPace({
+			daysInMonth: monthDays,
+			throughDay,
+			daily,
+			baseline: baselineMonths.map((baselineMonth) => ({
+				days: daysInMonth(baselineMonth),
+				daily: baselineDaily.get(baselineMonth)!,
+			})),
+		});
+		const spending = [...daily.values()].reduce((sum, value) => sum + value, 0n);
+		const baselineAverage = (byMonth: ReadonlyMap<string, bigint> | undefined) =>
+			formatCents(averageCents(baselineMonths.map((baselineMonth) => byMonth?.get(baselineMonth) ?? 0n)));
+		const hasBaseline = baselineMonths.length > 0;
+
+		return {
+			month,
+			through,
+			daysInMonth: monthDays,
+			baseCurrency: account.baseCurrency?.trim().toUpperCase() || null,
+			totals: {
+				spending: formatCents(spending),
+				income: formatCents(income),
+				net: formatCents(income - spending),
+				ownTransfers: formatCents(parseCents(period.ownTransfers)),
+			},
+			excluded: {unknownDirection: period.unknownDirection, missingBaseAmount: period.missingBaseAmount},
+			daily: pace.daily,
+			baseline: {
+				months: baselineMonths,
+				daily: pace.baseline,
+				spendingByThrough: hasBaseline ? pace.baseline[throughDay - 1].average : null,
+				incomeByThrough: hasBaseline ? baselineAverage(baselineIncome) : null,
+			},
+			categories: [...categories.entries()]
+				.sort(compareCategories)
+				.map(([category, total]): BankTransactionSummaryCategoryDto => ({
+					category: category as BankTransactionCategoryFilterValue,
+					spending: formatCents(total.cents),
+					count: total.count,
+					baselineAverage:
+						hasBaseline && !NO_BASELINE_CATEGORIES.has(category)
+							? baselineAverage(baselineCategories.get(category))
+							: null,
+				})),
+		};
+	}
+
+	async getReviewCounts(accountId: Account['id']): Promise<BankTransactionReviewCountsResponseDto> {
+		const counts = await this.createOwnerScopedQuery(accountId)
+			.select(`COUNT(*) FILTER (WHERE "transaction"."category" = 'NEEDS_REVIEW')::int`, 'needsReview')
+			.addSelect(`COUNT(*) FILTER (WHERE ${SQL_CATEGORIZATION_FAILED})::int`, 'categorizationFailed')
+			.addSelect(`COUNT(*) FILTER (WHERE ${SQL_CATEGORIZING})::int`, 'categorizing')
+			.addSelect(`COUNT(*) FILTER (WHERE ${SQL_UNKNOWN_DIRECTION})::int`, 'unknownDirection')
+			.addSelect(`COUNT(*) FILTER (WHERE ${SQL_MISSING_BASE_AMOUNT})::int`, 'missingBaseAmount')
+			.getRawOne<BankTransactionReviewCountsResponseDto>();
+		return counts!;
+	}
+
+	/** Spending and income per month, day and category key; amounts are raw base-currency sums. */
+	private findFlows(accountId: string, from: string, to: string): Promise<FlowRow[]> {
+		return this.createOwnerScopedQuery(accountId)
+			.andWhere('"transaction"."bookingDate" BETWEEN :from AND :to', {from, to})
+			.andWhere(`${BASE_AMOUNT} IS NOT NULL`)
+			.andWhere(`(${SQL_SPENDING} OR ${SQL_INCOME})`)
+			.select(`to_char("transaction"."bookingDate", 'YYYY-MM')`, 'month')
+			.addSelect('EXTRACT(DAY FROM "transaction"."bookingDate")::int', 'day')
+			.addSelect(`CASE WHEN ${SQL_SPENDING} THEN 'SPENDING' ELSE 'INCOME' END`, 'flow')
+			.addSelect(`COALESCE("transaction"."category", '${BANK_TRANSACTION_UNCATEGORIZED}')`, 'category')
+			.addSelect(`ROUND(SUM(${BASE_AMOUNT}), 2)::text`, 'amount')
+			.addSelect('COUNT(*)::int', 'count')
+			.groupBy('1')
+			.addGroupBy('2')
+			.addGroupBy('3')
+			.addGroupBy('4')
+			.getRawMany<FlowRow>();
+	}
+
+	private async findPeriodCounts(accountId: string, from: string, to: string) {
+		const counts = await this.createOwnerScopedQuery(accountId)
+			.andWhere('"transaction"."bookingDate" BETWEEN :from AND :to', {from, to})
+			.select(
+				`ROUND(COALESCE(SUM(ABS(${BASE_AMOUNT})) FILTER (WHERE "transaction"."ownTransferEvidence" IS NOT NULL AND UPPER("transaction"."creditDebitIndicator") = 'DBIT'), 0), 2)::text`,
+				'ownTransfers',
+			)
+			.addSelect(`COUNT(*) FILTER (WHERE ${SQL_UNKNOWN_DIRECTION})::int`, 'unknownDirection')
+			.addSelect(`COUNT(*) FILTER (WHERE ${SQL_MISSING_BASE_AMOUNT})::int`, 'missingBaseAmount')
+			.getRawOne<{ownTransfers: string; unknownDirection: number; missingBaseAmount: number}>();
+		return counts!;
+	}
+
+	private async findFirstBookingDate(accountId: string): Promise<string | null> {
+		const row = await this.createOwnerScopedQuery(accountId)
+			.select(`to_char(MIN("transaction"."bookingDate"), 'YYYY-MM-DD')`, 'first')
+			.getRawOne<{first: string | null}>();
+		return row?.first ?? null;
+	}
+
+	private createOwnerScopedQuery(accountId: string) {
+		return this.bankTransactionRepository
+			.createQueryBuilder('transaction')
+			.innerJoin('transaction.bankAccount', 'bankAccount')
+			.innerJoin('bankAccount.bankConnection', 'connection')
+			.where('connection.accountId = :accountId', {accountId});
+	}
+}
+
+function addTo<K>(map: Map<K, bigint>, key: K, cents: bigint): Map<K, bigint> {
+	return map.set(key, (map.get(key) ?? 0n) + cents);
+}
+
+/** Spending descending, then name; refunds always last. */
+function compareCategories([leftKey, left]: [string, CategoryTotal], [rightKey, right]: [string, CategoryTotal]) {
+	const refundOrder = Number(leftKey === 'REFUND') - Number(rightKey === 'REFUND');
+	if (refundOrder !== 0) return refundOrder;
+	if (left.cents !== right.cents) return left.cents > right.cents ? -1 : 1;
+	return leftKey.localeCompare(rightKey);
+}

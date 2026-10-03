@@ -33,6 +33,8 @@ const VERIFIED_ROUTES: GuardedRoute[] = [
 	['patch', '/accounts/me'],
 	['delete', '/accounts/me'],
 	['get', '/bank-transactions'],
+	['get', '/bank-transactions/summary?month=2026-10&asOf=2026-10-18'],
+	['get', '/bank-transactions/review-counts'],
 	['get', `/bank-transactions/${RESOURCE_ID}`],
 	['patch', `/bank-transactions/${RESOURCE_ID}/category`],
 	['patch', `/bank-transactions/${RESOURCE_ID}/own-transfer`],

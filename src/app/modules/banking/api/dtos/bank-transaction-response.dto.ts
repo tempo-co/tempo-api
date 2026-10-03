@@ -63,6 +63,8 @@ export class BankTransactionResponseDto {
 	exchangeRate: string | null;
 	exchangeRateUnitCurrency: string | null;
 	exchangeRateType: string | null;
+	/** The amount in the owner's base currency, to the cent; null while unconverted. */
+	amountInBaseCurrency: string | null;
 	/** How the base-currency amount was derived; null while unconverted. */
 	baseAmountMethod: BankTransactionBaseAmountMethod | null;
 	/** The ECB reference rate date used when `baseAmountMethod` is `ECB`. */

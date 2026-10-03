@@ -185,6 +185,7 @@ export class BankTransactionService {
 			exchangeRate: transaction.exchangeRate,
 			exchangeRateUnitCurrency: transaction.exchangeRateUnitCurrency,
 			exchangeRateType: transaction.exchangeRateType,
+			amountInBaseCurrency: transaction.amountInBaseCurrency,
 			baseAmountMethod: transaction.baseAmountMethod,
 			baseAmountRateDate: transaction.baseAmountRateDate,
 			referenceNumber: transaction.referenceNumber,
