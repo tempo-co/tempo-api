@@ -84,7 +84,7 @@ services:
         restart: unless-stopped
         environment:
             NODE_ENV: production
-            WEB_BASE_URL: ${STAGING_PUBLIC_URL:?STAGING_PUBLIC_URL must be set}
+            WEB_BASE_URL: http://127.0.0.1:8119/tempo
             API_URL: http://api:3000
             PORT: '3000'
             DB_HOST: postgres
@@ -108,7 +108,7 @@ services:
             BANKING_INTEGRATION_ENABLED: 'false'
             ENABLE_BANKING_API_URL: https://disabled.invalid
             ENABLE_BANKING_APPLICATION_ID: tempo-staging-disabled
-            ENABLE_BANKING_REDIRECT_URL: ${STAGING_PUBLIC_URL:?STAGING_PUBLIC_URL must be set}/bank-connections/callback
+            ENABLE_BANKING_REDIRECT_URL: http://127.0.0.1:8119/tempo/bank-connections/callback
             BANKING_SESSION_ENCRYPTION_KEY_B64: ${BANKING_SESSION_ENCRYPTION_KEY_B64:?BANKING_SESSION_ENCRYPTION_KEY_B64 must be set}
             BANKING_SYNC_INTERVAL: 6h
             BANKING_SYNC_DISPATCH_INTERVAL: 10m
@@ -153,7 +153,7 @@ services:
         image: ${TEMPO_WEB_IMAGE:?TEMPO_WEB_IMAGE must be set to an immutable digest}
         restart: unless-stopped
         ports:
-            - '127.0.0.1:${STAGING_WEB_HOST_PORT:?STAGING_WEB_HOST_PORT must be set}:8080'
+            - '127.0.0.1:8119:8080'
         networks:
             - edge
             - ingress
