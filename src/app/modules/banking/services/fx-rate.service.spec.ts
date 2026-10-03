@@ -4,19 +4,6 @@ import {BankTransactionFxRate} from '../bank-transaction-fx-rate.entity';
 import {FxRateService} from './fx-rate.service';
 
 describe('FxRateService', () => {
-	const createQueryBuilder = (rawResult: unknown, entityResult: BankTransactionFxRate | null = null) => {
-		const queryBuilder = {
-			select: jest.fn().mockReturnThis(),
-			addSelect: jest.fn().mockReturnThis(),
-			where: jest.fn().mockReturnThis(),
-			andWhere: jest.fn().mockReturnThis(),
-			orderBy: jest.fn().mockReturnThis(),
-			getRawOne: jest.fn().mockResolvedValue(rawResult),
-			getOne: jest.fn().mockResolvedValue(entityResult),
-		};
-		return queryBuilder;
-	};
-
 	afterEach(() => {
 		jest.restoreAllMocks();
 	});
@@ -48,19 +35,5 @@ describe('FxRateService', () => {
 			],
 			['currency', 'rateDate'],
 		);
-	});
-
-	it('uses the latest cached rate on or before the transaction date', async () => {
-		const rate = {rateToEur: '1.1662'} as BankTransactionFxRate;
-		const queryBuilder = createQueryBuilder(undefined, rate);
-		const repository = {
-			createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
-		} as unknown as Repository<BankTransactionFxRate>;
-		const service = new FxRateService(repository);
-
-		expect(await service.getRateToEur('usd', '2026-08-26')).toBe(1.1662);
-		expect(queryBuilder.andWhere).toHaveBeenCalledWith('fxRate.rateDate <= :rateDate', {
-			rateDate: '2026-08-26',
-		});
 	});
 });

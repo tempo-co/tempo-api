@@ -18,7 +18,9 @@ import type {BankTransactionLocation} from './bank-transaction-location';
 import {BankTransactionType} from './bank-transaction-type';
 import type {BankTransactionCategorizationSearchTrace} from './categorization/bank-transaction-categorization.types';
 import type {OwnTransferEvidence, OwnTransferOverride} from './own-transfer/own-transfer-detection';
-import type {BankTransactionBaseAmountMethod} from './services/bank-transaction-amount-conversion.utils';
+
+/** How `amountInBaseCurrency` was derived: copied, taken from the bank's instructed amount, or via ECB rates. */
+export type BankTransactionBaseAmountMethod = 'SAME' | 'INSTRUCTED' | 'ECB';
 
 @Entity('bank_transactions')
 @Index('idx_bank_transactions_own_transfer_counterpart', ['ownTransferCounterpartId'])

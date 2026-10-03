@@ -78,6 +78,13 @@ export function safeErrorName(error: unknown): string {
 	return error instanceof Error && error.name.length > 0 ? error.name : 'UnknownError';
 }
 
+/** Shifts a `YYYY-MM-DD` date by whole calendar days. */
+export function addDays(date: string, days: number): string {
+	const value = new Date(`${date}T00:00:00.000Z`);
+	value.setUTCDate(value.getUTCDate() + days);
+	return value.toISOString().slice(0, 10);
+}
+
 export const BATCH_WRITE_CHUNK_SIZE = 1000;
 
 export function chunkArray<T>(items: readonly T[], size: number): T[][] {

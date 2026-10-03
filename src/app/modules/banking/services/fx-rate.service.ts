@@ -3,13 +3,17 @@ import {InjectRepository} from '@nestjs/typeorm';
 import {Repository} from 'typeorm';
 
 import {BankTransactionFxRate} from '../bank-transaction-fx-rate.entity';
-import {FX_RATE_MAX_AGE_DAYS, addDays, normalizeCurrency, toWeekday} from './bank-transaction-amount-conversion.utils';
+import {addDays} from '../banking.utils';
+import {
+	FX_RATE_MAX_AGE_DAYS,
+	MAX_ECB_PUBLICATION_GAP_DAYS,
+	normalizeCurrency,
+	toWeekday,
+} from './bank-transaction-amount-conversion.utils';
 
 const ECB_DATA_API_URL = 'https://data-api.ecb.europa.eu/service/data/EXR';
 const ECB_PROVIDER = 'ECB';
 const REQUEST_TIMEOUT_MS = 15_000;
-/** The longest span between consecutive ECB publications: Easter, or Christmas next to a weekend. */
-const MAX_PUBLICATION_GAP_DAYS = 5;
 
 type FxRateRow = {
 	currency: string;
@@ -69,23 +73,6 @@ export class FxRateService {
 		}
 	}
 
-	async getRateToEur(currency: string, rateDate: string): Promise<number | null> {
-		const normalizedCurrency = normalizeCurrency(currency);
-		if (!normalizedCurrency) return null;
-		if (normalizedCurrency === 'EUR') return 1;
-
-		const rate = await this.fxRateRepository
-			.createQueryBuilder('fxRate')
-			.where('fxRate.currency = :currency', {currency: normalizedCurrency})
-			.andWhere('fxRate.rateDate <= :rateDate', {rateDate})
-			.orderBy('fxRate.rateDate', 'DESC')
-			.getOne();
-		if (!rate) return null;
-
-		const parsedRate = Number(rate.rateToEur);
-		return Number.isFinite(parsedRate) && parsedRate > 0 ? parsedRate : null;
-	}
-
 	/**
 	 * Whether stored rates span the range without a gap longer than ECB ever leaves (a holiday weekend), so
 	 * a range fetched in pieces, e.g. around an outage, is fetched again rather than treated as complete.
@@ -108,7 +95,7 @@ export class FxRateService {
 					"rateDate" - "previousDate" > $4 AND "rateDate" > $2::date AND "previousDate" < $3::date
 				), FALSE) AS "hasGap"
 			FROM stored`,
-			[currency, fromDate, toDate, MAX_PUBLICATION_GAP_DAYS],
+			[currency, fromDate, toDate, MAX_ECB_PUBLICATION_GAP_DAYS],
 		)) as Array<{minimumDate: string | null; maximumDate: string | null; hasGap: boolean}>;
 		return Boolean(
 			coverage?.minimumDate &&

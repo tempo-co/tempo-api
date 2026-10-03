@@ -5,13 +5,13 @@ import type {
 	BankTransactionFinancialEventType,
 } from '../../bank-transaction-financial-event';
 import type {BankTransactionType} from '../../bank-transaction-type';
+import type {BankTransactionBaseAmountMethod} from '../../bank-transaction.entity';
 import type {
 	BankTransactionCategorizationSource,
 	BankTransactionCategorizationStatus,
 } from '../../categorization/bank-transaction-categorization.types';
 import type {BankTransactionCategory} from '../../categorization/bank-transaction-category';
 import type {OwnTransferEvidence, OwnTransferOverride} from '../../own-transfer/own-transfer-detection';
-import type {BankTransactionBaseAmountMethod} from '../../services/bank-transaction-amount-conversion.utils';
 
 export class BankTransactionOwnTransferCounterpartDto {
 	id: string;

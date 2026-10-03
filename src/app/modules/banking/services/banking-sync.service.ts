@@ -48,6 +48,7 @@ import {normalizeBankTransactionType} from '../bank-transaction-type';
 import {BankTransaction} from '../bank-transaction.entity';
 import {
 	BATCH_WRITE_CHUNK_SIZE,
+	addDays,
 	buildPostgresValuesList,
 	chunkArray,
 	safeErrorName,
@@ -66,6 +67,7 @@ import {
 	EnableBankingTransactionFetchOptions,
 } from '../enable-banking.types';
 import {BankingEncryptionError} from '../errors/banking-encryption.error';
+import {BASE_AMOUNT_INPUT_COLUMNS, baseAmountInputsSql} from './bank-transaction-amount-conversion.utils';
 import {BankingConnectionLock, BankingConnectionLockService} from './banking-connection-lock.service';
 import {BankingEncryptionService} from './banking-encryption.service';
 import {
@@ -235,7 +237,7 @@ export class BankingSyncService {
 				const previousSuccessfulRun = await this.findPreviousSuccessfulRun(connection.id);
 				const requestedTo = this.toDateOnly(new Date()) as string;
 				const requestedFrom = previousSuccessfulRun
-					? this.subtractDays(previousSuccessfulRun.requestedTo ?? requestedTo, INCREMENTAL_OVERLAP_DAYS)
+					? addDays(previousSuccessfulRun.requestedTo ?? requestedTo, -INCREMENTAL_OVERLAP_DAYS)
 					: null;
 				const transactionOptions: EnableBankingTransactionFetchOptions = previousSuccessfulRun
 					? {strategy: 'default', dateFrom: requestedFrom ?? undefined, dateTo: requestedTo}
@@ -930,34 +932,19 @@ export class BankingSyncService {
 	): Promise<void> {
 		const rows = previousTransactions.map((transaction) => [
 			transaction.id,
-			transaction.amount,
-			transaction.currency,
-			transaction.transactionDate,
-			transaction.bookingDate,
-			transaction.instructedAmount,
-			transaction.instructedCurrency,
+			...BASE_AMOUNT_INPUT_COLUMNS.map(([column]) => transaction[column]),
 		]);
+		const casts = ['uuid', ...BASE_AMOUNT_INPUT_COLUMNS.map(([, cast]) => cast)];
+		const columns = ['id', ...BASE_AMOUNT_INPUT_COLUMNS.map(([column]) => column)].map((column) => `"${column}"`);
 		for (const chunk of chunkArray(rows, BATCH_WRITE_CHUNK_SIZE)) {
-			const values = buildPostgresValuesList(chunk, [
-				'uuid',
-				'numeric',
-				'varchar',
-				'date',
-				'date',
-				'numeric',
-				'varchar',
-			]);
+			const values = buildPostgresValuesList(chunk, casts);
 			await repository.query(
 				`UPDATE "bank_transactions" AS t
 				SET "amountInBaseCurrency" = NULL, "baseAmountMethod" = NULL, "baseAmountRateDate" = NULL
-				FROM (VALUES ${values.sql}) AS previous(
-					"id", "amount", "currency", "transactionDate", "bookingDate", "instructedAmount", "instructedCurrency"
-				)
+				FROM (VALUES ${values.sql}) AS previous(${columns.join(', ')})
 				WHERE t."id" = previous."id"
 					AND t."amountInBaseCurrency" IS NOT NULL
-					AND (t."amount", t."currency", t."transactionDate", t."bookingDate", t."instructedAmount", t."instructedCurrency")
-						IS DISTINCT FROM (previous."amount", previous."currency", previous."transactionDate",
-							previous."bookingDate", previous."instructedAmount", previous."instructedCurrency")`,
+					AND ${baseAmountInputsSql('t')} IS DISTINCT FROM ${baseAmountInputsSql('previous')}`,
 				values.parameters,
 			);
 		}
@@ -1281,12 +1268,6 @@ export class BankingSyncService {
 
 		const date = value instanceof Date ? value : new Date(value);
 		return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
-	}
-
-	private subtractDays(value: string, days: number): string {
-		const date = new Date(`${value}T00:00:00.000Z`);
-		date.setUTCDate(date.getUTCDate() - days);
-		return this.toDateOnly(date) as string;
 	}
 
 	private isExpiredSessionError(error: unknown): boolean {

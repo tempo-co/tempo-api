@@ -630,15 +630,7 @@ describe('BankConnectionController', () => {
 			valueDate: pendingProviderShape.transactionDate,
 			status: 'PDNG',
 		};
-		const synchronize = async (transaction: EnableBankingTransaction) => {
-			getAccountBalances.mockResolvedValueOnce(makeBalances());
-			getAccountTransactions.mockResolvedValueOnce([transaction]);
-			await bankConnectionRepository.update(connection.id, {
-				nextSyncAt: new Date(Date.now() - 1),
-				syncStatus: 'QUEUED',
-			});
-			return app.get(BankingSyncService).synchronizeAutomatically(connection.id);
-		};
+		const synchronize = (transaction: EnableBankingTransaction) => synchronizeQueued(connection.id, [transaction]);
 		expect(await synchronize(pending)).toMatchObject({status: 'SUCCEEDED', transactionsAdded: 1});
 		const stored = await bankTransactionRepository.findOneByOrFail({bankAccountId: bankAccount.id});
 		await bankTransactionRepository.update(stored.id, {
@@ -670,15 +662,8 @@ describe('BankConnectionController', () => {
 	it('clears a stored base amount when a re-sync changes its conversion inputs', async () => {
 		const {connection, bankAccount} = await createAuthorizedConnection('conversion-input-change-session');
 		const [changing, unchanged] = makeTransactions('conversion-input-change');
-		const synchronize = async (transactions: EnableBankingTransaction[]) => {
-			getAccountBalances.mockResolvedValueOnce(makeBalances());
-			getAccountTransactions.mockResolvedValueOnce(transactions);
-			await bankConnectionRepository.update(connection.id, {
-				nextSyncAt: new Date(Date.now() - 1),
-				syncStatus: 'QUEUED',
-			});
-			return app.get(BankingSyncService).synchronizeAutomatically(connection.id);
-		};
+		const synchronize = (transactions: EnableBankingTransaction[]) =>
+			synchronizeQueued(connection.id, transactions);
 		expect(await synchronize([changing, unchanged])).toMatchObject({status: 'SUCCEEDED', transactionsAdded: 2});
 		const converted = {
 			amountInBaseCurrency: '-11.00',
@@ -716,15 +701,7 @@ describe('BankConnectionController', () => {
 			valueDate: undefined,
 			status: 'PDNG',
 		};
-		const synchronize = async (transaction: EnableBankingTransaction) => {
-			getAccountBalances.mockResolvedValueOnce(makeBalances());
-			getAccountTransactions.mockResolvedValueOnce([transaction]);
-			await bankConnectionRepository.update(connection.id, {
-				nextSyncAt: new Date(Date.now() - 1),
-				syncStatus: 'QUEUED',
-			});
-			return app.get(BankingSyncService).synchronizeAutomatically(connection.id);
-		};
+		const synchronize = (transaction: EnableBankingTransaction) => synchronizeQueued(connection.id, [transaction]);
 		expect(await synchronize(pending)).toMatchObject({status: 'SUCCEEDED', transactionsAdded: 1});
 		const stored = await bankTransactionRepository.findOneByOrFail({bankAccountId: bankAccount.id});
 		await bankTransactionRepository.update(stored.id, {
@@ -1541,6 +1518,17 @@ describe('BankConnectionController', () => {
 
 	function createIncompleteConnection(status: string) {
 		return fixtures.createConnection(account, {status, consentValidUntil: null});
+	}
+
+	/** Runs a queued automatic sync of the connection that returns these transactions. */
+	async function synchronizeQueued(connectionId: string, transactions: EnableBankingTransaction[]) {
+		getAccountBalances.mockResolvedValueOnce(makeBalances());
+		getAccountTransactions.mockResolvedValueOnce(transactions);
+		await bankConnectionRepository.update(connectionId, {
+			nextSyncAt: new Date(Date.now() - 1),
+			syncStatus: 'QUEUED',
+		});
+		return app.get(BankingSyncService).synchronizeAutomatically(connectionId);
 	}
 
 	async function createAuthorizedConnection(providerSessionId: string) {

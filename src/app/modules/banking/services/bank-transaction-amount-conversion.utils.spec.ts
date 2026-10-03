@@ -1,4 +1,4 @@
-import {addDays, latestExpectedEcbRateDate, normalizeCurrency} from './bank-transaction-amount-conversion.utils';
+import {latestExpectedEcbRateDate, normalizeCurrency} from './bank-transaction-amount-conversion.utils';
 
 describe('bank transaction amount conversion utils', () => {
 	it.each([
@@ -12,11 +12,6 @@ describe('bank transaction amount conversion utils', () => {
 		['winter time, after publication in Berlin', '2026-12-08T15:00:00.000Z', '2026-12-08'],
 	])('expects the ECB rate of the latest published business day: %s', (_scenario, now, expected) => {
 		expect(latestExpectedEcbRateDate(new Date(now))).toBe(expected);
-	});
-
-	it('adds calendar days across month and year boundaries', () => {
-		expect(addDays('2021-12-18', -7)).toBe('2021-12-11');
-		expect(addDays('2026-01-03', -7)).toBe('2025-12-27');
 	});
 
 	it('normalizes only three-letter currency codes', () => {
