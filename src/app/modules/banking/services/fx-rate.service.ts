@@ -3,7 +3,7 @@ import {InjectRepository} from '@nestjs/typeorm';
 import {Repository} from 'typeorm';
 
 import {BankTransactionFxRate} from '../bank-transaction-fx-rate.entity';
-import {FX_RATE_MAX_AGE_DAYS, addDays, normalizeCurrency} from './bank-transaction-amount-conversion.utils';
+import {FX_RATE_MAX_AGE_DAYS, addDays, normalizeCurrency, toWeekday} from './bank-transaction-amount-conversion.utils';
 
 const ECB_DATA_API_URL = 'https://data-api.ecb.europa.eu/service/data/EXR';
 const ECB_PROVIDER = 'ECB';
@@ -89,8 +89,12 @@ export class FxRateService {
 	/**
 	 * Whether stored rates span the range without a gap longer than ECB ever leaves (a holiday weekend), so
 	 * a range fetched in pieces, e.g. around an outage, is fetched again rather than treated as complete.
+	 * Weekend bounds are moved to the nearest weekday inside the range, since ECB never publishes on them.
 	 */
-	private async hasCoverage(currency: string, fromDate: string, toDate: string): Promise<boolean> {
+	private async hasCoverage(currency: string, rawFromDate: string, rawToDate: string): Promise<boolean> {
+		const fromDate = toWeekday(rawFromDate, 1);
+		const toDate = toWeekday(rawToDate, -1);
+		if (fromDate > toDate) return true;
 		const [coverage] = (await this.fxRateRepository.query(
 			`WITH stored AS (
 				SELECT "rateDate", LAG("rateDate") OVER (ORDER BY "rateDate") AS "previousDate"

@@ -43,6 +43,7 @@ const INPUT_COLUMNS = [
  * The newest reference rate on or before the transaction's rate date that is final: the publication of that
  * date's business day itself, or, once a later publication is stored, the previous one (an ECB holiday).
  * Until then the row waits, so it never keeps an older rate just because the expected one is not out yet.
+ * Holidays are inferred, not looked up: a weekday ECB skipped for any other reason is treated the same way.
  */
 const rateLateral = (alias: string, currency: string) => `
 	LEFT JOIN LATERAL (
@@ -155,7 +156,7 @@ export class BankTransactionAmountConversionService {
 		let converted = 0;
 		for (const [accountId, pending] of await this.findPendingCurrencies()) {
 			const baseCurrency = await this.resolveBaseCurrency(accountId, pending[0].baseCurrency);
-			await this.ensureHistoricalRates(pending, baseCurrency);
+			await this.ensureHistoricalRates(pending, baseCurrency, latestExpectedEcbRateDate(now));
 
 			const [{count}] = (await this.bankTransactionRepository.query(CONVERT_OWNER_SQL, [
 				accountId,
@@ -207,7 +208,11 @@ export class BankTransactionAmountConversionService {
 		return byOwner;
 	}
 
-	private async ensureHistoricalRates(pending: PendingCurrency[], baseCurrency: string): Promise<void> {
+	private async ensureHistoricalRates(
+		pending: PendingCurrency[],
+		baseCurrency: string,
+		latestExpectedDate: string,
+	): Promise<void> {
 		const foreign = pending.filter(({currency, fromDate}) => currency !== baseCurrency && fromDate !== null);
 		if (foreign.length === 0) return;
 
@@ -217,10 +222,13 @@ export class BankTransactionAmountConversionService {
 			.sort()
 			.at(-1)!;
 		// Weekend and holiday transactions use the previous publication, so fetch from before the first date.
+		// A holiday row also needs a later publication to show the day had none, so fetch past the last date,
+		// up to the newest rate that should already be published.
+		const fetchUntil = addDays(toDate, FX_RATE_MAX_AGE_DAYS);
 		await this.fxRateService.ensureRates(
 			[...foreign.map(({currency}) => currency), baseCurrency],
 			addDays(fromDate, -FX_RATE_MAX_AGE_DAYS),
-			toDate,
+			fetchUntil < latestExpectedDate ? fetchUntil : latestExpectedDate,
 		);
 	}
 

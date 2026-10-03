@@ -32,6 +32,8 @@ describe('BankTransactionAmountConversionService', () => {
 	let ecbRequests: Array<{currency: string; from: string; to: string}>;
 	/** The newest date the synthetic ECB has published, or null when it is unavailable. */
 	let publishedThrough: string | null;
+	/** Weekdays without a synthetic ECB publication. */
+	let holidays: Set<string>;
 
 	beforeAll(async () => {
 		app = getApp();
@@ -50,6 +52,7 @@ describe('BankTransactionAmountConversionService', () => {
 		await accounts.createQueryBuilder().update().set({baseCurrency: null}).execute();
 		ecbRequests = [];
 		publishedThrough = '2026-09-09';
+		holidays = new Set();
 		fetchSpy = jest.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
 			const url = new URL(String(input));
 			const currency = url.pathname.split('/').at(-1)!.split('.')[1];
@@ -57,9 +60,12 @@ describe('BankTransactionAmountConversionService', () => {
 			const to = url.searchParams.get('endPeriod')!;
 			ecbRequests.push({currency, from, to});
 			if (!publishedThrough) return new Response('Service Unavailable', {status: 503});
-			return new Response(syntheticEcbCsv(currency, from, to < publishedThrough ? to : publishedThrough), {
-				status: 200,
-			});
+			return new Response(
+				syntheticEcbCsv(currency, from, to < publishedThrough ? to : publishedThrough, holidays),
+				{
+					status: 200,
+				},
+			);
 		});
 	});
 
@@ -240,6 +246,11 @@ describe('BankTransactionAmountConversionService', () => {
 			expect(await stored(yesterday.id)).toMatchObject({baseAmountRateDate: '2026-09-08'});
 			expect(await stored(saturday.id)).toMatchObject({baseAmountRateDate: '2026-09-04'});
 
+			// Waiting rows do not re-download stored rates on every run.
+			ecbRequests = [];
+			await expect(service.backfill(BEFORE_PUBLICATION)).resolves.toEqual({scanned: 1, converted: 0});
+			expect(ecbRequests).toEqual([]);
+
 			publishedThrough = '2026-09-09';
 			await expect(service.backfill(NOW)).resolves.toEqual({scanned: 1, converted: 1});
 			expect(await stored(today.id)).toEqual({
@@ -308,6 +319,22 @@ describe('BankTransactionAmountConversionService', () => {
 			expect(await stored(row.id)).toMatchObject({amountInBaseCurrency: '-12.50'});
 		});
 
+		it('converts a holiday row in a currency the rate refresh does not cover', async () => {
+			await accounts.update({id: owner.id}, {baseCurrency: 'EUR'});
+			const [row] = await createRows(await createBankAccount(owner, 'GBP', {isActive: false}), [
+				{amount: '-10.00', bookingDate: '2026-09-03'},
+			]);
+			holidays = new Set(['2026-09-03']);
+
+			await expect(service.backfill(NOW)).resolves.toEqual({scanned: 1, converted: 1});
+			expect(ecbRequests).toEqual([{currency: 'GBP', from: '2026-08-27', to: '2026-09-09'}]);
+			expect(await stored(row.id)).toEqual({
+				amountInBaseCurrency: '-12.50',
+				baseAmountMethod: 'ECB',
+				baseAmountRateDate: '2026-09-02',
+			});
+		});
+
 		it('fetches rates again when the stored history has a gap', async () => {
 			await accounts.update({id: owner.id}, {baseCurrency: 'EUR'});
 			const [row] = await createRows(await createBankAccount(owner, 'GBP'), [
@@ -320,7 +347,7 @@ describe('BankTransactionAmountConversionService', () => {
 
 			await service.backfill(NOW);
 
-			expect(ecbRequests).toEqual([{currency: 'GBP', from: '2026-08-25', to: '2026-09-01'}]);
+			expect(ecbRequests).toEqual([{currency: 'GBP', from: '2026-08-25', to: '2026-09-08'}]);
 			expect(await stored(row.id)).toEqual({
 				amountInBaseCurrency: '-12.50',
 				baseAmountMethod: 'ECB',
@@ -363,12 +390,12 @@ describe('BankTransactionAmountConversionService', () => {
 	});
 });
 
-function syntheticEcbCsv(currency: string, from: string, to: string): string {
+function syntheticEcbCsv(currency: string, from: string, to: string, holidays: ReadonlySet<string>): string {
 	const rows = ['KEY,FREQ,CURRENCY,CURRENCY_DENOM,EXR_TYPE,EXR_SUFFIX,TIME_PERIOD,OBS_VALUE'];
 	const rate = SYNTHETIC_RATES[currency];
 	for (let date = new Date(`${from}T00:00:00.000Z`); date <= new Date(`${to}T00:00:00.000Z`);) {
 		const weekday = date.getUTCDay();
-		if (rate && weekday !== 0 && weekday !== 6) {
+		if (rate && weekday !== 0 && weekday !== 6 && !holidays.has(date.toISOString().slice(0, 10))) {
 			rows.push(
 				`EXR.D.${currency}.EUR.SP00.A,D,${currency},EUR,SP00,A,${date.toISOString().slice(0, 10)},${rate}`,
 			);

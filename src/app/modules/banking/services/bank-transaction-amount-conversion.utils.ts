@@ -34,6 +34,13 @@ export function latestExpectedEcbRateDate(now: Date): string {
 	return candidate;
 }
 
+/** The date itself when it is a weekday, otherwise the nearest weekday in the given direction. */
+export function toWeekday(date: string, direction: 1 | -1): string {
+	let candidate = date;
+	while (!isBusinessDay(candidate)) candidate = addDays(candidate, direction);
+	return candidate;
+}
+
 function isBusinessDay(date: string): boolean {
 	const weekday = new Date(`${date}T00:00:00.000Z`).getUTCDay();
 	return weekday >= 1 && weekday <= 5;
