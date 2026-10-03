@@ -50,6 +50,8 @@ import {EnableBankingClient, EnableBankingClientError} from './services/enable-b
 import {OwnTransferService} from './services/own-transfer.service';
 
 const PROVIDER = 'enable-banking';
+
+type ConvertedBalance = {amount: string; rateDate: string | null};
 const AUTHORIZATION_LOCK_WAIT_MS = 10_000;
 const DESTRUCTIVE_CONNECTION_STATUSES = [
 	BANK_CONNECTION_STATUSES.AUTHORIZED,
@@ -204,7 +206,11 @@ export class BankingService {
 			.where('bankConnection.id IN (:...connectionIds)', {connectionIds: connections.map(({id}) => id)})
 			.orderBy('bankAccount.createdAt', 'ASC')
 			.getMany();
-		const latestBalancesByAccountId = await this.findLatestBalancesByAccountId(bankAccounts.map(({id}) => id));
+		const [latestBalancesByAccountId, baseCurrency] = await Promise.all([
+			this.findLatestBalancesByAccountId(bankAccounts.map(({id}) => id)),
+			this.findBaseCurrency(accountId),
+		]);
+		const convertedBalances = await this.convertBalances(bankAccounts, baseCurrency);
 		const bankAccountsByConnectionId = new Map<string, BankAccount[]>();
 		for (const bankAccount of bankAccounts) {
 			const connectionAccounts = bankAccountsByConnectionId.get(bankAccount.bankConnection.id) ?? [];
@@ -223,8 +229,13 @@ export class BankingService {
 			lastSyncError: connection.lastSyncError,
 			nextSyncAt: connection.nextSyncAt,
 			syncStatus: connection.syncStatus,
+			baseCurrency,
 			bankAccounts: (bankAccountsByConnectionId.get(connection.id) ?? []).map((bankAccount) =>
-				this.toBankAccountResponse(bankAccount, latestBalancesByAccountId.get(bankAccount.id) ?? []),
+				this.toBankAccountResponse(
+					bankAccount,
+					latestBalancesByAccountId.get(bankAccount.id) ?? [],
+					convertedBalances.get(bankAccount.id),
+				),
 			),
 		}));
 	}
@@ -638,7 +649,66 @@ export class BankingService {
 		return latestBalancesByAccountId;
 	}
 
-	private toBankAccountResponse(account: BankAccount, latestBalances: BankAccountBalance[]): BankAccountResponseDto {
+	private async findBaseCurrency(accountId: Account['id']): Promise<string | null> {
+		const owner = await this.dataSource
+			.getRepository(Account)
+			.findOne({where: {id: accountId}, select: {id: true, baseCurrency: true}});
+		return owner?.baseCurrency?.trim().toUpperCase() || null;
+	}
+
+	/**
+	 * Converts current balances with the newest stored ECB rates up to today, at a date both currencies were
+	 * published. Approximate by design: unlike transactions, a balance has no single historical date.
+	 */
+	private async convertBalances(
+		bankAccounts: BankAccount[],
+		baseCurrency: string | null,
+	): Promise<Map<string, ConvertedBalance>> {
+		const converted = new Map<string, ConvertedBalance>();
+		const balances = bankAccounts.filter(({currentBalanceAmount}) => currentBalanceAmount !== null);
+		if (!baseCurrency || balances.length === 0) return converted;
+
+		const rows: Array<{id: string; amount: string | null; rateDate: string | null}> = await this.dataSource.query(
+			`
+			SELECT input."id",
+				CASE
+					WHEN input."currency" = $4 THEN ROUND(input."amount", 2)
+					ELSE ROUND(input."amount" / rate."source" * rate."base", 2)
+				END::text AS "amount",
+				CASE WHEN input."currency" <> $4 THEN to_char(rate."rateDate", 'YYYY-MM-DD') END AS "rateDate"
+			FROM unnest($1::uuid[], $2::varchar[], $3::numeric[]) AS input("id", "currency", "amount")
+			LEFT JOIN LATERAL (
+				SELECT dates."rateDate",
+					CASE WHEN input."currency" = 'EUR' THEN 1 ELSE source."rateToEur" END AS "source",
+					CASE WHEN $4 = 'EUR' THEN 1 ELSE base."rateToEur" END AS "base"
+				FROM "bank_transaction_fx_rates" dates
+				LEFT JOIN "bank_transaction_fx_rates" source
+					ON source."currency" = input."currency" AND source."rateDate" = dates."rateDate"
+				LEFT JOIN "bank_transaction_fx_rates" base ON base."currency" = $4 AND base."rateDate" = dates."rateDate"
+				WHERE input."currency" <> $4
+					AND dates."currency" IN (input."currency", $4)
+					AND dates."rateDate" <= CURRENT_DATE
+					AND (input."currency" = 'EUR' OR source."rateToEur" > 0)
+					AND ($4 = 'EUR' OR base."rateToEur" > 0)
+				ORDER BY dates."rateDate" DESC
+				LIMIT 1
+			) rate ON TRUE`,
+			[
+				balances.map(({id}) => id),
+				balances.map(({currency}) => currency.trim().toUpperCase()),
+				balances.map(({currentBalanceAmount}) => currentBalanceAmount),
+				baseCurrency,
+			],
+		);
+		for (const {id, amount, rateDate} of rows) if (amount !== null) converted.set(id, {amount, rateDate});
+		return converted;
+	}
+
+	private toBankAccountResponse(
+		account: BankAccount,
+		latestBalances: BankAccountBalance[],
+		convertedBalance: ConvertedBalance | undefined,
+	): BankAccountResponseDto {
 		const primaryBalance = this.selectPreferredBalance(latestBalances);
 
 		return {
@@ -652,6 +722,8 @@ export class BankingService {
 			maskedIdentifier: account.maskedIdentifier,
 			currentBalanceAmount: account.currentBalanceAmount,
 			currentBalanceType: account.currentBalanceType,
+			currentBalanceInBaseCurrency: convertedBalance?.amount ?? null,
+			baseCurrencyRateDate: convertedBalance?.rateDate ?? null,
 			balanceUpdatedAt: account.balanceUpdatedAt,
 			isActive: account.isActive,
 			latestBalances: latestBalances.map((balance) => ({
