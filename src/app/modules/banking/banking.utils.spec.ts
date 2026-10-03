@@ -1,4 +1,10 @@
-import {buildPostgresValuesList, chunkArray, getBalancePreference, selectPreferredBalance} from './banking.utils';
+import {
+	addDays,
+	buildPostgresValuesList,
+	chunkArray,
+	getBalancePreference,
+	selectPreferredBalance,
+} from './banking.utils';
 import {EnableBankingBalance} from './enable-banking.types';
 
 describe('getBalancePreference', () => {
@@ -119,5 +125,12 @@ describe('buildPostgresValuesList', () => {
 			sql: '($1::uuid, $2::numeric), ($3::uuid, $4::numeric)',
 			parameters: ['a', null, 'b', '2'],
 		});
+	});
+});
+
+describe('addDays', () => {
+	it('adds calendar days across month and year boundaries', () => {
+		expect(addDays('2021-12-18', -7)).toBe('2021-12-11');
+		expect(addDays('2026-01-03', -7)).toBe('2025-12-27');
 	});
 });

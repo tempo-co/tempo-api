@@ -1,26 +1,135 @@
 import {Injectable, Logger} from '@nestjs/common';
 import {InjectRepository} from '@nestjs/typeorm';
-import {IsNull, Repository} from 'typeorm';
+import {Repository} from 'typeorm';
 
 import {Account} from '@modules/account/account.entity';
 
 import {BankAccount} from '../bank-account.entity';
 import {BankTransaction} from '../bank-transaction.entity';
-import {BATCH_WRITE_CHUNK_SIZE, buildPostgresValuesList, chunkArray} from '../banking.utils';
+import {addDays} from '../banking.utils';
 import {
-	convertUsingHistoricalRates,
-	convertUsingProviderAmount,
-	getBankTransactionRateDate,
+	FX_RATE_MAX_AGE_DAYS,
+	baseAmountInputsSql,
+	latestExpectedEcbRateDate,
 	normalizeCurrency,
 } from './bank-transaction-amount-conversion.utils';
 import {FxRateService} from './fx-rate.service';
 
 const DEFAULT_BASE_CURRENCY = 'EUR';
 
-type TransactionGroup = {
-	account: Account;
-	transactions: BankTransaction[];
+/** Dates are null only when no pending row of the currency has a date; such rows can only be copied. */
+type PendingCurrency = {
+	currency: string;
+	fromDate: string | null;
+	toDate: string | null;
+	count: number;
 };
+
+type PendingOwner = {baseCurrency: string | null; currencies: PendingCurrency[]};
+
+/** Rate date of a transaction, as used by the conversion. */
+const RATE_DATE_SQL = `COALESCE(t."transactionDate", t."bookingDate")`;
+const normalizedCurrencySql = (column: string) => `UPPER(BTRIM(${column}))`;
+const CURRENCY_SQL = normalizedCurrencySql('t."currency"');
+/** Rows without a conversion method are (re)converted, including amounts stored before methods were recorded. */
+const PENDING_SQL = `t."baseAmountMethod" IS NULL`;
+
+/**
+ * The newest reference rate on or before the transaction's rate date that is final: the publication of that
+ * date's business day itself, or, once a later publication is stored, the previous one (an ECB holiday).
+ * Until then the row waits, so it never keeps an older rate just because the expected one is not out yet.
+ * Holidays are inferred, not looked up: a weekday ECB skipped for any other reason is treated the same way.
+ */
+const rateLateral = (alias: string, currency: string) => `
+	LEFT JOIN LATERAL (
+		SELECT rate."rateToEur", rate."rateDate"
+		FROM "bank_transaction_fx_rates" rate
+		WHERE rate."currency" = ${currency}
+			AND rate."rateDate" BETWEEN candidate."rateDate" - $3::integer AND candidate."rateDate"
+			AND (
+				rate."rateDate" = candidate."businessDate"
+				OR EXISTS (
+					SELECT 1 FROM "bank_transaction_fx_rates" later
+					WHERE later."currency" = rate."currency" AND later."rateDate" > candidate."rateDate"
+				)
+			)
+		ORDER BY rate."rateDate" DESC
+		LIMIT 1
+	) ${alias} ON TRUE`;
+
+/**
+ * Converts every unconverted transaction of one owner into their base currency, in exact cents:
+ * same currency → copied; bank-reported amount in the base currency → `INSTRUCTED`; otherwise via the
+ * ECB reference rates (pivoting through EUR) of the newest final publication at most {@link FX_RATE_MAX_AGE_DAYS}
+ * days before the transaction. Rows without a usable rate stay pending and are retried on the next run.
+ * The update re-checks the inputs, so a row a concurrent sync changed is left for the next run.
+ */
+const CONVERT_OWNER_SQL = `
+	WITH candidate AS (
+		SELECT
+			t."id",
+			t."amount",
+			${CURRENCY_SQL} AS "currency",
+			${normalizedCurrencySql('t."instructedCurrency"')} AS "instructedCurrency",
+			t."instructedAmount",
+			${RATE_DATE_SQL} AS "rateDate",
+			-- Weekends use Friday's publication; toWeekday in the utils applies the same rule to fetch ranges.
+			${RATE_DATE_SQL} - CASE EXTRACT(ISODOW FROM ${RATE_DATE_SQL}) WHEN 6 THEN 1 WHEN 7 THEN 2 ELSE 0 END
+				AS "businessDate",
+			${baseAmountInputsSql('t')} AS "inputs"
+		FROM "bank_transactions" t
+		INNER JOIN "bank_accounts" bank_account ON bank_account."id" = t."bankAccountId"
+		INNER JOIN "bank_connections" connection ON connection."id" = bank_account."bankConnectionId"
+		WHERE connection."accountId" = $1 AND ${PENDING_SQL}
+	),
+	priced AS (
+		SELECT
+			candidate.*,
+			CASE WHEN candidate."currency" = 'EUR' THEN 1 ELSE source."rateToEur" END AS "sourceRate",
+			CASE WHEN $2 = 'EUR' THEN 1 ELSE base."rateToEur" END AS "baseRate",
+			GREATEST(source."rateDate", base."rateDate") AS "usedRateDate"
+		FROM candidate
+		${rateLateral('source', 'candidate."currency"')}
+		${rateLateral('base', '$2')}
+	),
+	method AS (
+		SELECT
+			priced.*,
+			CASE
+				WHEN priced."currency" = $2 THEN 'SAME'
+				WHEN priced."instructedCurrency" = $2 AND priced."instructedAmount" IS NOT NULL THEN 'INSTRUCTED'
+				WHEN priced."sourceRate" > 0 AND priced."baseRate" > 0 THEN 'ECB'
+			END AS "baseAmountMethod"
+		FROM priced
+	),
+	converted AS (
+		SELECT
+			method."id",
+			method."inputs",
+			method."baseAmountMethod",
+			CASE method."baseAmountMethod"
+				WHEN 'SAME' THEN ROUND(method."amount", 2)
+				WHEN 'INSTRUCTED' THEN ROUND(SIGN(method."amount") * ABS(method."instructedAmount"), 2)
+				WHEN 'ECB' THEN ROUND(method."amount" / method."sourceRate" * method."baseRate", 2)
+			END AS "amountInBaseCurrency",
+			CASE WHEN method."baseAmountMethod" = 'ECB' THEN method."usedRateDate" END AS "baseAmountRateDate"
+		FROM method
+	),
+	updated AS (
+		UPDATE "bank_transactions" t
+		SET
+			"amountInBaseCurrency" = converted."amountInBaseCurrency",
+			"baseAmountMethod" = converted."baseAmountMethod",
+			"baseAmountRateDate" = converted."baseAmountRateDate",
+			"updatedAt" = CURRENT_TIMESTAMP
+		FROM converted
+		WHERE t."id" = converted."id"
+			AND ${PENDING_SQL}
+			AND ${baseAmountInputsSql('t')} IS NOT DISTINCT FROM converted."inputs"
+			AND converted."baseAmountMethod" IS NOT NULL
+		RETURNING 1
+	)
+	SELECT COUNT(*)::integer AS "count" FROM updated`;
 
 @Injectable()
 export class BankTransactionAmountConversionService {
@@ -36,140 +145,106 @@ export class BankTransactionAmountConversionService {
 		private readonly fxRateService: FxRateService,
 	) {}
 
-	async backfill(): Promise<{scanned: number; converted: number}> {
-		const transactions = await this.bankTransactionRepository.find({
-			select: {
-				id: true,
-				amount: true,
-				currency: true,
-				instructedAmount: true,
-				instructedCurrency: true,
-				transactionDate: true,
-				bookingDate: true,
-				bankAccount: {id: true, bankConnection: {id: true, account: {id: true, baseCurrency: true}}},
-			},
-			where: {amountInBaseCurrency: IsNull()},
-			relations: {bankAccount: {bankConnection: {account: true}}},
-			order: {createdAt: 'ASC'},
-		});
-		const groups = this.groupByAccount(transactions);
+	async backfill(now = new Date()): Promise<{scanned: number; converted: number}> {
+		const latestExpectedDate = latestExpectedEcbRateDate(now);
+		await this.refreshAccountCurrencyRates(latestExpectedDate);
+
+		let scanned = 0;
 		let converted = 0;
+		for (const [accountId, owner] of await this.findPendingOwners()) {
+			const baseCurrency = await this.resolveBaseCurrency(accountId, owner.baseCurrency);
+			await this.ensureHistoricalRates(owner.currencies, baseCurrency, latestExpectedDate);
 
-		for (const {account, transactions: accountTransactions} of groups.values()) {
-			const baseCurrency = await this.resolveBaseCurrency(account);
-			const historicalTransactions = accountTransactions.filter(
-				(transaction) =>
-					convertUsingProviderAmount({
-						amount: transaction.amount,
-						currency: transaction.currency,
-						baseCurrency,
-						instructedAmount: transaction.instructedAmount,
-						instructedCurrency: transaction.instructedCurrency,
-					}) === null &&
-					normalizeCurrency(transaction.currency) !== baseCurrency &&
-					getBankTransactionRateDate(transaction.transactionDate, transaction.bookingDate) !== null,
-			);
-			const rateDates = historicalTransactions
-				.map((transaction) => getBankTransactionRateDate(transaction.transactionDate, transaction.bookingDate))
-				.filter((date): date is string => date !== null)
-				.sort();
-			if (rateDates.length > 0) {
-				await this.fxRateService.ensureRates(
-					new Set(historicalTransactions.map(({currency}) => currency)),
-					rateDates[0],
-					rateDates[rateDates.length - 1],
-				);
-			}
-
-			const rateCache = new Map<string, number | null>();
-			const conversions: [id: string, amountInBaseCurrency: string][] = [];
-			for (const transaction of accountTransactions) {
-				const amountInBaseCurrency = await this.convertTransaction(transaction, baseCurrency, rateCache);
-				if (amountInBaseCurrency === null) continue;
-				conversions.push([transaction.id, amountInBaseCurrency]);
-			}
-			await this.saveConversions(conversions);
-			converted += conversions.length;
+			const [{count}] = (await this.bankTransactionRepository.query(CONVERT_OWNER_SQL, [
+				accountId,
+				baseCurrency,
+				FX_RATE_MAX_AGE_DAYS,
+			])) as Array<{count: number}>;
+			scanned += owner.currencies.reduce((total, row) => total + row.count, 0);
+			converted += count;
 		}
 
-		this.logger.debug(`Converted ${converted} of ${transactions.length} bank transaction amounts.`);
-		return {scanned: transactions.length, converted};
+		this.logger.debug(`Converted ${converted} of ${scanned} bank transaction amounts.`);
+		return {scanned, converted};
 	}
 
-	private async saveConversions(conversions: readonly [id: string, amountInBaseCurrency: string][]): Promise<void> {
-		for (const chunk of chunkArray(conversions, BATCH_WRITE_CHUNK_SIZE)) {
-			const values = buildPostgresValuesList(chunk, ['uuid', 'numeric']);
-			await this.bankTransactionRepository.query(
-				`UPDATE "bank_transactions" AS t
-				SET "amountInBaseCurrency" = v."amountInBaseCurrency",
-					"updatedAt" = CURRENT_TIMESTAMP
-				FROM (VALUES ${values.sql}) AS v("id", "amountInBaseCurrency")
-				WHERE t."id" = v."id"`,
-				values.parameters,
-			);
-		}
-	}
-
-	private async convertTransaction(
-		transaction: BankTransaction,
-		baseCurrency: string,
-		rateCache: Map<string, number | null>,
-	): Promise<string | null> {
-		const providerAmount = convertUsingProviderAmount({
-			amount: transaction.amount,
-			currency: transaction.currency,
-			baseCurrency,
-			instructedAmount: transaction.instructedAmount,
-			instructedCurrency: transaction.instructedCurrency,
-		});
-		if (providerAmount !== null) return providerAmount;
-
-		const rateDate = getBankTransactionRateDate(transaction.transactionDate, transaction.bookingDate);
-		if (!rateDate) return null;
-		const sourceRate = await this.getCachedRate(transaction.currency, rateDate, rateCache);
-		const baseRate = await this.getCachedRate(baseCurrency, rateDate, rateCache);
-		return convertUsingHistoricalRates(
-			transaction.amount,
-			transaction.currency,
-			baseCurrency,
-			sourceRate,
-			baseRate,
+	/**
+	 * Keeps rates current for every active account currency and base currency, even without new transactions,
+	 * so the dashboard can show balances in the base currency (dashboard API, phase 1).
+	 */
+	private async refreshAccountCurrencyRates(latestExpectedDate: string): Promise<void> {
+		const rows = (await this.bankAccountRepository.query(
+			`SELECT ${normalizedCurrencySql('"currency"')} AS "currency" FROM "bank_accounts" WHERE "isActive" = TRUE
+			UNION
+			SELECT ${normalizedCurrencySql('"baseCurrency"')} FROM "accounts" WHERE "baseCurrency" IS NOT NULL`,
+		)) as Array<{currency: string}>;
+		await this.fxRateService.ensureLatestRates(
+			rows.map(({currency}) => currency),
+			latestExpectedDate,
 		);
 	}
 
-	private async getCachedRate(
-		currency: string,
-		rateDate: string,
-		rateCache: Map<string, number | null>,
-	): Promise<number | null> {
-		const key = `${currency}:${rateDate}`;
-		if (rateCache.has(key)) return rateCache.get(key) ?? null;
-		const rate = await this.fxRateService.getRateToEur(currency, rateDate);
-		rateCache.set(key, rate);
-		return rate;
-	}
+	/** Unconverted rows per owner and currency, with the rate-date range each currency needs. */
+	private async findPendingOwners(): Promise<Map<string, PendingOwner>> {
+		const rows = (await this.bankTransactionRepository.query(
+			`SELECT
+				connection."accountId",
+				account."baseCurrency",
+				${CURRENCY_SQL} AS "currency",
+				to_char(MIN(${RATE_DATE_SQL}), 'YYYY-MM-DD') AS "fromDate",
+				to_char(MAX(${RATE_DATE_SQL}), 'YYYY-MM-DD') AS "toDate",
+				COUNT(*)::integer AS "count"
+			FROM "bank_transactions" t
+			INNER JOIN "bank_accounts" bank_account ON bank_account."id" = t."bankAccountId"
+			INNER JOIN "bank_connections" connection ON connection."id" = bank_account."bankConnectionId"
+			INNER JOIN "accounts" account ON account."id" = connection."accountId"
+			WHERE ${PENDING_SQL}
+			GROUP BY connection."accountId", account."baseCurrency", ${CURRENCY_SQL}
+			ORDER BY connection."accountId", ${CURRENCY_SQL}`,
+		)) as Array<PendingCurrency & {accountId: string; baseCurrency: string | null}>;
 
-	private groupByAccount(transactions: BankTransaction[]): Map<string, TransactionGroup> {
-		const groups = new Map<string, TransactionGroup>();
-		for (const transaction of transactions) {
-			const account = transaction.bankAccount?.bankConnection?.account;
-			if (!account) continue;
-			const existing = groups.get(account.id);
-			if (existing) existing.transactions.push(transaction);
-			else groups.set(account.id, {account, transactions: [transaction]});
+		const owners = new Map<string, PendingOwner>();
+		for (const {accountId, baseCurrency, ...currency} of rows) {
+			const owner = owners.get(accountId) ?? {baseCurrency, currencies: []};
+			owner.currencies.push(currency);
+			owners.set(accountId, owner);
 		}
-		return groups;
+		return owners;
 	}
 
-	private async resolveBaseCurrency(account: Account): Promise<string> {
-		const existingCurrency = normalizeCurrency(account.baseCurrency);
+	private async ensureHistoricalRates(
+		pending: PendingCurrency[],
+		baseCurrency: string,
+		latestExpectedDate: string,
+	): Promise<void> {
+		const foreign = pending.filter(
+			(row): row is PendingCurrency & {fromDate: string; toDate: string} =>
+				row.currency !== baseCurrency && row.fromDate !== null && row.toDate !== null,
+		);
+		if (foreign.length === 0) return;
+
+		const fromDate = foreign.reduce((min, row) => (row.fromDate < min ? row.fromDate : min), foreign[0].fromDate);
+		const toDate = foreign.reduce((max, row) => (row.toDate > max ? row.toDate : max), foreign[0].toDate);
+		// Weekend and holiday transactions use the previous publication, so fetch from before the first date.
+		// A holiday row also needs a later publication to show the day had none, so fetch past the last date,
+		// up to the newest rate that should already be published.
+		const fetchUntil = addDays(toDate, FX_RATE_MAX_AGE_DAYS);
+		await this.fxRateService.ensureRates(
+			[...foreign.map(({currency}) => currency), baseCurrency],
+			addDays(fromDate, -FX_RATE_MAX_AGE_DAYS),
+			fetchUntil < latestExpectedDate ? fetchUntil : latestExpectedDate,
+		);
+	}
+
+	private async resolveBaseCurrency(accountId: string, storedBaseCurrency: string | null): Promise<string> {
+		const existingCurrency = normalizeCurrency(storedBaseCurrency);
 		if (existingCurrency) return existingCurrency;
 
 		const preferredAccount = await this.bankAccountRepository
 			.createQueryBuilder('bankAccount')
 			.innerJoin('bankAccount.bankConnection', 'connection')
 			.innerJoin('connection.account', 'account')
-			.where('account.id = :accountId', {accountId: account.id})
+			.where('account.id = :accountId', {accountId})
 			.andWhere('bankAccount.isActive = TRUE')
 			.select('bankAccount.currency', 'currency')
 			.addSelect('COUNT(*)', 'count')
@@ -178,8 +253,7 @@ export class BankTransactionAmountConversionService {
 			.addOrderBy('bankAccount.currency', 'ASC')
 			.getRawOne<{currency?: string}>();
 		const baseCurrency = normalizeCurrency(preferredAccount?.currency) ?? DEFAULT_BASE_CURRENCY;
-		await this.accountRepository.update({id: account.id}, {baseCurrency});
-		account.baseCurrency = baseCurrency;
+		await this.accountRepository.update({id: accountId}, {baseCurrency});
 		return baseCurrency;
 	}
 }

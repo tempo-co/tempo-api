@@ -5,6 +5,7 @@ import type {
 	BankTransactionFinancialEventType,
 } from '../../bank-transaction-financial-event';
 import type {BankTransactionType} from '../../bank-transaction-type';
+import type {BankTransactionBaseAmountMethod} from '../../bank-transaction.entity';
 import type {
 	BankTransactionCategorizationSource,
 	BankTransactionCategorizationStatus,
@@ -62,6 +63,10 @@ export class BankTransactionResponseDto {
 	exchangeRate: string | null;
 	exchangeRateUnitCurrency: string | null;
 	exchangeRateType: string | null;
+	/** How the base-currency amount was derived; null while unconverted. */
+	baseAmountMethod: BankTransactionBaseAmountMethod | null;
+	/** The ECB reference rate date used when `baseAmountMethod` is `ECB`. */
+	baseAmountRateDate: string | null;
 	referenceNumber: string | null;
 	referenceNumberScheme: string | null;
 	bankName: string;

@@ -3,7 +3,13 @@ import {InjectRepository} from '@nestjs/typeorm';
 import {Repository} from 'typeorm';
 
 import {BankTransactionFxRate} from '../bank-transaction-fx-rate.entity';
-import {normalizeCurrency} from './bank-transaction-amount-conversion.utils';
+import {addDays} from '../banking.utils';
+import {
+	FX_RATE_MAX_AGE_DAYS,
+	MAX_ECB_PUBLICATION_GAP_DAYS,
+	normalizeCurrency,
+	toWeekday,
+} from './bank-transaction-amount-conversion.utils';
 
 const ECB_DATA_API_URL = 'https://data-api.ecb.europa.eu/service/data/EXR';
 const ECB_PROVIDER = 'ECB';
@@ -42,35 +48,61 @@ export class FxRateService {
 		}
 	}
 
-	async getRateToEur(currency: string, rateDate: string): Promise<number | null> {
-		const normalizedCurrency = normalizeCurrency(currency);
-		if (!normalizedCurrency) return null;
-		if (normalizedCurrency === 'EUR') return 1;
+	/**
+	 * Fetches rates published since the newest stored one, so currencies without recent transactions stay current.
+	 * A currency with no stored rate fetches the last {@link FX_RATE_MAX_AGE_DAYS} days.
+	 */
+	async ensureLatestRates(currencies: Iterable<string>, latestExpectedDate: string): Promise<void> {
+		for (const rawCurrency of new Set(currencies)) {
+			const currency = normalizeCurrency(rawCurrency);
+			if (!currency || currency === 'EUR') continue;
 
-		const rate = await this.fxRateRepository
-			.createQueryBuilder('fxRate')
-			.where('fxRate.currency = :currency', {currency: normalizedCurrency})
-			.andWhere('fxRate.rateDate <= :rateDate', {rateDate})
-			.orderBy('fxRate.rateDate', 'DESC')
-			.getOne();
-		if (!rate) return null;
+			const latest = await this.fxRateRepository
+				.createQueryBuilder('fxRate')
+				.select(`to_char(MAX(fxRate.rateDate), 'YYYY-MM-DD')`, 'rateDate')
+				.where('fxRate.currency = :currency', {currency})
+				.getRawOne<{rateDate: string | null}>();
+			const latestDate = latest?.rateDate ?? null;
+			if (latestDate && latestDate >= latestExpectedDate) continue;
 
-		const parsedRate = Number(rate.rateToEur);
-		return Number.isFinite(parsedRate) && parsedRate > 0 ? parsedRate : null;
+			await this.ensureRates(
+				[currency],
+				latestDate ?? addDays(latestExpectedDate, -FX_RATE_MAX_AGE_DAYS),
+				latestExpectedDate,
+			);
+		}
 	}
 
-	private async hasCoverage(currency: string, fromDate: string, toDate: string): Promise<boolean> {
-		const coverage = await this.fxRateRepository
-			.createQueryBuilder('fxRate')
-			.select('MIN(fxRate.rateDate)', 'minimumDate')
-			.addSelect('MAX(fxRate.rateDate)', 'maximumDate')
-			.where('fxRate.currency = :currency', {currency})
-			.getRawOne<{minimumDate: string | null; maximumDate: string | null}>();
+	/**
+	 * Whether stored rates span the range without a gap longer than ECB ever leaves (a holiday weekend), so
+	 * a range fetched in pieces, e.g. around an outage, is fetched again rather than treated as complete.
+	 * Weekend bounds are moved to the nearest weekday inside the range, since ECB never publishes on them.
+	 */
+	private async hasCoverage(currency: string, rawFromDate: string, rawToDate: string): Promise<boolean> {
+		const fromDate = toWeekday(rawFromDate, 1);
+		const toDate = toWeekday(rawToDate, -1);
+		if (fromDate > toDate) return true;
+		const [coverage] = (await this.fxRateRepository.query(
+			`WITH stored AS (
+				SELECT "rateDate", LAG("rateDate") OVER (ORDER BY "rateDate") AS "previousDate"
+				FROM "bank_transaction_fx_rates"
+				WHERE "currency" = $1
+			)
+			SELECT
+				to_char(MIN("rateDate"), 'YYYY-MM-DD') AS "minimumDate",
+				to_char(MAX("rateDate"), 'YYYY-MM-DD') AS "maximumDate",
+				COALESCE(BOOL_OR(
+					"rateDate" - "previousDate" > $4 AND "rateDate" > $2::date AND "previousDate" < $3::date
+				), FALSE) AS "hasGap"
+			FROM stored`,
+			[currency, fromDate, toDate, MAX_ECB_PUBLICATION_GAP_DAYS],
+		)) as Array<{minimumDate: string | null; maximumDate: string | null; hasGap: boolean}>;
 		return Boolean(
 			coverage?.minimumDate &&
 			coverage.maximumDate &&
 			coverage.minimumDate <= fromDate &&
-			coverage.maximumDate >= toDate,
+			coverage.maximumDate >= toDate &&
+			!coverage.hasGap,
 		);
 	}
 

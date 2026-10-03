@@ -19,6 +19,9 @@ import {BankTransactionType} from './bank-transaction-type';
 import type {BankTransactionCategorizationSearchTrace} from './categorization/bank-transaction-categorization.types';
 import type {OwnTransferEvidence, OwnTransferOverride} from './own-transfer/own-transfer-detection';
 
+/** How `amountInBaseCurrency` was derived: copied, taken from the bank's instructed amount, or via ECB rates. */
+export type BankTransactionBaseAmountMethod = 'SAME' | 'INSTRUCTED' | 'ECB';
+
 @Entity('bank_transactions')
 @Index('idx_bank_transactions_own_transfer_counterpart', ['ownTransferCounterpartId'])
 @Index('idx_bank_transactions_account_dedupe', ['bankAccountId', 'dedupeKey'], {unique: true})
@@ -63,8 +66,16 @@ export class BankTransaction {
 	@Column({type: 'numeric', precision: 20, scale: 8})
 	amount: string;
 
-	@Column({type: 'numeric', precision: 30, scale: 12, nullable: true})
+	/** Exact cents in the owner's base currency; null until converted. */
+	@Column({type: 'numeric', precision: 30, scale: 2, nullable: true})
 	amountInBaseCurrency: string | null;
+
+	@Column({type: 'varchar', length: 16, nullable: true})
+	baseAmountMethod: BankTransactionBaseAmountMethod | null;
+
+	/** The ECB reference rate date used, when `baseAmountMethod` is `ECB`. */
+	@Column({type: 'date', nullable: true})
+	baseAmountRateDate: string | null;
 
 	@Column({type: 'varchar', length: 3})
 	currency: string;

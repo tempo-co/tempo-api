@@ -139,6 +139,7 @@ function seedTransactions(transactions: (DeepPartial<BankTransaction> & {id: str
 		valueDate: transaction.bookingDate,
 		transactionDate: transaction.bookingDate,
 		amountInBaseCurrency: transaction.amount,
+		baseAmountMethod: 'SAME' as const,
 		creditDebitIndicator: transaction.amount.startsWith('-') ? 'DBIT' : 'CRDT',
 		transactionType: BANK_TRANSACTION_TYPES.TRANSFER,
 		...transaction,
