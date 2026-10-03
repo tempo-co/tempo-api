@@ -32,13 +32,15 @@ COPY --chown=node:node tsconfig.json ./tsconfig.json
 
 FROM node:22-alpine AS runtime
 
+# Without NODE_ENV the config falls back to development, which this image has no env file for.
+ENV NODE_ENV=production
+
 RUN apk add --no-cache curl libstdc++
 
 WORKDIR /usr/src/app
 
 COPY --from=runtime-dependencies --chown=node:node /usr/src/app/ ./
 COPY --chown=node:node .env.test .env.test
-COPY --chown=node:node .env.development .env.development
 COPY --from=runtime-dependencies /tmp/dev-dependencies.json /tmp/dev-dependencies.json
 COPY ops/runtime-image-smoke.js /tmp/runtime-image-smoke.js
 RUN node /tmp/runtime-image-smoke.js \
