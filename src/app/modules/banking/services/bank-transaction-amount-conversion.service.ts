@@ -28,12 +28,45 @@ type PendingCurrency = {
 /** Normalized currency and rate date of a transaction, as used by the conversion. */
 const RATE_DATE_SQL = `COALESCE(t."transactionDate", t."bookingDate")`;
 const CURRENCY_SQL = `UPPER(BTRIM(t."currency"))`;
+/** Rows without a conversion method are (re)converted, including amounts stored before methods were recorded. */
+const PENDING_SQL = `t."baseAmountMethod" IS NULL`;
+const INPUT_COLUMNS = [
+	'amount',
+	'currency',
+	'transactionDate',
+	'bookingDate',
+	'instructedAmount',
+	'instructedCurrency',
+];
+
+/**
+ * The newest reference rate on or before the transaction's rate date that is final: the publication of that
+ * date's business day itself, or, once a later publication is stored, the previous one (an ECB holiday).
+ * Until then the row waits, so it never keeps an older rate just because the expected one is not out yet.
+ */
+const rateLateral = (alias: string, currency: string) => `
+	LEFT JOIN LATERAL (
+		SELECT rate."rateToEur", rate."rateDate"
+		FROM "bank_transaction_fx_rates" rate
+		WHERE rate."currency" = ${currency}
+			AND rate."rateDate" BETWEEN candidate."rateDate" - $3::integer AND candidate."rateDate"
+			AND (
+				rate."rateDate" = candidate."businessDate"
+				OR EXISTS (
+					SELECT 1 FROM "bank_transaction_fx_rates" later
+					WHERE later."currency" = rate."currency" AND later."rateDate" > candidate."rateDate"
+				)
+			)
+		ORDER BY rate."rateDate" DESC
+		LIMIT 1
+	) ${alias} ON TRUE`;
 
 /**
  * Converts every unconverted transaction of one owner into their base currency, in exact cents:
  * same currency → copied; bank-reported amount in the base currency → `INSTRUCTED`; otherwise via the
- * ECB reference rates (pivoting through EUR) of the newest publication at most {@link FX_RATE_MAX_AGE_DAYS}
- * days before the transaction. Rows without a usable rate stay NULL and are retried on the next run.
+ * ECB reference rates (pivoting through EUR) of the newest final publication at most {@link FX_RATE_MAX_AGE_DAYS}
+ * days before the transaction. Rows without a usable rate stay pending and are retried on the next run.
+ * The update re-checks the inputs, so a row a concurrent sync changed is left for the next run.
  */
 const CONVERT_OWNER_SQL = `
 	WITH candidate AS (
@@ -43,11 +76,14 @@ const CONVERT_OWNER_SQL = `
 			${CURRENCY_SQL} AS "currency",
 			UPPER(BTRIM(t."instructedCurrency")) AS "instructedCurrency",
 			t."instructedAmount",
-			${RATE_DATE_SQL} AS "rateDate"
+			${RATE_DATE_SQL} AS "rateDate",
+			${RATE_DATE_SQL} - CASE EXTRACT(ISODOW FROM ${RATE_DATE_SQL}) WHEN 6 THEN 1 WHEN 7 THEN 2 ELSE 0 END
+				AS "businessDate",
+			ROW(${INPUT_COLUMNS.map((column) => `t."${column}"`).join(', ')}) AS "inputs"
 		FROM "bank_transactions" t
 		INNER JOIN "bank_accounts" bank_account ON bank_account."id" = t."bankAccountId"
 		INNER JOIN "bank_connections" connection ON connection."id" = bank_account."bankConnectionId"
-		WHERE connection."accountId" = $1 AND t."amountInBaseCurrency" IS NULL
+		WHERE connection."accountId" = $1 AND ${PENDING_SQL}
 	),
 	priced AS (
 		SELECT
@@ -56,26 +92,13 @@ const CONVERT_OWNER_SQL = `
 			CASE WHEN $2 = 'EUR' THEN 1 ELSE base."rateToEur" END AS "baseRate",
 			GREATEST(source."rateDate", base."rateDate") AS "usedRateDate"
 		FROM candidate
-		LEFT JOIN LATERAL (
-			SELECT rate."rateToEur", rate."rateDate"
-			FROM "bank_transaction_fx_rates" rate
-			WHERE rate."currency" = candidate."currency"
-				AND rate."rateDate" BETWEEN candidate."rateDate" - $3::integer AND candidate."rateDate"
-			ORDER BY rate."rateDate" DESC
-			LIMIT 1
-		) source ON TRUE
-		LEFT JOIN LATERAL (
-			SELECT rate."rateToEur", rate."rateDate"
-			FROM "bank_transaction_fx_rates" rate
-			WHERE rate."currency" = $2
-				AND rate."rateDate" BETWEEN candidate."rateDate" - $3::integer AND candidate."rateDate"
-			ORDER BY rate."rateDate" DESC
-			LIMIT 1
-		) base ON TRUE
+		${rateLateral('source', 'candidate."currency"')}
+		${rateLateral('base', '$2')}
 	),
 	converted AS (
 		SELECT
 			priced."id",
+			priced."inputs",
 			CASE
 				WHEN priced."currency" = $2 THEN ROUND(priced."amount", 2)
 				WHEN priced."instructedCurrency" = $2 AND priced."instructedAmount" IS NOT NULL
@@ -104,7 +127,8 @@ const CONVERT_OWNER_SQL = `
 			"updatedAt" = CURRENT_TIMESTAMP
 		FROM converted
 		WHERE t."id" = converted."id"
-			AND t."amountInBaseCurrency" IS NULL
+			AND ${PENDING_SQL}
+			AND ROW(${INPUT_COLUMNS.map((column) => `t."${column}"`).join(', ')}) IS NOT DISTINCT FROM converted."inputs"
 			AND converted."amountInBaseCurrency" IS NOT NULL
 		RETURNING 1
 	)
@@ -149,9 +173,9 @@ export class BankTransactionAmountConversionService {
 	/** Keeps rates current for every currency a balance or base amount may need, even without new transactions. */
 	private async refreshAccountCurrencyRates(now: Date): Promise<void> {
 		const rows = (await this.bankAccountRepository.query(
-			`SELECT DISTINCT UPPER("currency") AS "currency" FROM "bank_accounts" WHERE "isActive" = TRUE
+			`SELECT DISTINCT UPPER(BTRIM("currency")) AS "currency" FROM "bank_accounts" WHERE "isActive" = TRUE
 			UNION
-			SELECT DISTINCT UPPER("baseCurrency") FROM "accounts" WHERE "baseCurrency" IS NOT NULL`,
+			SELECT DISTINCT UPPER(BTRIM("baseCurrency")) FROM "accounts" WHERE "baseCurrency" IS NOT NULL`,
 		)) as Array<{currency: string}>;
 		await this.fxRateService.ensureLatestRates(
 			rows.map(({currency}) => currency),
@@ -173,7 +197,7 @@ export class BankTransactionAmountConversionService {
 			INNER JOIN "bank_accounts" bank_account ON bank_account."id" = t."bankAccountId"
 			INNER JOIN "bank_connections" connection ON connection."id" = bank_account."bankConnectionId"
 			INNER JOIN "accounts" account ON account."id" = connection."accountId"
-			WHERE t."amountInBaseCurrency" IS NULL
+			WHERE ${PENDING_SQL}
 			GROUP BY connection."accountId", account."baseCurrency", ${CURRENCY_SQL}
 			ORDER BY connection."accountId", ${CURRENCY_SQL}`,
 		)) as PendingCurrency[];

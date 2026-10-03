@@ -839,14 +839,13 @@ export class BankingSyncService {
 			.updateEntity(false)
 			.execute();
 
-		await this.clearStaleBaseAmounts(repository, existingTransactions);
-
 		const eventTransactionValues = transactionValues.filter(
 			({financialEventType}) => financialEventType === BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
 		);
 		if (eventTransactionValues.length > 0) {
 			await repository.upsert(eventTransactionValues, conflictColumns);
 		}
+		await this.clearStaleBaseAmounts(repository, existingTransactions);
 
 		const eventStableIdentityKeys = [
 			...new Set(eventTransactionValues.map(({stableIdentityKey}) => stableIdentityKey)),

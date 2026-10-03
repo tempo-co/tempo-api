@@ -8,6 +8,8 @@ import {FX_RATE_MAX_AGE_DAYS, addDays, normalizeCurrency} from './bank-transacti
 const ECB_DATA_API_URL = 'https://data-api.ecb.europa.eu/service/data/EXR';
 const ECB_PROVIDER = 'ECB';
 const REQUEST_TIMEOUT_MS = 15_000;
+/** The longest span between consecutive ECB publications: Easter, or Christmas next to a weekend. */
+const MAX_PUBLICATION_GAP_DAYS = 5;
 
 type FxRateRow = {
 	currency: string;
@@ -84,18 +86,32 @@ export class FxRateService {
 		return Number.isFinite(parsedRate) && parsedRate > 0 ? parsedRate : null;
 	}
 
+	/**
+	 * Whether stored rates span the range without a gap longer than ECB ever leaves (a holiday weekend), so
+	 * a range fetched in pieces, e.g. around an outage, is fetched again rather than treated as complete.
+	 */
 	private async hasCoverage(currency: string, fromDate: string, toDate: string): Promise<boolean> {
-		const coverage = await this.fxRateRepository
-			.createQueryBuilder('fxRate')
-			.select('MIN(fxRate.rateDate)', 'minimumDate')
-			.addSelect('MAX(fxRate.rateDate)', 'maximumDate')
-			.where('fxRate.currency = :currency', {currency})
-			.getRawOne<{minimumDate: string | null; maximumDate: string | null}>();
+		const [coverage] = (await this.fxRateRepository.query(
+			`WITH stored AS (
+				SELECT "rateDate", LAG("rateDate") OVER (ORDER BY "rateDate") AS "previousDate"
+				FROM "bank_transaction_fx_rates"
+				WHERE "currency" = $1
+			)
+			SELECT
+				to_char(MIN("rateDate"), 'YYYY-MM-DD') AS "minimumDate",
+				to_char(MAX("rateDate"), 'YYYY-MM-DD') AS "maximumDate",
+				COALESCE(BOOL_OR(
+					"rateDate" - "previousDate" > $4 AND "rateDate" > $2::date AND "previousDate" < $3::date
+				), FALSE) AS "hasGap"
+			FROM stored`,
+			[currency, fromDate, toDate, MAX_PUBLICATION_GAP_DAYS],
+		)) as Array<{minimumDate: string | null; maximumDate: string | null; hasGap: boolean}>;
 		return Boolean(
 			coverage?.minimumDate &&
 			coverage.maximumDate &&
 			coverage.minimumDate <= fromDate &&
-			coverage.maximumDate >= toDate,
+			coverage.maximumDate >= toDate &&
+			!coverage.hasGap,
 		);
 	}
 

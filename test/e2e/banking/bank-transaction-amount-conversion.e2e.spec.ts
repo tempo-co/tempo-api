@@ -17,6 +17,8 @@ import {getApp} from '../../setup/e2e.setup';
 const SYNTHETIC_RATES: Readonly<Record<string, string>> = {GBP: '0.800000', USD: '1.250000', RON: '5.000000'};
 // Wednesday 2026-09-09, 17:00 in Berlin: that day's ECB rates should already be published.
 const NOW = new Date('2026-09-09T15:00:00.000Z');
+// The same Wednesday at 10:00 in Berlin, before that day's publication.
+const BEFORE_PUBLICATION = new Date('2026-09-09T08:00:00.000Z');
 
 describe('BankTransactionAmountConversionService', () => {
 	let app: INestApplication;
@@ -28,6 +30,8 @@ describe('BankTransactionAmountConversionService', () => {
 	let service: BankTransactionAmountConversionService;
 	let fetchSpy: jest.SpyInstance;
 	let ecbRequests: Array<{currency: string; from: string; to: string}>;
+	/** The newest date the synthetic ECB has published, or null when it is unavailable. */
+	let publishedThrough: string | null;
 
 	beforeAll(async () => {
 		app = getApp();
@@ -45,13 +49,17 @@ describe('BankTransactionAmountConversionService', () => {
 		await fxRates.clear();
 		await accounts.createQueryBuilder().update().set({baseCurrency: null}).execute();
 		ecbRequests = [];
+		publishedThrough = '2026-09-09';
 		fetchSpy = jest.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
 			const url = new URL(String(input));
 			const currency = url.pathname.split('/').at(-1)!.split('.')[1];
 			const from = url.searchParams.get('startPeriod')!;
 			const to = url.searchParams.get('endPeriod')!;
 			ecbRequests.push({currency, from, to});
-			return new Response(syntheticEcbCsv(currency, from, to), {status: 200});
+			if (!publishedThrough) return new Response('Service Unavailable', {status: 503});
+			return new Response(syntheticEcbCsv(currency, from, to < publishedThrough ? to : publishedThrough), {
+				status: 200,
+			});
 		});
 	});
 
@@ -211,6 +219,126 @@ describe('BankTransactionAmountConversionService', () => {
 				amountInBaseCurrency: '-10.00',
 				baseAmountMethod: 'SAME',
 				baseAmountRateDate: null,
+			});
+		});
+
+		it("waits for the transaction day's own rate while it is not yet published", async () => {
+			await accounts.update({id: owner.id}, {baseCurrency: 'EUR'});
+			const [today, yesterday, saturday] = await createRows(await createBankAccount(owner, 'GBP'), [
+				{amount: '-10.00', bookingDate: '2026-09-09'},
+				{amount: '-10.00', bookingDate: '2026-09-08'},
+				{amount: '-10.00', bookingDate: '2026-09-05'},
+			]);
+			publishedThrough = '2026-09-08';
+
+			await expect(service.backfill(BEFORE_PUBLICATION)).resolves.toEqual({scanned: 3, converted: 2});
+			expect(await stored(today.id)).toEqual({
+				amountInBaseCurrency: null,
+				baseAmountMethod: null,
+				baseAmountRateDate: null,
+			});
+			expect(await stored(yesterday.id)).toMatchObject({baseAmountRateDate: '2026-09-08'});
+			expect(await stored(saturday.id)).toMatchObject({baseAmountRateDate: '2026-09-04'});
+
+			publishedThrough = '2026-09-09';
+			await expect(service.backfill(NOW)).resolves.toEqual({scanned: 1, converted: 1});
+			expect(await stored(today.id)).toEqual({
+				amountInBaseCurrency: '-12.50',
+				baseAmountMethod: 'ECB',
+				baseAmountRateDate: '2026-09-09',
+			});
+		});
+
+		it('does not fall back to an older rate while ECB is unavailable', async () => {
+			await accounts.update({id: owner.id}, {baseCurrency: 'EUR'});
+			const [row] = await createRows(await createBankAccount(owner, 'GBP'), [
+				{amount: '-10.00', bookingDate: '2026-09-05'},
+			]);
+			await fxRates.save({currency: 'GBP', rateDate: '2026-09-03', rateToEur: '0.8', provider: 'ECB'});
+			publishedThrough = null;
+
+			await expect(service.backfill(NOW)).resolves.toEqual({scanned: 1, converted: 0});
+			expect(await stored(row.id)).toEqual({
+				amountInBaseCurrency: null,
+				baseAmountMethod: null,
+				baseAmountRateDate: null,
+			});
+		});
+
+		it('uses the previous publication for an ECB holiday once a later one is out', async () => {
+			await accounts.update({id: owner.id}, {baseCurrency: 'EUR'});
+			const [holiday, unpublished] = await createRows(await createBankAccount(owner, 'GBP'), [
+				{amount: '-10.00', bookingDate: '2026-09-03'},
+				{amount: '-10.00', bookingDate: '2026-09-08'},
+			]);
+			// No publication on Thursday 2026-09-03 (a synthetic holiday) or yet on Tuesday 2026-09-08.
+			await fxRates.save(
+				['2026-08-31', '2026-09-01', '2026-09-02', '2026-09-04', '2026-09-07'].map((rateDate) => ({
+					currency: 'GBP',
+					rateDate,
+					rateToEur: rateDate === '2026-09-02' ? '0.5' : '0.8',
+					provider: 'ECB',
+				})),
+			);
+			publishedThrough = null;
+
+			await expect(service.backfill(NOW)).resolves.toEqual({scanned: 2, converted: 1});
+			expect(await stored(holiday.id)).toEqual({
+				amountInBaseCurrency: '-20.00',
+				baseAmountMethod: 'ECB',
+				baseAmountRateDate: '2026-09-02',
+			});
+			expect(await stored(unpublished.id)).toMatchObject({amountInBaseCurrency: null});
+		});
+
+		it('does not fetch a range that is already stored without gaps', async () => {
+			await accounts.update({id: owner.id}, {baseCurrency: 'EUR'});
+			const [row] = await createRows(await createBankAccount(owner, 'GBP'), [
+				{amount: '-10.00', bookingDate: '2026-09-01'},
+			]);
+			const weekdays = ['2026-08-24', '2026-08-25', '2026-08-26', '2026-08-27', '2026-08-28'];
+			await fxRates.save(
+				[...weekdays, '2026-08-31', '2026-09-01', '2026-09-02', '2026-09-03', '2026-09-04', '2026-09-07']
+					.concat(['2026-09-08', '2026-09-09'])
+					.map((rateDate) => ({currency: 'GBP', rateDate, rateToEur: '0.8', provider: 'ECB'})),
+			);
+
+			await expect(service.backfill(NOW)).resolves.toEqual({scanned: 1, converted: 1});
+			expect(ecbRequests).toEqual([]);
+			expect(await stored(row.id)).toMatchObject({amountInBaseCurrency: '-12.50'});
+		});
+
+		it('fetches rates again when the stored history has a gap', async () => {
+			await accounts.update({id: owner.id}, {baseCurrency: 'EUR'});
+			const [row] = await createRows(await createBankAccount(owner, 'GBP'), [
+				{amount: '-10.00', bookingDate: '2026-09-01'},
+			]);
+			await fxRates.save([
+				{currency: 'GBP', rateDate: '2026-08-14', rateToEur: '0.5', provider: 'ECB'},
+				{currency: 'GBP', rateDate: '2026-09-09', rateToEur: '0.8', provider: 'ECB'},
+			]);
+
+			await service.backfill(NOW);
+
+			expect(ecbRequests).toEqual([{currency: 'GBP', from: '2026-08-25', to: '2026-09-01'}]);
+			expect(await stored(row.id)).toEqual({
+				amountInBaseCurrency: '-12.50',
+				baseAmountMethod: 'ECB',
+				baseAmountRateDate: '2026-09-01',
+			});
+		});
+
+		it('reconverts amounts stored without provenance', async () => {
+			await accounts.update({id: owner.id}, {baseCurrency: 'EUR'});
+			const [row] = await createRows(await createBankAccount(owner, 'GBP'), [
+				{amount: '-10.00', bookingDate: '2026-09-04', amountInBaseCurrency: '-11.76'},
+			]);
+
+			await expect(service.backfill(NOW)).resolves.toEqual({scanned: 1, converted: 1});
+			expect(await stored(row.id)).toEqual({
+				amountInBaseCurrency: '-12.50',
+				baseAmountMethod: 'ECB',
+				baseAmountRateDate: '2026-09-04',
 			});
 		});
 

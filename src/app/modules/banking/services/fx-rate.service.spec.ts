@@ -22,9 +22,8 @@ describe('FxRateService', () => {
 	});
 
 	it('fetches and persists ECB daily rates for uncovered ranges', async () => {
-		const queryBuilder = createQueryBuilder({minimumDate: null, maximumDate: null});
 		const repository = {
-			createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
+			query: jest.fn().mockResolvedValue([{minimumDate: null, maximumDate: null, hasGap: false}]),
 			upsert: jest.fn().mockResolvedValue(undefined),
 		} as unknown as Repository<BankTransactionFxRate>;
 		const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue({
