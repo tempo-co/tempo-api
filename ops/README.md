@@ -22,7 +22,7 @@ journalctl -u tempo-deploy-production.service -n 50   # what happened
 cat /var/lib/tempo-deploy/deployed.env                # what is deployed
 ```
 
-`tempo-backup.timer` runs `backup.sh` every 2 days into `~/backups/tempo` (newest 7 timestamped archives kept; manual `tempo-pre-*.dump` files are never pruned). Staging refreshes from these archives.
+`tempo-backup.timer` runs `backup.sh` nightly at 03:30 into `~/backups/tempo` (newest 14 timestamped archives kept; manual `tempo-pre-*.dump` files are never pruned). Staging refreshes from these archives.
 
 After changing anything in `ops/` or `docker-compose.production.yml`, install from a clean `main` checkout:
 

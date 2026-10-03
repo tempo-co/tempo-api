@@ -1,8 +1,8 @@
 [Unit]
-Description=Tempo production database backup every 2 days at 06:00 (catches up after downtime)
+Description=Tempo production database backup nightly at 03:30 (catches up after downtime)
 
 [Timer]
-OnCalendar=*-*-01/2 06:00:00
+OnCalendar=*-*-* 03:30:00
 Persistent=true
 RandomizedDelaySec=300
 

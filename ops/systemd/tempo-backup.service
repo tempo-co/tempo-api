@@ -8,4 +8,5 @@ Requires=docker.service
 Type=oneshot
 User=@USER@
 Environment=BACKUP_DIR=@HOME@/backups/tempo
+Environment=KEEP=14
 ExecStart=/usr/local/lib/tempo-deploy/backup.sh
