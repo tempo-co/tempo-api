@@ -60,6 +60,11 @@ export type BankTransactionFinancialEventInput = {
 
 const EXCHANGED_TO_DESCRIPTION = /^Exchanged to ([A-Z]{3})$/i;
 
+export function parseCurrencyExchangeTarget(description: string | null | undefined): string | null {
+	const normalized = normalizeBankTransactionText(description);
+	return normalized ? (EXCHANGED_TO_DESCRIPTION.exec(normalized)?.[1].toUpperCase() ?? null) : null;
+}
+
 export function detectBankTransactionFinancialEvent(
 	input: BankTransactionFinancialEventInput,
 ): BankTransactionFinancialEvent | null {
@@ -69,11 +74,8 @@ export function detectBankTransactionFinancialEvent(
 	const transactionCurrency = normalizeCurrency(input.transactionCurrency);
 	if (!accountCurrency || !transactionCurrency || accountCurrency !== transactionCurrency) return null;
 
-	const description = normalizeBankTransactionText(input.description);
-	const targetCurrency = description ? EXCHANGED_TO_DESCRIPTION.exec(description)?.[1] : undefined;
-	if (!targetCurrency) return null;
-
-	const normalizedTargetCurrency = targetCurrency.toUpperCase();
+	const normalizedTargetCurrency = parseCurrencyExchangeTarget(input.description);
+	if (!normalizedTargetCurrency) return null;
 	const indicator = input.creditDebitIndicator?.trim().toUpperCase();
 	const isSourceLeg = indicator === 'DBIT' && transactionCurrency !== normalizedTargetCurrency;
 	const isTargetLeg = indicator === 'CRDT' && transactionCurrency === normalizedTargetCurrency;

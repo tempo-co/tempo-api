@@ -173,6 +173,39 @@ describe('BankTransactionAmountConversionService', () => {
 			expect(await stored(staleRate.id)).toEqual(UNCONVERTED);
 		});
 
+		it('links same-day currency exchanges once their amounts are converted', async () => {
+			await accounts.update({id: owner.id}, {baseCurrency: 'EUR'});
+			const connection = await fixtures.createConnection(owner, {aspspName: 'Revolut'});
+			const [eurAccount, usdAccount] = await fixtures.createBankAccounts(connection, [
+				{currency: 'EUR'},
+				{currency: 'USD'},
+			]);
+			const exchange = {
+				bookingDate: '2026-09-04',
+				description: 'Exchanged to USD',
+				financialEventType: 'CURRENCY_EXCHANGE',
+				financialEventSource: 'RULE',
+			} as const;
+			const [largeDebit, smallDebit] = await createRows(eurAccount, [
+				{...exchange, amount: '-100.00', creditDebitIndicator: 'DBIT'},
+				{...exchange, amount: '-20.00', creditDebitIndicator: 'DBIT'},
+			]);
+			// 124.50 USD and 25.10 USD are 99.60 EUR and 20.08 EUR at the synthetic rate.
+			const [smallCredit, largeCredit] = await createRows(usdAccount, [
+				{...exchange, amount: '25.10', creditDebitIndicator: 'CRDT'},
+				{...exchange, amount: '124.50', creditDebitIndicator: 'CRDT'},
+			]);
+			const counterpartOf = async (id: string) =>
+				(await fixtures.transactions.findOneByOrFail({id})).currencyExchangeCounterpartId;
+
+			await service.backfill(NOW);
+
+			expect(await counterpartOf(largeDebit.id)).toBe(largeCredit.id);
+			expect(await counterpartOf(largeCredit.id)).toBe(largeDebit.id);
+			expect(await counterpartOf(smallDebit.id)).toBe(smallCredit.id);
+			expect(await counterpartOf(smallCredit.id)).toBe(smallDebit.id);
+		});
+
 		it("converts through EUR into each owner's own base currency", async () => {
 			await accounts.update({id: owner.id}, {baseCurrency: 'EUR'});
 			await accounts.update({id: otherOwner.id}, {baseCurrency: 'USD'});

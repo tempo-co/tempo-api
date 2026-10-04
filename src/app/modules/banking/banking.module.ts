@@ -28,6 +28,7 @@ import {BankingEncryptionService} from './services/banking-encryption.service';
 import {BankingSyncQueueService} from './services/banking-sync-queue.service';
 import {BankingSyncProcessor} from './services/banking-sync.processor';
 import {BankingSyncService} from './services/banking-sync.service';
+import {CurrencyExchangeService} from './services/currency-exchange.service';
 import {EnableBankingClient} from './services/enable-banking.client';
 import {FxRateService} from './services/fx-rate.service';
 import {OwnTransferService} from './services/own-transfer.service';
@@ -65,6 +66,7 @@ import {OwnTransferService} from './services/own-transfer.service';
 		EnableBankingClient,
 		BankingEncryptionService,
 		OwnTransferService,
+		CurrencyExchangeService,
 	],
 	controllers: [BankConnectionController, BankTransactionController],
 })
