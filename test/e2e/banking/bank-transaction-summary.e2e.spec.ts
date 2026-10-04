@@ -5,6 +5,7 @@ import {DeepPartial, Repository} from 'typeorm';
 
 import {Account} from '@modules/account/account.entity';
 import {AccountService} from '@modules/account/account.service';
+import {BANKING_TRANSACTION_SUMMARY_FUTURE_MONTH} from '@modules/banking/api/constants/banking-messages.constants';
 import {BankAccount} from '@modules/banking/bank-account.entity';
 import {
 	BANK_TRANSACTION_FINANCIAL_EVENT_RULE_VERSION,
@@ -165,31 +166,80 @@ describe('BankTransactionSummary', () => {
 		]);
 	});
 
+	/** Sums the list filtered the way a dashboard drill link does, in cents, as the summary signs it. */
+	async function listed(
+		cashFlow: 'SPENDING' | 'INCOME',
+		from: string,
+		to: string,
+		filter: Record<string, string> = {},
+	) {
+		const {body} = await ownerAgent
+			.get('/bank-transactions')
+			.query({
+				'filter[cashFlows][]': cashFlow,
+				'filter[baseAmount]': 'PRESENT',
+				'filter[bookingDate][from]': from,
+				'filter[bookingDate][to]': to,
+				'pagination[pageSize]': '100',
+				...filter,
+			})
+			.expect(200);
+		const cents = body.transactions.reduce(
+			(total: number, {amountInBaseCurrency}: {amountInBaseCurrency: string}) =>
+				total + Math.round(Number(amountInBaseCurrency) * 100),
+			0,
+		);
+		return {amount: ((cashFlow === 'SPENDING' ? -cents : cents) / 100).toFixed(2), count: body.total};
+	}
+
 	it('reconciles totals and categories with the filtered transaction list', async () => {
 		const {body: summary} = await ownerAgent.get(SUMMARY).query(OCTOBER).expect(200);
-		const listed = async (filter: Record<string, string | string[]>) => {
-			const {body} = await ownerAgent
-				.get('/bank-transactions')
-				.query({
-					'filter[cashFlows][]': 'SPENDING',
-					'filter[baseAmount]': 'PRESENT',
-					'filter[bookingDate][from]': '2026-10-01',
-					'filter[bookingDate][to]': summary.through,
-					'pagination[pageSize]': '100',
-					...filter,
-				})
-				.expect(200);
-			const cents = body.transactions.reduce(
-				(total: number, {amountInBaseCurrency}: {amountInBaseCurrency: string}) =>
-					total - Math.round(Number(amountInBaseCurrency) * 100),
-				0,
-			);
-			return {spending: (cents / 100).toFixed(2), count: body.total};
-		};
+		const from = '2026-10-01';
 
-		expect((await listed({})).spending).toBe(summary.totals.spending);
+		expect((await listed('SPENDING', from, summary.through)).amount).toBe(summary.totals.spending);
+		expect((await listed('INCOME', from, summary.through)).amount).toBe(summary.totals.income);
 		for (const {category, spending, count} of summary.categories) {
-			expect(await listed({'filter[categories][]': category})).toEqual({spending, count});
+			expect(await listed('SPENDING', from, summary.through, {'filter[categories][]': category})).toEqual({
+				amount: spending,
+				count,
+			});
+		}
+	});
+
+	it('keys review, refund debits and lowercase indicators like the list on the first of a month', async () => {
+		const extra = await fixtures.createTransactions(ownerBankAccount, [
+			row('2026-11-01', '-4.00', {category: 'NEEDS_REVIEW'}),
+			row('2026-11-01', '-2.00', {category: 'REFUND'}),
+			row('2026-11-01', '-1.50', {creditDebitIndicator: 'dbit'}),
+			row('2026-11-01', '10.00', {creditDebitIndicator: 'crdt', category: 'INCOME'}),
+			row('2026-11-02', '-99.00'),
+		]);
+
+		try {
+			const {body: summary} = await ownerAgent
+				.get(SUMMARY)
+				.query({month: '2026-11', asOf: '2026-11-01'})
+				.expect(200);
+
+			expect(summary).toMatchObject({
+				through: '2026-11-01',
+				totals: {spending: '7.50', income: '10.00', net: '2.50'},
+				baseline: {months: ['2026-08', '2026-09', '2026-10']},
+			});
+			expect(summary.daily).toEqual([{day: 1, spending: '7.50', cumulative: '7.50'}]);
+			expect(summary.categories).toEqual([
+				{category: 'NEEDS_REVIEW', spending: '4.00', count: 1, baselineAverage: null},
+				{category: 'SHOPPING', spending: '1.50', count: 1, baselineAverage: '0.00'},
+				{category: 'REFUND', spending: '2.00', count: 1, baselineAverage: null},
+			]);
+			expect((await listed('INCOME', '2026-11-01', summary.through)).amount).toBe('10.00');
+			for (const {category, spending, count} of summary.categories) {
+				expect(
+					await listed('SPENDING', '2026-11-01', summary.through, {'filter[categories][]': category}),
+				).toEqual({amount: spending, count});
+			}
+		} finally {
+			await fixtures.transactions.delete(extra.map(({id}) => id));
 		}
 	});
 
@@ -225,11 +275,17 @@ describe('BankTransactionSummary', () => {
 		['a missing month', {asOf: '2026-10-18'}],
 		['a month out of range', {month: '2026-13', asOf: '2026-10-18'}],
 		['a malformed month', {month: '2026-1', asOf: '2026-10-18'}],
+		['a two-digit year', {month: '0050-04', asOf: '2026-10-18'}],
 		['a missing day', {month: '2026-10'}],
 		['an impossible day', {month: '2026-10', asOf: '2026-02-30'}],
 		['a month after the given day', {month: '2026-11', asOf: '2026-10-18'}],
 	])('rejects %s', async (_case, query) => {
 		await ownerAgent.get(SUMMARY).query(query).expect(400);
+	});
+
+	it('explains why a month after the given day is rejected', async () => {
+		const {body} = await ownerAgent.get(SUMMARY).query({month: '2026-11', asOf: '2026-10-31'}).expect(400);
+		expect(body.message).toBe(BANKING_TRANSACTION_SUMMARY_FUTURE_MONTH);
 	});
 
 	it('counts transactions that need attention across all months', async () => {

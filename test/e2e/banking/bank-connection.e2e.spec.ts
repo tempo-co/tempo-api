@@ -5,7 +5,7 @@ import Redis from 'ioredis';
 import {Server} from 'node:net';
 import request from 'supertest';
 import TestAgent from 'supertest/lib/agent';
-import {DataSource, Repository} from 'typeorm';
+import {DataSource, In, Repository} from 'typeorm';
 
 import {REDIS} from '@core/redis/redis.constants';
 import {Account} from '@modules/account/account.entity';
@@ -618,16 +618,22 @@ describe('BankConnectionController', () => {
 		const fxRates = app.get(DataSource).getRepository(BankTransactionFxRate);
 		const accounts = app.get(DataSource).getRepository(Account);
 		const connection = await fixtures.createConnection(account);
-		const [euro, dollar, franc, unknown] = await fixtures.createBankAccounts(connection, [
+		const [euro, dollar, pound, franc, unknown] = await fixtures.createBankAccounts(connection, [
 			{currency: 'EUR', currentBalanceAmount: '123.45000000'},
-			{currency: 'USD', currentBalanceAmount: '-100.00000000'},
+			{currency: 'usd', currentBalanceAmount: '-100.00500000'},
+			{currency: 'GBP', currentBalanceAmount: '-100.00000000'},
 			{currency: 'CHF', currentBalanceAmount: '50.00000000'},
 			{currency: 'USD', currentBalanceAmount: null},
 		]);
+		// Other suites may leave stored rates behind.
+		await fxRates.delete({currency: In(['USD', 'GBP', 'CHF'])});
+		// GBP and USD dates differ, so a cross rate must use the newest date both were published.
 		const rates = await fxRates.save([
 			{currency: 'USD', rateDate: '2026-09-01', rateToEur: '1.2', provider: 'ECB'},
 			{currency: 'USD', rateDate: '2026-09-02', rateToEur: '1.25', provider: 'ECB'},
 			{currency: 'USD', rateDate: '2999-01-01', rateToEur: '9', provider: 'ECB'},
+			{currency: 'GBP', rateDate: '2026-09-01', rateToEur: '0.8', provider: 'ECB'},
+			{currency: 'GBP', rateDate: '2026-09-03', rateToEur: '0.85', provider: 'ECB'},
 		]);
 		const balancesOf = async () => {
 			const response = await verifiedAgent.get('/bank-connections').expect(200);
@@ -656,6 +662,7 @@ describe('BankConnectionController', () => {
 				accounts: {
 					[euro.id]: [null, null],
 					[dollar.id]: [null, null],
+					[pound.id]: [null, null],
 					[franc.id]: [null, null],
 					[unknown.id]: [null, null],
 				},
@@ -667,6 +674,19 @@ describe('BankConnectionController', () => {
 				accounts: {
 					[euro.id]: ['123.45', null],
 					[dollar.id]: ['-80.00', '2026-09-02'],
+					[pound.id]: ['-117.65', '2026-09-03'],
+					[franc.id]: [null, null],
+					[unknown.id]: [null, null],
+				},
+			});
+
+			await accounts.update({id: account.id}, {baseCurrency: 'usd'});
+			expect(await balancesOf()).toEqual({
+				baseCurrency: 'USD',
+				accounts: {
+					[euro.id]: ['154.31', '2026-09-02'],
+					[dollar.id]: ['-100.01', null],
+					[pound.id]: ['-150.00', '2026-09-01'],
 					[franc.id]: [null, null],
 					[unknown.id]: [null, null],
 				},

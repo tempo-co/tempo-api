@@ -3,6 +3,7 @@ import {InjectRepository} from '@nestjs/typeorm';
 import {Repository} from 'typeorm';
 
 import {Account} from '@modules/account/account.entity';
+import {AccountService} from '@modules/account/account.service';
 
 import {BANKING_TRANSACTION_SUMMARY_FUTURE_MONTH} from '../api/constants/banking-messages.constants';
 import type {BankTransactionSummaryQueryDto} from '../api/dtos/bank-transaction-summary-query.dto';
@@ -24,18 +25,18 @@ import {
 	parseCents,
 	previousMonths,
 } from '../summary/bank-transaction-summary';
+import {normalizeCurrency} from './bank-transaction-amount-conversion.utils';
 import {
 	SQL_CATEGORIZATION_FAILED,
 	SQL_CATEGORIZING,
 	SQL_INCOME,
-	SQL_INTERNAL,
+	SQL_MISSING_BASE_AMOUNT,
 	SQL_SPENDING,
 	SQL_UNKNOWN_DIRECTION,
 } from './bank-transaction-filters';
 
 const BASELINE_MONTHS = 3;
 const BASE_AMOUNT = '"transaction"."amountInBaseCurrency"';
-const SQL_MISSING_BASE_AMOUNT = `(NOT ${SQL_INTERNAL} AND ${BASE_AMOUNT} IS NULL)`;
 /** Keys whose month-to-month average says nothing useful. */
 const NO_BASELINE_CATEGORIES = new Set<string>(['REFUND', 'NEEDS_REVIEW', BANK_TRANSACTION_UNCATEGORIZED]);
 
@@ -54,8 +55,7 @@ export class BankTransactionSummaryService {
 	constructor(
 		@InjectRepository(BankTransaction)
 		private readonly bankTransactionRepository: Repository<BankTransaction>,
-		@InjectRepository(Account)
-		private readonly accountRepository: Repository<Account>,
+		private readonly accountService: AccountService,
 	) {}
 
 	async getSummary(
@@ -70,7 +70,7 @@ export class BankTransactionSummaryService {
 		const throughDay = Number(through.slice(8));
 
 		const [account, firstBookingDate] = await Promise.all([
-			this.accountRepository.findOneByOrFail({id: accountId}),
+			this.accountService.findById(accountId),
 			this.findFirstBookingDate(accountId),
 		]);
 		const baselineMonths = firstBookingDate
@@ -78,7 +78,6 @@ export class BankTransactionSummaryService {
 					(baselineMonth) => `${baselineMonth}-${daysInMonth(baselineMonth)}` >= firstBookingDate,
 				)
 			: [];
-		const capDay = (baselineMonth: string) => Math.min(throughDay, daysInMonth(baselineMonth));
 
 		const [flows, period] = await Promise.all([
 			this.findFlows(accountId, baselineMonths.length > 0 ? `${baselineMonths[0]}-01` : monthStart, through),
@@ -99,7 +98,7 @@ export class BankTransactionSummaryService {
 			const viewed = row.month === month;
 			if (row.flow === 'INCOME') {
 				if (viewed) income += cents;
-				else if (row.day <= capDay(row.month)) addTo(baselineIncome, row.month, cents);
+				else if (row.day <= throughDay) addTo(baselineIncome, row.month, cents);
 				continue;
 			}
 			const spending = -cents;
@@ -110,7 +109,7 @@ export class BankTransactionSummaryService {
 				continue;
 			}
 			addTo(baselineDaily.get(row.month)!, row.day, spending);
-			if (row.day <= capDay(row.month)) {
+			if (row.day <= throughDay) {
 				const byMonth = baselineCategories.get(row.category) ?? new Map<string, bigint>();
 				baselineCategories.set(row.category, addTo(byMonth, row.month, spending));
 			}
@@ -134,7 +133,7 @@ export class BankTransactionSummaryService {
 			month,
 			through,
 			daysInMonth: monthDays,
-			baseCurrency: account.baseCurrency?.trim().toUpperCase() || null,
+			baseCurrency: normalizeCurrency(account.baseCurrency),
 			totals: {
 				spending: formatCents(spending),
 				income: formatCents(income),
@@ -231,5 +230,5 @@ function compareCategories([leftKey, left]: [string, CategoryTotal], [rightKey, 
 	const refundOrder = Number(leftKey === 'REFUND') - Number(rightKey === 'REFUND');
 	if (refundOrder !== 0) return refundOrder;
 	if (left.cents !== right.cents) return left.cents > right.cents ? -1 : 1;
-	return leftKey.localeCompare(rightKey);
+	return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
 }

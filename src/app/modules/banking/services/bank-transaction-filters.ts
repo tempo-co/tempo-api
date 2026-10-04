@@ -17,6 +17,7 @@ export const SQL_INTERNAL = `("transaction"."financialEventType" IS NOT DISTINCT
 export const SQL_SPENDING = `(NOT ${SQL_INTERNAL} AND (${INDICATOR_SQL} = 'DBIT' OR (${INDICATOR_SQL} = 'CRDT' AND "transaction"."category" = 'REFUND')))`;
 export const SQL_INCOME = `(NOT ${SQL_INTERNAL} AND ${INDICATOR_SQL} = 'CRDT' AND "transaction"."category" IS DISTINCT FROM 'REFUND')`;
 export const SQL_UNKNOWN_DIRECTION = `(NOT ${SQL_INTERNAL} AND COALESCE(${INDICATOR_SQL}, '') NOT IN ('CRDT', 'DBIT'))`;
+export const SQL_MISSING_BASE_AMOUNT = `(NOT ${SQL_INTERNAL} AND "transaction"."amountInBaseCurrency" IS NULL)`;
 
 const CASH_FLOW_SQL: Record<BankTransactionCashFlowFilterValue, string> = {
 	SPENDING: SQL_SPENDING,
@@ -68,6 +69,8 @@ export function applyBankTransactionFilters(
 					});
 				}
 				if (includesUncategorized) {
+					// The summary keys spending rows with a null category as UNCATEGORIZED. They match this condition
+					// because every financial event type is internal, so spending rows never carry one.
 					const uncategorizedCondition =
 						'transaction.category IS NULL AND transaction.financialEventType IS NULL';
 					if (categorizedCategories.length > 0) categoryQuery.orWhere(uncategorizedCondition);

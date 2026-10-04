@@ -41,6 +41,7 @@ import {getBalancePreference, truncate} from './banking.utils';
 import {EnableBankingAccount, EnableBankingSession} from './enable-banking.types';
 import {BankingAuthorizationStateError} from './errors/banking-authorization-state.error';
 import {BankingEncryptionError} from './errors/banking-encryption.error';
+import {normalizeCurrency} from './services/bank-transaction-amount-conversion.utils';
 import {BankingAuthorizationStateService} from './services/banking-authorization-state.service';
 import {type BankingConnectionLock, BankingConnectionLockService} from './services/banking-connection-lock.service';
 import {BankingEncryptionService} from './services/banking-encryption.service';
@@ -651,7 +652,7 @@ export class BankingService {
 
 	private async findBaseCurrency(accountId: Account['id']): Promise<string | null> {
 		const owner = await this.accountService.findById(accountId);
-		return owner.baseCurrency?.trim().toUpperCase() || null;
+		return normalizeCurrency(owner.baseCurrency);
 	}
 
 	/**
@@ -685,6 +686,7 @@ export class BankingService {
 				LEFT JOIN "bank_transaction_fx_rates" base ON base."currency" = $4 AND base."rateDate" = dates."rateDate"
 				WHERE input."currency" <> $4
 					AND dates."currency" IN (input."currency", $4)
+					-- CURRENT_DATE follows the session time zone; just after midnight that may pick yesterday's rate.
 					AND dates."rateDate" <= CURRENT_DATE
 					AND (input."currency" = 'EUR' OR source."rateToEur" > 0)
 					AND ($4 = 'EUR' OR base."rateToEur" > 0)
@@ -693,7 +695,7 @@ export class BankingService {
 			) rate ON TRUE`,
 			[
 				balances.map(({id}) => id),
-				balances.map(({currency}) => currency.trim().toUpperCase()),
+				balances.map(({currency}) => normalizeCurrency(currency)),
 				balances.map(({currentBalanceAmount}) => currentBalanceAmount),
 				baseCurrency,
 			],
