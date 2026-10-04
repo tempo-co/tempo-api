@@ -70,6 +70,26 @@ describe('AuthController - Signup', () => {
 			await expectWelcomeEmail(signUpDto.email, signUpDto.name);
 		});
 
+		it('should store the email trimmed and lowercased', async () => {
+			const signUpDto = createAccountCredentials();
+			const response = await request(httpServer)
+				.post('/auth/signup')
+				.send({...signUpDto, email: `  ${signUpDto.email.toUpperCase()} `})
+				.expect(201);
+
+			expect(response.body.email).toBe(signUpDto.email.toLowerCase());
+		});
+
+		it('should fail with 409 Conflict if the email is already in use with different casing', async () => {
+			const existingAccountDto = createAccountCredentials();
+			await request(httpServer).post('/auth/signup').send(existingAccountDto).expect(201);
+
+			await request(httpServer)
+				.post('/auth/signup')
+				.send({...createAccountCredentials(), email: existingAccountDto.email.toUpperCase()})
+				.expect(409);
+		});
+
 		it('should fail with 409 Conflict if email is already in use', async () => {
 			const existingAccountDto = createAccountCredentials();
 			await request(httpServer).post('/auth/signup').send(existingAccountDto).expect(201);

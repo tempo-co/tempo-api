@@ -95,6 +95,7 @@ describe('AuthController - Change email', () => {
 		it.each([
 			['the email is already in use by another account', () => existingEmail],
 			["the email is the account's own email", () => VERIFIED_ACCOUNT_EMAIL],
+			['the email differs from an existing one only by casing', () => existingEmail.toUpperCase()],
 		])('should return 409 Conflict if %s', async (_case, email) => {
 			await check(email()).expect(409);
 		});
@@ -110,7 +111,7 @@ describe('AuthController - Change email', () => {
 
 	describe('POST /auth/change-email/request', () => {
 		it('should send a verification email to the new email address for a verified account', async () => {
-			const newEmail = faker.internet.email();
+			const newEmail = faker.internet.email().toLowerCase();
 
 			const response = await requestChange(verifiedAgent, {newEmail}).expect(200);
 			expect(response.body.message).toBe(EMAIL_VERIFICATION_SENT);
@@ -138,6 +139,15 @@ describe('AuthController - Change email', () => {
 			},
 		);
 
+		it('should send the verification link to the normalized new email', async () => {
+			const newEmail = faker.internet.email().toLowerCase();
+
+			await requestChange(verifiedAgent, {newEmail: ` ${newEmail.toUpperCase()} `}).expect(200);
+
+			const verificationEmail = await EmailUtils.findEmailByRecipient(newEmail, mailpitApiUrl);
+			expect(verificationEmail?.To[0].Address).toBe(newEmail);
+		});
+
 		it('should fail with 409 Conflict if the new email is already in use', async () => {
 			const response = await requestChange(verifiedAgent, {newEmail: existingEmail}).expect(409);
 			expect(response.body.message).toBe(EMAIL_ALREADY_IN_USE);
@@ -162,7 +172,7 @@ describe('AuthController - Change email', () => {
 		beforeEach(async () => {
 			agent = await loginAgent(httpServer, accountEmail, EMAIL_CHANGE_ACCOUNT_PASSWORD);
 
-			newEmailAddress = faker.internet.email();
+			newEmailAddress = faker.internet.email().toLowerCase();
 			await requestChange(agent, {newEmail: newEmailAddress}).expect(200);
 			token = await EmailUtils.getToken(newEmailAddress, mailpitApiUrl);
 

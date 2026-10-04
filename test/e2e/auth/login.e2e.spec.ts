@@ -36,6 +36,10 @@ describe('AuthController - Login', () => {
 			expect(sessionCookie).toMatch(/Expires=/);
 		});
 
+		it('should log in regardless of email casing and surrounding whitespace', async () => {
+			await loginAgent(httpServer, ` ${VERIFIED_ACCOUNT_EMAIL.toUpperCase()} `, VERIFIED_ACCOUNT_PASSWORD);
+		});
+
 		it.each([
 			['an incorrect password', {email: VERIFIED_ACCOUNT_EMAIL, password: 'incorrect-password'}],
 			['an unknown email', {email: 'incorrect@email.com', password: VERIFIED_ACCOUNT_PASSWORD}],
