@@ -2,6 +2,7 @@ import {ConflictException, Inject, Injectable, NotFoundException} from '@nestjs/
 import {Request} from 'express';
 import * as geoip from 'fast-geoip';
 import Redis from 'ioredis';
+import {createHmac, timingSafeEqual} from 'node:crypto';
 import {IResult, UAParser} from 'ua-parser-js';
 
 import {ConfigurationService} from '@core/config/config.service';
@@ -141,10 +142,57 @@ export class SessionService {
 		};
 	}
 
+	/**
+	 * Explains why a request has no authenticated session, for logs. Never returns cookie values or
+	 * session IDs. Must run after the session middleware has loaded (or failed to load) the session.
+	 */
+	describeRejectedSession(request: Request) {
+		const client = this._parseUserAgent(request.headers['user-agent']).name;
+		const value = this._readSessionCookie(request.headers.cookie);
+		if (value === undefined) return {reason: 'no_cookie', client};
+
+		const sessionId = this._unsignSessionCookie(value);
+		if (sessionId === undefined) return {reason: 'invalid_signature', client};
+		// express-session replaces the ID when the store has no session for it (expired, revoked or logged out).
+		if (request.sessionID !== sessionId) return {reason: 'unknown_session', client};
+		return {reason: 'unauthenticated_session', client};
+	}
+
 	/** Updates the `lastSeenAt` timestamp in the session metadata. */
 	updateLastSeen(session: AuthenticatedSession) {
 		if (!session.passport?.user || !session.metadata) return;
 		session.metadata.lastSeenAt = new Date().toISOString();
+	}
+
+	/** Returns the first session cookie's decoded value, as express-session reads it. */
+	private _readSessionCookie(header?: string) {
+		const name = this.configService.get('SESSION_COOKIE_NAME');
+		for (const part of header?.split(';') ?? []) {
+			const separator = part.indexOf('=');
+			if (separator < 0 || part.slice(0, separator).trim() !== name) continue;
+			try {
+				return decodeURIComponent(part.slice(separator + 1).trim());
+			} catch {
+				return part.slice(separator + 1).trim();
+			}
+		}
+		return undefined;
+	}
+
+	/** Verifies an express-session cookie value (`s:<id>.<hmac>`) and returns its session ID. */
+	private _unsignSessionCookie(value: string) {
+		const separator = value.lastIndexOf('.');
+		if (!value.startsWith('s:') || separator < 2) return undefined;
+
+		const sessionId = value.slice(2, separator);
+		const expected = Buffer.from(
+			createHmac('sha256', this.configService.get('SESSION_SECRET'))
+				.update(sessionId)
+				.digest('base64')
+				.replace(/=+$/, ''),
+		);
+		const actual = Buffer.from(value.slice(separator + 1));
+		return actual.length === expected.length && timingSafeEqual(actual, expected) ? sessionId : undefined;
 	}
 
 	/** Parses a user agent to summarize the client environment (OS, browser, device type). */
