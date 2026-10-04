@@ -92,6 +92,15 @@ describe('AccountController - DELETE /accounts/me', () => {
 			600,
 		);
 
+		// A pending email change is cancelled with the account.
+		await agent
+			.post('/auth/change-email/request')
+			.set('Origin', new URL(app.get(ConfigurationService).get('WEB_BASE_URL')).origin)
+			.send({newEmail: `pending-${accountId}@example.test`})
+			.expect(200);
+		const emailChangeKey = `${app.get(ConfigurationService).get('EMAIL_VERIFICATION_REDIS_KEY')}:change:${accountId}`;
+		expect(await redis.get(emailChangeKey)).not.toBeNull();
+
 		// Wrong password is rejected and the account survives.
 		await agent.delete('/accounts/me').send({password: 'wrong-password'}).expect(401);
 		expect(await countOwnedAccounts(connectionRepository, accountId)).toBe(1);
@@ -114,6 +123,7 @@ describe('AccountController - DELETE /accounts/me', () => {
 		expect(await redis.get(ownedStateKey)).toBeNull();
 		expect(await redis.get(otherStateKey)).not.toBeNull();
 		await redis.del(otherStateKey);
+		expect(await redis.get(emailChangeKey)).toBeNull();
 
 		// All sessions (including the caller's and the second session's) were revoked.
 		await agent.get('/accounts/me').expect(401);

@@ -232,6 +232,42 @@ describe('AuthController - Change email', () => {
 			expectValidationMessage(response, /token must be a UUID/i);
 		});
 
+		it('should reject an older link once a newer change has been requested', async () => {
+			const newerEmail = faker.internet.email().toLowerCase();
+			await requestChange(agent, {newEmail: newerEmail}).expect(200);
+			const newerToken = await EmailUtils.getToken(newerEmail, mailpitApiUrl);
+
+			const response = await verifyChange(agent, {token, email: newEmailAddress}).expect(400);
+			expect(response.body.message).toBe(EMAIL_INVALID_TOKEN);
+			await expectAccountEmail(accountEmail);
+
+			await verifyChange(agent, {token: newerToken, email: newerEmail}).expect(200);
+			await expectAccountEmail(newerEmail);
+			accountEmail = newerEmail;
+		});
+
+		it("should not let another account redeem this account's link", async () => {
+			const otherAccount = await createVerifiedAccount(httpServer, mailpitApiUrl);
+
+			const response = await verifyChange(otherAccount.agent, {token, email: newEmailAddress}).expect(400);
+			expect(response.body.message).toBe(EMAIL_INVALID_TOKEN);
+			const otherMe = await otherAccount.agent.get('/accounts/me').expect(200);
+			expect(otherMe.body.email).toBe(otherAccount.credentials.email);
+
+			await verifyChange(agent, {token, email: newEmailAddress}).expect(200);
+			await expectAccountEmail(newEmailAddress);
+			accountEmail = newEmailAddress;
+		});
+
+		it('should reject a link whose email does not match the requested one', async () => {
+			const response = await verifyChange(agent, {
+				token,
+				email: faker.internet.email().toLowerCase(),
+			}).expect(400);
+			expect(response.body.message).toBe(EMAIL_INVALID_TOKEN);
+			await expectAccountEmail(accountEmail);
+		});
+
 		it('should fail with 409 Conflict if the email associated with the token is now taken (race condition)', async () => {
 			// Another verified account requests the same target email and verifies it first.
 			const otherAccount = await createVerifiedAccount(httpServer, mailpitApiUrl);

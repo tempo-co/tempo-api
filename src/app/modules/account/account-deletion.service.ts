@@ -10,6 +10,7 @@ import {Account} from '@modules/account/account.entity';
 import {BankingAuthorizationStateService} from '@modules/banking/services/banking-authorization-state.service';
 
 import {AccountService} from './account.service';
+import {emailChangeKey} from './email-change-key';
 
 const ACCOUNT_DELETED_EMAIL_SUBJECT = 'Your Tempo account has been deleted';
 export {ACCOUNT_DELETED_EMAIL_SUBJECT};
@@ -44,6 +45,11 @@ export class AccountDeletionService {
 		});
 
 		await this.removeOutstandingTokens(accountId, email);
+		try {
+			await this.redis.del(emailChangeKey(this.configService.get('EMAIL_VERIFICATION_REDIS_KEY'), accountId));
+		} catch {
+			this.logger.warn('Failed to remove the pending email change during account deletion.');
+		}
 		try {
 			await this.authorizationStateService.removeForAccount(accountId);
 		} catch {
