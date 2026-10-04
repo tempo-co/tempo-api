@@ -14,6 +14,7 @@ import {
 	DEFAULT_BANK_TRANSACTION_PAGE_SIZE,
 } from '../api/dtos/bank-transaction-query.dto';
 import {
+	BankTransactionCounterpartDto,
 	BankTransactionOwnTransferDto,
 	BankTransactionResponseDto,
 	BankTransactionsResponseDto,
@@ -236,6 +237,9 @@ export class BankTransactionService {
 				.leftJoinAndSelect('transaction.ownTransferCounterpart', 'counterpart')
 				.leftJoinAndSelect('counterpart.bankAccount', 'counterpartBankAccount')
 				.leftJoinAndSelect('counterpartBankAccount.bankConnection', 'counterpartConnection')
+				.leftJoinAndSelect('transaction.currencyExchangeCounterpart', 'exchangeCounterpart')
+				.leftJoinAndSelect('exchangeCounterpart.bankAccount', 'exchangeCounterpartBankAccount')
+				.leftJoinAndSelect('exchangeCounterpartBankAccount.bankConnection', 'exchangeCounterpartConnection')
 				.where('account.id = :accountId', {accountId})
 		);
 	}
@@ -264,25 +268,30 @@ export class BankTransactionService {
 			bankAccountAlias: transaction.bankAccount.alias,
 			ownTransfer: this.toOwnTransferResponse(transaction),
 			ownTransferOverride: transaction.ownTransferOverride ?? null,
+			currencyExchangeCounterpart: this.toCounterpartResponse(transaction.currencyExchangeCounterpart),
 		};
 	}
 
 	private toOwnTransferResponse(transaction: BankTransaction): BankTransactionOwnTransferDto | null {
 		if (!transaction.ownTransferEvidence) return null;
-		const counterpart = transaction.ownTransferCounterpart;
 		return {
 			evidence: transaction.ownTransferEvidence,
-			counterpart: counterpart
-				? {
-						id: counterpart.id,
-						bankName: counterpart.bankAccount.bankConnection.aspspName,
-						bankAccountName: counterpart.bankAccount.name,
-						bankAccountAlias: counterpart.bankAccount.alias,
-						amount: counterpart.amount,
-						currency: counterpart.currency,
-						bookingDate: counterpart.bookingDate,
-					}
-				: null,
+			counterpart: this.toCounterpartResponse(transaction.ownTransferCounterpart),
+		};
+	}
+
+	private toCounterpartResponse(
+		counterpart: BankTransaction | null | undefined,
+	): BankTransactionCounterpartDto | null {
+		if (!counterpart) return null;
+		return {
+			id: counterpart.id,
+			bankName: counterpart.bankAccount.bankConnection.aspspName,
+			bankAccountName: counterpart.bankAccount.name,
+			bankAccountAlias: counterpart.bankAccount.alias,
+			amount: counterpart.amount,
+			currency: counterpart.currency,
+			bookingDate: counterpart.bookingDate,
 		};
 	}
 

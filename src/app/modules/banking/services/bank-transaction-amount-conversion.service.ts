@@ -13,6 +13,7 @@ import {
 	latestExpectedEcbRateDate,
 	normalizeCurrency,
 } from './bank-transaction-amount-conversion.utils';
+import {CurrencyExchangeService} from './currency-exchange.service';
 import {FxRateService} from './fx-rate.service';
 
 const DEFAULT_BASE_CURRENCY = 'EUR';
@@ -143,6 +144,7 @@ export class BankTransactionAmountConversionService {
 		@InjectRepository(BankTransaction)
 		private readonly bankTransactionRepository: Repository<BankTransaction>,
 		private readonly fxRateService: FxRateService,
+		private readonly currencyExchangeService: CurrencyExchangeService,
 	) {}
 
 	async backfill(now = new Date()): Promise<{scanned: number; converted: number}> {
@@ -162,6 +164,8 @@ export class BankTransactionAmountConversionService {
 			])) as Array<{count: number}>;
 			scanned += owner.currencies.reduce((total, row) => total + row.count, 0);
 			converted += count;
+			// Same-day exchanges are matched on base amounts, so new amounts can complete a pairing.
+			if (count > 0) await this.currencyExchangeService.recomputeForOwnerSafely(accountId);
 		}
 
 		this.logger.debug(`Converted ${converted} of ${scanned} bank transaction amounts.`);
