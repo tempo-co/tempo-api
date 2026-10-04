@@ -1,4 +1,4 @@
-import {BadRequestException, Inject, Injectable} from '@nestjs/common';
+import {BadRequestException, Inject, Injectable, Logger} from '@nestjs/common';
 import Redis from 'ioredis';
 import ms from 'ms';
 import crypto from 'node:crypto';
@@ -9,6 +9,7 @@ import {EmailService} from '@core/email/email.service';
 import {REDIS} from '@core/redis/redis.constants';
 import {Account} from '@modules/account/account.entity';
 import {AccountService} from '@modules/account/account.service';
+import {emailChangeKey} from '@modules/account/email-change-key';
 
 import {
 	EMAIL_ALREADY_VERIFIED,
@@ -17,8 +18,14 @@ import {
 	EMAIL_VERIFICATION_SENT,
 } from '../api/constants/api-messages.constants';
 
+type PendingEmailChange = {token: string; email: Account['email']};
+
+export const EMAIL_CHANGE_VERIFICATION_SUBJECT = 'Confirm your new Tempo email';
+export const EMAIL_CHANGED_SUBJECT = 'Your Tempo email was changed';
+
 @Injectable()
 export class EmailVerifierService {
+	private readonly logger = new Logger(EmailVerifierService.name);
 	private readonly EXPIRATION_MS: number;
 	private readonly REDIS_KEY;
 	private readonly WEB_BASE_URL;
@@ -85,14 +92,16 @@ export class EmailVerifierService {
 	async requestEmailChange(account: Account, newEmail: Account['email']) {
 		await this.accountService.validateEmailIsUnique(newEmail);
 
-		const token = await this._createToken(newEmail);
+		const token = await this.accountService.withLockedAccount(account.id, () =>
+			this._createEmailChangeToken(account.id, newEmail),
+		);
 		const verificationUrl = this._createUrl('/verify-email-change', {email: newEmail, token});
 		const expiration = ms(this.EXPIRATION_MS, {long: true});
 
 		await this.emailService.send(
 			{
 				to: newEmail,
-				subject: 'Verify your new email with Tempo',
+				subject: EMAIL_CHANGE_VERIFICATION_SUBJECT,
 				template: 'verify-new-email',
 				context: {name: account.name, verificationUrl, expiration},
 			},
@@ -102,18 +111,35 @@ export class EmailVerifierService {
 	}
 
 	async verifyEmailChange(account: Account, token: string, newEmail: Account['email']) {
-		const expectedEmail = await this._getEmailBySecret(token);
-		if (expectedEmail !== newEmail) {
-			throw new BadRequestException(EMAIL_INVALID_TOKEN);
+		const previousAccount = await this.accountService.withLockedAccount(account.id, async (current, repository) => {
+			const key = emailChangeKey(this.REDIS_KEY, account.id);
+			const pending = await this._getPendingEmailChange(key);
+			if (pending?.token !== token || pending.email !== newEmail) {
+				throw new BadRequestException(EMAIL_INVALID_TOKEN);
+			}
+
+			await this.accountService.validateEmailIsUnique(newEmail);
+			await repository.update({id: current.id}, {email: newEmail});
+			await this.redisClient.del(key);
+			return current;
+		});
+
+		// The change is committed. A queue failure must not report a failed verification to the user.
+		try {
+			await this.emailService.send(
+				{
+					to: previousAccount.email,
+					subject: EMAIL_CHANGED_SUBJECT,
+					template: 'email-changed',
+					context: {name: previousAccount.name, oldEmail: previousAccount.email, newEmail},
+				},
+				account.id,
+			);
+		} catch {
+			this.logger.warn('Email changed, but the old-address notification could not be queued.');
 		}
-
-		await this.accountService.validateEmailIsUnique(newEmail);
-		await this.accountService.updateFields(account.id, {email: newEmail});
-
-		await this._removeSecret(token);
 		return {message: EMAIL_CHANGE_SUCCESS};
 	}
-
 	private _createUrl(path: string, params: Record<string, string>) {
 		return createWebUrl(path, this.WEB_BASE_URL, params);
 	}
@@ -133,13 +159,23 @@ export class EmailVerifierService {
 		}
 	}
 
-	private async _createToken(email: Account['email']) {
+	private async _createEmailChangeToken(accountId: Account['id'], email: Account['email']) {
 		const token: string = crypto.randomUUID();
-		const key = `${this.REDIS_KEY}:${token}`;
+		const pending: PendingEmailChange = {token, email};
 
 		const expirationSeconds = Math.floor(this.EXPIRATION_MS / 1000);
-		await this.redisClient.set(key, email, 'EX', expirationSeconds);
+		await this.redisClient.set(
+			emailChangeKey(this.REDIS_KEY, accountId),
+			JSON.stringify(pending),
+			'EX',
+			expirationSeconds,
+		);
 		return token;
+	}
+
+	private async _getPendingEmailChange(key: string): Promise<PendingEmailChange | null> {
+		const value = await this.redisClient.get(key);
+		return value ? (JSON.parse(value) as PendingEmailChange) : null;
 	}
 
 	private async _getEmailBySecret(secret: string) {

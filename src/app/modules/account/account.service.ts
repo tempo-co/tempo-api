@@ -23,6 +23,19 @@ export class AccountService {
 		return account;
 	}
 
+	/** Serializes pending email changes and confirmation against the same account row. */
+	async withLockedAccount<T>(
+		id: Account['id'],
+		action: (account: Account, repository: Repository<Account>) => Promise<T>,
+	): Promise<T> {
+		return this.accountRepository.manager.transaction(async (manager) => {
+			const repository = manager.getRepository(Account);
+			const account = await repository.findOne({where: {id}, lock: {mode: 'pessimistic_write'}});
+			if (!account) throw new NotFoundException('Account not found.');
+			return action(account, repository);
+		});
+	}
+
 	async findByEmail(email: Account['email']) {
 		return await this.accountRepository.findOneBy({email});
 	}
