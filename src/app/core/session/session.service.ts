@@ -16,6 +16,7 @@ import {
 	SESSION_REVOKE_SUCCESS,
 } from './api-messages.constants';
 import {AuthenticatedSession} from './authenticated-session.interface';
+import {PRIVATE_NETWORK, isNonPublicIp} from './non-public-ip';
 import {SessionResponseDto, UNKNOWN} from './session-response.dto';
 
 @Injectable()
@@ -191,6 +192,7 @@ export class SessionService {
 	private async _getLocationByIp(ip?: string) {
 		if (!ip) return UNKNOWN;
 		if (this._isLocalhostIp(ip)) return 'Localhost';
+		if (isNonPublicIp(ip)) return PRIVATE_NETWORK;
 
 		try {
 			const geoData = await geoip.lookup(ip);
