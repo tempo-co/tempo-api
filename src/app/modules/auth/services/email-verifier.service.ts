@@ -1,4 +1,4 @@
-import {BadRequestException, Inject, Injectable} from '@nestjs/common';
+import {BadRequestException, Inject, Injectable, Logger} from '@nestjs/common';
 import Redis from 'ioredis';
 import ms from 'ms';
 import crypto from 'node:crypto';
@@ -25,6 +25,7 @@ export const EMAIL_CHANGED_SUBJECT = 'Your Tempo email was changed';
 
 @Injectable()
 export class EmailVerifierService {
+	private readonly logger = new Logger(EmailVerifierService.name);
 	private readonly EXPIRATION_MS: number;
 	private readonly REDIS_KEY;
 	private readonly WEB_BASE_URL;
@@ -91,7 +92,9 @@ export class EmailVerifierService {
 	async requestEmailChange(account: Account, newEmail: Account['email']) {
 		await this.accountService.validateEmailIsUnique(newEmail);
 
-		const token = await this._createEmailChangeToken(account.id, newEmail);
+		const token = await this.accountService.withLockedAccount(account.id, () =>
+			this._createEmailChangeToken(account.id, newEmail),
+		);
 		const verificationUrl = this._createUrl('/verify-email-change', {email: newEmail, token});
 		const expiration = ms(this.EXPIRATION_MS, {long: true});
 
@@ -108,28 +111,35 @@ export class EmailVerifierService {
 	}
 
 	async verifyEmailChange(account: Account, token: string, newEmail: Account['email']) {
-		const key = emailChangeKey(this.REDIS_KEY, account.id);
-		const pending = await this._getPendingEmailChange(key);
-		if (pending?.token !== token || pending.email !== newEmail) {
-			throw new BadRequestException(EMAIL_INVALID_TOKEN);
+		const previousAccount = await this.accountService.withLockedAccount(account.id, async (current, repository) => {
+			const key = emailChangeKey(this.REDIS_KEY, account.id);
+			const pending = await this._getPendingEmailChange(key);
+			if (pending?.token !== token || pending.email !== newEmail) {
+				throw new BadRequestException(EMAIL_INVALID_TOKEN);
+			}
+
+			await this.accountService.validateEmailIsUnique(newEmail);
+			await repository.update({id: current.id}, {email: newEmail});
+			await this.redisClient.del(key);
+			return current;
+		});
+
+		// The change is committed. A queue failure must not report a failed verification to the user.
+		try {
+			await this.emailService.send(
+				{
+					to: previousAccount.email,
+					subject: EMAIL_CHANGED_SUBJECT,
+					template: 'email-changed',
+					context: {name: previousAccount.name, oldEmail: previousAccount.email, newEmail},
+				},
+				account.id,
+			);
+		} catch {
+			this.logger.warn('Email changed, but the old-address notification could not be queued.');
 		}
-
-		await this.accountService.validateEmailIsUnique(newEmail);
-		await this.accountService.updateFields(account.id, {email: newEmail});
-
-		await this.redisClient.del(key);
-		await this.emailService.send(
-			{
-				to: account.email,
-				subject: EMAIL_CHANGED_SUBJECT,
-				template: 'email-changed',
-				context: {name: account.name, oldEmail: account.email, newEmail},
-			},
-			account.id,
-		);
 		return {message: EMAIL_CHANGE_SUCCESS};
 	}
-
 	private _createUrl(path: string, params: Record<string, string>) {
 		return createWebUrl(path, this.WEB_BASE_URL, params);
 	}

@@ -2,15 +2,22 @@ import {faker} from '@faker-js/faker';
 import {Server} from 'node:net';
 import request from 'supertest';
 import TestAgent from 'supertest/lib/agent';
+import {DataSource} from 'typeorm';
 
 import {ConfigurationService} from '@core/config/config.service';
+import {EmailService} from '@core/email/email.service';
+import {AccountService} from '@modules/account/account.service';
 import {
 	EMAIL_ALREADY_IN_USE,
 	EMAIL_CHANGE_SUCCESS,
 	EMAIL_INVALID_TOKEN,
 	EMAIL_VERIFICATION_SENT,
 } from '@modules/auth/api/constants/api-messages.constants';
-import {EMAIL_CHANGED_SUBJECT, EMAIL_CHANGE_VERIFICATION_SUBJECT} from '@modules/auth/services/email-verifier.service';
+import {
+	EMAIL_CHANGED_SUBJECT,
+	EMAIL_CHANGE_VERIFICATION_SUBJECT,
+	EmailVerifierService,
+} from '@modules/auth/services/email-verifier.service';
 
 import {
 	EMAIL_CHANGE_ACCOUNT_EMAIL,
@@ -198,6 +205,83 @@ describe('AuthController - Change email', () => {
 			expect(EmailUtils.normalizeEmailText(notice?.Text)).toBe(
 				EmailUtils.getEmailChangedBody(EMAIL_CHANGE_ACCOUNT_NAME, previousEmail, newEmailAddress),
 			);
+		});
+
+		it('should preserve a new request made during an in-flight confirmation', async () => {
+			const app = getApp();
+			const accounts = app.get(AccountService);
+			const verifier = app.get(EmailVerifierService);
+			const account = await accounts.findByEmail(accountEmail);
+			expect(account).not.toBeNull();
+			const newerEmail = faker.internet.email().toLowerCase();
+			let release!: () => void;
+			let entered!: () => void;
+			const enteredValidation = new Promise<void>((resolve) => {
+				entered = resolve;
+			});
+			const continueValidation = new Promise<void>((resolve) => {
+				release = resolve;
+			});
+			const validate = accounts.validateEmailIsUnique.bind(accounts);
+			const spy = jest.spyOn(accounts, 'validateEmailIsUnique').mockImplementationOnce(async (email) => {
+				await validate(email);
+				entered();
+				await continueValidation;
+			});
+			try {
+				const confirming = verifier.verifyEmailChange(account!, token, newEmailAddress);
+				await enteredValidation;
+				let requestCompleted = false;
+				const requesting = verifier.requestEmailChange(account!, newerEmail).then(() => {
+					requestCompleted = true;
+				});
+
+				// Wait until the request either completes (old code) or waits on the account row lock.
+				let waitingOnLock = false;
+				for (let attempt = 0; attempt < 100 && !requestCompleted && !waitingOnLock; attempt++) {
+					const [result] = await app
+						.get(DataSource)
+						.query(
+							"SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock') AS waiting",
+						);
+					waitingOnLock = result.waiting;
+					if (!requestCompleted && !waitingOnLock) await new Promise((resolve) => setTimeout(resolve, 10));
+				}
+				expect(requestCompleted || waitingOnLock).toBe(true);
+				release();
+				await Promise.all([confirming, requesting]);
+				accountEmail = newEmailAddress;
+				const newerToken = await EmailUtils.getToken(newerEmail, mailpitApiUrl);
+				await verifyChange(agent, {token: newerToken, email: newerEmail}).expect(200);
+				await expectAccountEmail(newerEmail);
+				accountEmail = newerEmail;
+			} finally {
+				release();
+				spy.mockRestore();
+			}
+		});
+
+		it('should consume a token only once under concurrent confirmations', async () => {
+			const responses = await Promise.all([
+				verifyChange(agent, {token, email: newEmailAddress}),
+				verifyChange(agent, {token, email: newEmailAddress}),
+			]);
+			expect(responses.map((response) => response.status).sort()).toEqual([200, 400]);
+			await expectAccountEmail(newEmailAddress);
+			accountEmail = newEmailAddress;
+		});
+
+		it('should report success if the old-address notice cannot be queued after the change', async () => {
+			const send = jest
+				.spyOn(getApp().get(EmailService), 'send')
+				.mockRejectedValueOnce(new Error('Queue unavailable'));
+			try {
+				await verifyChange(agent, {token, email: newEmailAddress}).expect(200);
+				await expectAccountEmail(newEmailAddress);
+				accountEmail = newEmailAddress;
+			} finally {
+				send.mockRestore();
+			}
 		});
 
 		it('should not notify the old address when verification fails', async () => {
