@@ -27,7 +27,7 @@ export class BankTransactionController {
 	// Declared before `:id` so these paths are not parsed as transaction ids.
 	@Get('summary')
 	getSummary(@CurrentAccount() account: Account, @Query() query: BankTransactionSummaryQueryDto) {
-		return this.bankTransactionSummaryService.getSummary(account.id, query);
+		return this.bankTransactionSummaryService.getSummary(account, query);
 	}
 
 	@Get('review-counts')

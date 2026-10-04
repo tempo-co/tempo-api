@@ -2,6 +2,7 @@ import {Brackets, SelectQueryBuilder} from 'typeorm';
 
 import type {BankTransactionFilterQueryDto} from '../api/dtos/bank-transaction-query.dto';
 import {
+	BANK_TRANSACTION_FINANCIAL_EVENT_TYPES,
 	BANK_TRANSACTION_OWN_TRANSFER_FILTER,
 	type BankTransactionCashFlowFilterValue,
 } from '../bank-transaction-financial-event';
@@ -12,11 +13,12 @@ import {BANK_TRANSACTION_UNCATEGORIZED} from '../categorization/bank-transaction
 const INDICATOR_SQL = `UPPER("transaction"."creditDebitIndicator")`;
 /** Own transfers and currency exchanges move money between the owner's accounts. */
 // Null-safe on purpose: these predicates are negated, and `NOT (NULL OR FALSE)` would drop ordinary rows.
-export const SQL_INTERNAL = `("transaction"."financialEventType" IS NOT DISTINCT FROM 'CURRENCY_EXCHANGE' OR "transaction"."ownTransferEvidence" IS NOT NULL)`;
+export const SQL_INTERNAL = `("transaction"."financialEventType" IS NOT DISTINCT FROM '${BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE}' OR "transaction"."ownTransferEvidence" IS NOT NULL)`;
 /** Debits, including payments to other people, plus refund credits, which reduce spending. */
 export const SQL_SPENDING = `(NOT ${SQL_INTERNAL} AND (${INDICATOR_SQL} = 'DBIT' OR (${INDICATOR_SQL} = 'CRDT' AND "transaction"."category" = 'REFUND')))`;
 export const SQL_INCOME = `(NOT ${SQL_INTERNAL} AND ${INDICATOR_SQL} = 'CRDT' AND "transaction"."category" IS DISTINCT FROM 'REFUND')`;
 export const SQL_UNKNOWN_DIRECTION = `(NOT ${SQL_INTERNAL} AND COALESCE(${INDICATOR_SQL}, '') NOT IN ('CRDT', 'DBIT'))`;
+export const SQL_OWN_TRANSFER_DEBIT = `("transaction"."ownTransferEvidence" IS NOT NULL AND ${INDICATOR_SQL} = 'DBIT')`;
 export const SQL_MISSING_BASE_AMOUNT = `(NOT ${SQL_INTERNAL} AND "transaction"."amountInBaseCurrency" IS NULL)`;
 
 const CASH_FLOW_SQL: Record<BankTransactionCashFlowFilterValue, string> = {
@@ -94,7 +96,7 @@ export function applyBankTransactionFilters(
 			: []),
 	];
 	if (activityConditions.length > 0) {
-		query.andWhere(`(${activityConditions.join(' OR ')})`, {financialEventTypes});
+		query.andWhere(anyOf(activityConditions), {financialEventTypes});
 	}
 
 	if (filter?.cashFlows && filter.cashFlows.length > 0) {

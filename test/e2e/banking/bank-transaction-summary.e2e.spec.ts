@@ -13,6 +13,7 @@ import {
 	BANK_TRANSACTION_FINANCIAL_EVENT_TYPES,
 } from '@modules/banking/bank-transaction-financial-event';
 import {BankTransaction} from '@modules/banking/bank-transaction.entity';
+import {formatCents, parseCents} from '@modules/banking/summary/bank-transaction-summary';
 
 import {BankingFixtures} from '../../../scripts/seed-data/banking-fixtures';
 import {
@@ -185,11 +186,25 @@ describe('BankTransactionSummary', () => {
 			})
 			.expect(200);
 		const cents = body.transactions.reduce(
-			(total: number, {amountInBaseCurrency}: {amountInBaseCurrency: string}) =>
-				total + Math.round(Number(amountInBaseCurrency) * 100),
-			0,
+			(total: bigint, {amountInBaseCurrency}: {amountInBaseCurrency: string}) =>
+				total + parseCents(amountInBaseCurrency),
+			0n,
 		);
-		return {amount: ((cashFlow === 'SPENDING' ? -cents : cents) / 100).toFixed(2), count: body.total};
+		return {amount: formatCents(cashFlow === 'SPENDING' ? -cents : cents), count: body.total};
+	}
+
+	async function expectCategoriesReconcile(
+		summary: {through: string; categories: Array<Record<string, unknown>>},
+		from: string,
+	) {
+		for (const {category, spending, count} of summary.categories) {
+			expect(await listed('SPENDING', from, summary.through, {'filter[categories][]': String(category)})).toEqual(
+				{
+					amount: spending,
+					count,
+				},
+			);
+		}
 	}
 
 	it('reconciles totals and categories with the filtered transaction list', async () => {
@@ -198,12 +213,7 @@ describe('BankTransactionSummary', () => {
 
 		expect((await listed('SPENDING', from, summary.through)).amount).toBe(summary.totals.spending);
 		expect((await listed('INCOME', from, summary.through)).amount).toBe(summary.totals.income);
-		for (const {category, spending, count} of summary.categories) {
-			expect(await listed('SPENDING', from, summary.through, {'filter[categories][]': category})).toEqual({
-				amount: spending,
-				count,
-			});
-		}
+		await expectCategoriesReconcile(summary, from);
 	});
 
 	it('keys review, refund debits and lowercase indicators like the list on the first of a month', async () => {
@@ -233,11 +243,7 @@ describe('BankTransactionSummary', () => {
 				{category: 'REFUND', spending: '2.00', count: 1, baselineAverage: null},
 			]);
 			expect((await listed('INCOME', '2026-11-01', summary.through)).amount).toBe('10.00');
-			for (const {category, spending, count} of summary.categories) {
-				expect(
-					await listed('SPENDING', '2026-11-01', summary.through, {'filter[categories][]': category}),
-				).toEqual({amount: spending, count});
-			}
+			await expectCategoriesReconcile(summary, '2026-11-01');
 		} finally {
 			await fixtures.transactions.delete(extra.map(({id}) => id));
 		}
@@ -308,6 +314,20 @@ describe('BankTransactionSummary', () => {
 				unknownDirection: 1,
 				missingBaseAmount: 2,
 			});
+
+			// Each count opens a list with exactly that many rows.
+			const listTotal = async (filter: Record<string, string | string[]>) =>
+				(await ownerAgent.get('/bank-transactions').query(filter).expect(200)).body.total;
+			expect({
+				needsReview: await listTotal({'filter[categories][]': 'NEEDS_REVIEW'}),
+				categorizationFailed: await listTotal({'filter[categoryStatuses][]': 'FAILED'}),
+				categorizing: await listTotal({'filter[categoryStatuses][]': 'CATEGORIZING'}),
+				unknownDirection: await listTotal({'filter[cashFlows][]': 'UNKNOWN'}),
+				missingBaseAmount: await listTotal({
+					'filter[baseAmount]': 'MISSING',
+					'filter[cashFlows][]': ['SPENDING', 'INCOME', 'UNKNOWN'],
+				}),
+			}).toEqual(body);
 		} finally {
 			await fixtures.transactions.delete([...extra.map(({id}) => id), otherExtra.id]);
 		}

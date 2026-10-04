@@ -3,7 +3,6 @@ import {InjectRepository} from '@nestjs/typeorm';
 import {Repository} from 'typeorm';
 
 import {Account} from '@modules/account/account.entity';
-import {AccountService} from '@modules/account/account.service';
 
 import {BANKING_TRANSACTION_SUMMARY_FUTURE_MONTH} from '../api/constants/banking-messages.constants';
 import type {BankTransactionSummaryQueryDto} from '../api/dtos/bank-transaction-summary-query.dto';
@@ -29,22 +28,27 @@ import {normalizeCurrency} from './bank-transaction-amount-conversion.utils';
 import {
 	SQL_CATEGORIZATION_FAILED,
 	SQL_CATEGORIZING,
-	SQL_INCOME,
 	SQL_MISSING_BASE_AMOUNT,
+	SQL_OWN_TRANSFER_DEBIT,
 	SQL_SPENDING,
 	SQL_UNKNOWN_DIRECTION,
+	applyBankTransactionFilters,
 } from './bank-transaction-filters';
 
 const BASELINE_MONTHS = 3;
 const BASE_AMOUNT = '"transaction"."amountInBaseCurrency"';
 /** Keys whose month-to-month average says nothing useful. */
-const NO_BASELINE_CATEGORIES = new Set<string>(['REFUND', 'NEEDS_REVIEW', BANK_TRANSACTION_UNCATEGORIZED]);
+const NO_BASELINE_CATEGORIES = new Set<BankTransactionCategoryFilterValue>([
+	'REFUND',
+	'NEEDS_REVIEW',
+	BANK_TRANSACTION_UNCATEGORIZED,
+]);
 
 type FlowRow = {
 	month: string;
 	day: number;
 	flow: 'SPENDING' | 'INCOME';
-	category: string;
+	category: BankTransactionCategoryFilterValue;
 	amount: string;
 	count: number;
 };
@@ -55,11 +59,10 @@ export class BankTransactionSummaryService {
 	constructor(
 		@InjectRepository(BankTransaction)
 		private readonly bankTransactionRepository: Repository<BankTransaction>,
-		private readonly accountService: AccountService,
 	) {}
 
 	async getSummary(
-		accountId: Account['id'],
+		{id: accountId, baseCurrency}: Pick<Account, 'id' | 'baseCurrency'>,
 		{month, asOf}: BankTransactionSummaryQueryDto,
 	): Promise<BankTransactionSummaryResponseDto> {
 		const monthDays = daysInMonth(month);
@@ -69,28 +72,26 @@ export class BankTransactionSummaryService {
 		const through = asOf < monthEnd ? asOf : monthEnd;
 		const throughDay = Number(through.slice(8));
 
-		const [account, firstBookingDate] = await Promise.all([
-			this.accountService.findById(accountId),
+		const candidateMonths = previousMonths(month, BASELINE_MONTHS);
+		// Flows cover every candidate month; months before the first booking simply have no rows.
+		const [firstBookingDate, flows, period] = await Promise.all([
 			this.findFirstBookingDate(accountId),
+			this.findFlows(accountId, `${candidateMonths[0]}-01`, through),
+			this.findPeriodCounts(accountId, monthStart, through),
 		]);
 		const baselineMonths = firstBookingDate
-			? previousMonths(month, BASELINE_MONTHS).filter(
+			? candidateMonths.filter(
 					(baselineMonth) => `${baselineMonth}-${daysInMonth(baselineMonth)}` >= firstBookingDate,
 				)
 			: [];
 
-		const [flows, period] = await Promise.all([
-			this.findFlows(accountId, baselineMonths.length > 0 ? `${baselineMonths[0]}-01` : monthStart, through),
-			this.findPeriodCounts(accountId, monthStart, through),
-		]);
-
 		const daily = new Map<number, bigint>();
-		const categories = new Map<string, CategoryTotal>();
+		const categories = new Map<BankTransactionCategoryFilterValue, CategoryTotal>();
 		let income = 0n;
 		const baselineDaily = new Map(
 			baselineMonths.map((baselineMonth) => [baselineMonth, new Map<number, bigint>()]),
 		);
-		const baselineCategories = new Map<string, Map<string, bigint>>();
+		const baselineCategories = new Map<BankTransactionCategoryFilterValue, Map<string, bigint>>();
 		const baselineIncome = new Map<string, bigint>();
 
 		for (const row of flows) {
@@ -108,7 +109,10 @@ export class BankTransactionSummaryService {
 				categories.set(row.category, {cents: total.cents + spending, count: total.count + row.count});
 				continue;
 			}
-			addTo(baselineDaily.get(row.month)!, row.day, spending);
+			const monthDaily = baselineDaily.get(row.month);
+			// A sync between the queries may add rows before the first booking date read above.
+			if (!monthDaily) continue;
+			addTo(monthDaily, row.day, spending);
 			if (row.day <= throughDay) {
 				const byMonth = baselineCategories.get(row.category) ?? new Map<string, bigint>();
 				baselineCategories.set(row.category, addTo(byMonth, row.month, spending));
@@ -133,7 +137,7 @@ export class BankTransactionSummaryService {
 			month,
 			through,
 			daysInMonth: monthDays,
-			baseCurrency: normalizeCurrency(account.baseCurrency),
+			baseCurrency: normalizeCurrency(baseCurrency),
 			totals: {
 				spending: formatCents(spending),
 				income: formatCents(income),
@@ -151,7 +155,7 @@ export class BankTransactionSummaryService {
 			categories: [...categories.entries()]
 				.sort(compareCategories)
 				.map(([category, total]): BankTransactionSummaryCategoryDto => ({
-					category: category as BankTransactionCategoryFilterValue,
+					category,
 					spending: formatCents(total.cents),
 					count: total.count,
 					baselineAverage:
@@ -175,10 +179,14 @@ export class BankTransactionSummaryService {
 
 	/** Spending and income per month, day and category key; amounts are raw base-currency sums. */
 	private findFlows(accountId: string, from: string, to: string): Promise<FlowRow[]> {
-		return this.createOwnerScopedQuery(accountId)
-			.andWhere('"transaction"."bookingDate" BETWEEN :from AND :to', {from, to})
-			.andWhere(`${BASE_AMOUNT} IS NOT NULL`)
-			.andWhere(`(${SQL_SPENDING} OR ${SQL_INCOME})`)
+		// The same filters a drill link sends, so every number reconciles with the list.
+		const query = this.createOwnerScopedQuery(accountId);
+		applyBankTransactionFilters(query, {
+			bookingDate: {from, to},
+			baseAmount: 'PRESENT',
+			cashFlows: ['SPENDING', 'INCOME'],
+		});
+		return query
 			.select(`to_char("transaction"."bookingDate", 'YYYY-MM')`, 'month')
 			.addSelect('EXTRACT(DAY FROM "transaction"."bookingDate")::int', 'day')
 			.addSelect(`CASE WHEN ${SQL_SPENDING} THEN 'SPENDING' ELSE 'INCOME' END`, 'flow')
@@ -193,10 +201,11 @@ export class BankTransactionSummaryService {
 	}
 
 	private async findPeriodCounts(accountId: string, from: string, to: string) {
-		const counts = await this.createOwnerScopedQuery(accountId)
-			.andWhere('"transaction"."bookingDate" BETWEEN :from AND :to', {from, to})
+		const query = this.createOwnerScopedQuery(accountId);
+		applyBankTransactionFilters(query, {bookingDate: {from, to}});
+		const counts = await query
 			.select(
-				`ROUND(COALESCE(SUM(ABS(${BASE_AMOUNT})) FILTER (WHERE "transaction"."ownTransferEvidence" IS NOT NULL AND UPPER("transaction"."creditDebitIndicator") = 'DBIT'), 0), 2)::text`,
+				`ROUND(COALESCE(SUM(ABS(${BASE_AMOUNT})) FILTER (WHERE ${SQL_OWN_TRANSFER_DEBIT}), 0), 2)::text`,
 				'ownTransfers',
 			)
 			.addSelect(`COUNT(*) FILTER (WHERE ${SQL_UNKNOWN_DIRECTION})::int`, 'unknownDirection')
@@ -226,7 +235,10 @@ function addTo<K>(map: Map<K, bigint>, key: K, cents: bigint): Map<K, bigint> {
 }
 
 /** Spending descending, then name; refunds always last. */
-function compareCategories([leftKey, left]: [string, CategoryTotal], [rightKey, right]: [string, CategoryTotal]) {
+function compareCategories(
+	[leftKey, left]: [BankTransactionCategoryFilterValue, CategoryTotal],
+	[rightKey, right]: [BankTransactionCategoryFilterValue, CategoryTotal],
+) {
 	const refundOrder = Number(leftKey === 'REFUND') - Number(rightKey === 'REFUND');
 	if (refundOrder !== 0) return refundOrder;
 	if (left.cents !== right.cents) return left.cents > right.cents ? -1 : 1;
