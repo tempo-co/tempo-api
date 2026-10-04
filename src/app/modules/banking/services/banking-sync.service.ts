@@ -77,6 +77,7 @@ import {
 	resolveDurationMs,
 	sanitizeRetryAfterSeconds,
 } from './banking-sync.constants';
+import {CurrencyExchangeService} from './currency-exchange.service';
 import {EnableBankingClient, EnableBankingClientError} from './enable-banking.client';
 import {OwnTransferService} from './own-transfer.service';
 
@@ -176,6 +177,7 @@ export class BankingSyncService {
 		private readonly categorizationService: BankTransactionCategorizationService,
 		private readonly configurationService: ConfigurationService,
 		private readonly ownTransferService: OwnTransferService,
+		private readonly currencyExchangeService: CurrencyExchangeService,
 	) {
 		this.bankingIntegrationEnabled = configurationService.get('BANKING_INTEGRATION_ENABLED') !== false;
 	}
@@ -285,6 +287,7 @@ export class BankingSyncService {
 				);
 				await this.enqueuePersistedTransactions(persistenceResult.persistedTransactionIds);
 				await this.ownTransferService.recomputeForOwnerSafely(accountId);
+				await this.currencyExchangeService.recomputeForOwnerSafely(accountId);
 				lockLease.assertHealthy();
 
 				const completedRun = await this.bankSyncRunRepository.findOneBy({id: run.id});

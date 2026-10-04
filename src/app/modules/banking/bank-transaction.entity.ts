@@ -24,6 +24,7 @@ export type BankTransactionBaseAmountMethod = 'SAME' | 'INSTRUCTED' | 'ECB';
 
 @Entity('bank_transactions')
 @Index('idx_bank_transactions_own_transfer_counterpart', ['ownTransferCounterpartId'])
+@Index('idx_bank_transactions_currency_exchange_counterpart', ['currencyExchangeCounterpartId'])
 @Index('idx_bank_transactions_account_dedupe', ['bankAccountId', 'dedupeKey'], {unique: true})
 @Index('idx_bank_transactions_account_stable_identity', ['bankAccountId', 'stableIdentityKey'], {unique: true})
 @Index('idx_bank_transactions_account_identity_group', ['bankAccountId', 'stableIdentityGroupKey'])
@@ -178,6 +179,14 @@ export class BankTransaction {
 
 	@Column({type: 'varchar', length: 64, nullable: true})
 	financialEventRuleVersion: string | null;
+
+	/** The other leg of a currency exchange. Written only by currency exchange pairing, never by provider sync. */
+	@Column({type: 'uuid', nullable: true})
+	currencyExchangeCounterpartId: string | null;
+
+	@ManyToOne(() => BankTransaction, {onDelete: 'SET NULL', nullable: true})
+	@JoinColumn({name: 'currencyExchangeCounterpartId'})
+	currencyExchangeCounterpart?: BankTransaction | null;
 
 	@Column({type: 'numeric', precision: 20, scale: 8, nullable: true})
 	balanceAfterAmount: string | null;

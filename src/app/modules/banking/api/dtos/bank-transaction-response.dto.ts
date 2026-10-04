@@ -13,7 +13,8 @@ import type {
 import type {BankTransactionCategory} from '../../categorization/bank-transaction-category';
 import type {OwnTransferEvidence, OwnTransferOverride} from '../../own-transfer/own-transfer-detection';
 
-export class BankTransactionOwnTransferCounterpartDto {
+/** The other leg of an own transfer or currency exchange. */
+export class BankTransactionCounterpartDto {
 	id: string;
 	bankName: string;
 	bankAccountName: string | null;
@@ -26,7 +27,7 @@ export class BankTransactionOwnTransferCounterpartDto {
 export class BankTransactionOwnTransferDto {
 	evidence: OwnTransferEvidence;
 	/** The other leg, or null when no matching transaction is in the connected accounts. */
-	counterpart: BankTransactionOwnTransferCounterpartDto | null;
+	counterpart: BankTransactionCounterpartDto | null;
 }
 
 export class BankTransactionResponseDto {
@@ -52,6 +53,8 @@ export class BankTransactionResponseDto {
 	cashFlowTreatment: BankTransactionCashFlowTreatment;
 	ownTransfer: BankTransactionOwnTransferDto | null;
 	ownTransferOverride: OwnTransferOverride | null;
+	/** The other leg of a currency exchange, or null when it is not one or the legs could not be matched. */
+	currencyExchangeCounterpart: BankTransactionCounterpartDto | null;
 	categoryConfidence: string | null;
 	providerTransactionDescription: string | null;
 	merchantCategoryCode: string | null;

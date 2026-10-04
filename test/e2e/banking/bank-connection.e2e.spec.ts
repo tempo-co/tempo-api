@@ -1090,7 +1090,36 @@ describe('BankConnectionController', () => {
 				financialEventSource: null,
 				categoryStatus: 'PENDING',
 				categoryInputHash: expect.any(String),
+				currencyExchangeCounterpartId: null,
 			});
+
+			// The only exchange of the day into GBP: its two legs are linked both ways.
+			const storedSource = exchangeRows.find(({currency}) => currency === 'EUR')!;
+			const storedTarget = exchangeRows.find(({currency}) => currency === 'GBP')!;
+			expect(storedSource.currencyExchangeCounterpartId).toBe(storedTarget.id);
+			expect(storedTarget.currencyExchangeCounterpartId).toBe(storedSource.id);
+			const detailResponse = await verifiedAgent.get(`/bank-transactions/${storedSource.id}`).expect(200);
+			expect(detailResponse.body.currencyExchangeCounterpart).toEqual({
+				id: storedTarget.id,
+				bankName: 'Revolut',
+				bankAccountName: expect.any(String),
+				bankAccountAlias: null,
+				amount: '8.50000000',
+				currency: 'GBP',
+				bookingDate: '2026-08-20',
+			});
+			const listResponse = await verifiedAgent
+				.get('/bank-transactions')
+				.query({'filter[financialEventTypes][]': 'CURRENCY_EXCHANGE'})
+				.expect(200);
+			expect(listResponse.body.transactions).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({
+						id: storedTarget.id,
+						currencyExchangeCounterpart: expect.objectContaining({id: storedSource.id, currency: 'EUR'}),
+					}),
+				]),
+			);
 
 			getAccountBalances.mockResolvedValue([]);
 			getAccountTransactions

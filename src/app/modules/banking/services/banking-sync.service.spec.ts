@@ -42,10 +42,12 @@ const BANKING_SYNC_SERVICE_DEPENDENCIES = [
 	'categorizationService',
 	'configurationService',
 	'ownTransferService',
+	'currencyExchangeService',
 ] as const;
 
 const DEFAULT_DEPENDENCIES: Partial<Record<string, unknown>> = {
 	ownTransferService: {recomputeForOwnerSafely: jest.fn().mockResolvedValue(undefined)},
+	currencyExchangeService: {recomputeForOwnerSafely: jest.fn().mockResolvedValue(undefined)},
 };
 
 /** Builds the service with named test doubles; unspecified dependencies are empty objects. */
