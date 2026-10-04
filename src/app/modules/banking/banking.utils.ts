@@ -70,6 +70,11 @@ export function selectPreferredBalance(balances: EnableBankingBalance[]): Enable
 	})[0];
 }
 
+/** Canonical currency and debit/credit codes at the provider persistence boundary. */
+export function normalizeBankCode(value: string): string {
+	return value.trim().toUpperCase();
+}
+
 export function truncate(value: string | null | undefined, length: number): string | null {
 	return value ? value.slice(0, length) : null;
 }

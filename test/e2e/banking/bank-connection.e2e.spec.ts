@@ -321,7 +321,7 @@ describe('BankConnectionController', () => {
 					identificationHash: 'stable-account-hash-success',
 					name: 'Joe',
 					details: 'Main account',
-					currency: 'eur',
+					currency: ' eUr ',
 					cashAccountType: 'CACC',
 					usage: 'PRIV',
 				},
@@ -620,7 +620,7 @@ describe('BankConnectionController', () => {
 		const connection = await fixtures.createConnection(account);
 		const [euro, dollar, pound, franc, unknown] = await fixtures.createBankAccounts(connection, [
 			{currency: 'EUR', currentBalanceAmount: '123.45000000'},
-			{currency: 'usd', currentBalanceAmount: '-100.00500000'},
+			{currency: 'USD', currentBalanceAmount: '-100.00500000'},
 			{currency: 'GBP', currentBalanceAmount: '-100.00000000'},
 			{currency: 'CHF', currentBalanceAmount: '50.00000000'},
 			{currency: 'USD', currentBalanceAmount: null},
@@ -680,7 +680,7 @@ describe('BankConnectionController', () => {
 				},
 			});
 
-			await accounts.update({id: account.id}, {baseCurrency: 'usd'});
+			await accounts.update({id: account.id}, {baseCurrency: 'USD'});
 			expect(await balancesOf()).toEqual({
 				baseCurrency: 'USD',
 				accounts: {
@@ -866,6 +866,50 @@ describe('BankConnectionController', () => {
 				.map(({id}) => id)
 				.sort(),
 		).toEqual(stored.map(({id}) => id).sort());
+	});
+
+	it('normalizes incoming currency and direction codes before persisting a sync', async () => {
+		const {connection, bankAccount} = await createAuthorizedConnection('canonical-codes-session');
+		getAccountBalances.mockResolvedValueOnce(makeBalances().map((balance) => ({...balance, currency: ' eUr '})));
+		getAccountTransactions.mockResolvedValueOnce([
+			{
+				...makeTransactions('canonical-codes')[0],
+				amount: '12.50',
+				currency: ' eUr ',
+				creditDebitIndicator: ' dbit ',
+				balanceAfterCurrency: ' eUr ',
+				instructedCurrency: ' uSd ',
+				exchangeRateUnitCurrency: ' uSd ',
+			},
+		]);
+
+		try {
+			expect(await app.get(BankingSyncService).synchronize(account.id, connection.id)).toMatchObject({
+				status: 'SUCCEEDED',
+				transactionsAdded: 1,
+			});
+			expect(await bankTransactionRepository.findOneByOrFail({bankAccountId: bankAccount.id})).toMatchObject({
+				amount: '-12.50000000',
+				currency: 'EUR',
+				creditDebitIndicator: 'DBIT',
+				balanceAfterCurrency: 'EUR',
+				instructedCurrency: 'USD',
+				exchangeRateUnitCurrency: 'USD',
+			});
+			const balances = await bankAccountBalanceRepository.findBy({bankAccountId: bankAccount.id});
+			expect(balances).toHaveLength(2);
+			expect(balances.map(({currency}) => currency)).toEqual(['EUR', 'EUR']);
+			const response = await verifiedAgent
+				.get('/bank-transactions')
+				.query({
+					'filter[bankAccountIds][]': bankAccount.id,
+					'filter[cashFlows][]': 'SPENDING',
+				})
+				.expect(200);
+			expect(response.body.total).toBe(1);
+		} finally {
+			await bankConnectionRepository.delete(connection.id);
+		}
 	});
 
 	it('synchronizes balances and transactions without exposing provider identifiers', async () => {

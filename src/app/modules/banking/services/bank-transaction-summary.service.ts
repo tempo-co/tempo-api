@@ -24,7 +24,6 @@ import {
 	parseCents,
 	previousMonths,
 } from '../summary/bank-transaction-summary';
-import {normalizeCurrency} from './bank-transaction-amount-conversion.utils';
 import {
 	SQL_CATEGORIZATION_FAILED,
 	SQL_CATEGORIZING,
@@ -137,7 +136,7 @@ export class BankTransactionSummaryService {
 			month,
 			through,
 			daysInMonth: monthDays,
-			baseCurrency: normalizeCurrency(baseCurrency),
+			baseCurrency,
 			totals: {
 				spending: formatCents(spending),
 				income: formatCents(income),

@@ -145,7 +145,7 @@ describe('BankTransactionAmountConversionService', () => {
 			const [sameCurrency, instructed, weekday, saturday, transactionDateFirst, noRate, staleRate] =
 				await createRows(gbpAccount, [
 					{currency: 'EUR', amount: '-12.34500000', bookingDate: '2026-09-04'},
-					{amount: '-10.00', instructedAmount: '11.94', instructedCurrency: 'eur', bookingDate: '2026-09-04'},
+					{amount: '-10.00', instructedAmount: '11.94', instructedCurrency: 'EUR', bookingDate: '2026-09-04'},
 					{amount: '-10.00', bookingDate: '2026-09-04'},
 					{amount: '-0.01', bookingDate: '2026-09-05'},
 					{amount: '20.00', transactionDate: '2026-09-05', bookingDate: '2026-09-07'},

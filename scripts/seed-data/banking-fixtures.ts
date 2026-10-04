@@ -9,7 +9,33 @@ import {BankAccount} from '@modules/banking/bank-account.entity';
 import {BankConnection} from '@modules/banking/bank-connection.entity';
 import {BankSyncRun} from '@modules/banking/bank-sync-run.entity';
 import {getBankTransactionDisplayDescription} from '@modules/banking/bank-transaction-display';
+import {
+	BANK_TRANSACTION_FINANCIAL_EVENT_RULE_VERSION,
+	BANK_TRANSACTION_FINANCIAL_EVENT_SOURCES,
+	BANK_TRANSACTION_FINANCIAL_EVENT_TYPES,
+} from '@modules/banking/bank-transaction-financial-event';
 import {BankTransaction} from '@modules/banking/bank-transaction.entity';
+
+export const CURRENCY_EXCHANGE_EVENT = {
+	financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
+	financialEventSource: BANK_TRANSACTION_FINANCIAL_EVENT_SOURCES.RULE,
+	financialEventRuleVersion: BANK_TRANSACTION_FINANCIAL_EVENT_RULE_VERSION,
+} as const;
+
+/** A categorized, booked row in EUR unless overridden when persisted by BankingFixtures. */
+export function bookedRow(bookingDate: string | null, amount: string, overrides: DeepPartial<BankTransaction> = {}) {
+	return {
+		bookingDate,
+		valueDate: bookingDate,
+		amount,
+		amountInBaseCurrency: amount,
+		creditDebitIndicator: amount.startsWith('-') ? 'DBIT' : 'CRDT',
+		category: 'SHOPPING',
+		categoryStatus: 'COMPLETED',
+		categorySource: 'AI',
+		...overrides,
+	} satisfies DeepPartial<BankTransaction>;
+}
 
 /**
  * Persists banking rows with minimal valid defaults, so callers (the dev seeder and e2e specs) only spell out

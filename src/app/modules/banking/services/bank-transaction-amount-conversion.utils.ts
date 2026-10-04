@@ -27,6 +27,16 @@ export function baseAmountInputsSql(alias: string): string {
 	return `ROW(${BASE_AMOUNT_INPUT_COLUMNS.map(([column]) => `${alias}."${column}"`).join(', ')})`;
 }
 
+/** SQL expressions supplied by our queries, never user input. ECB rates use EUR as their unit. */
+export function ecbRateSql(currency: string, rate: string): string {
+	return `CASE WHEN ${currency} = 'EUR' THEN 1 ELSE ${rate} END`;
+}
+
+/** Exact base-currency cents, pivoting through EUR with Postgres numeric arithmetic. */
+export function convertEcbAmountSql(amount: string, sourceRate: string, baseRate: string): string {
+	return `ROUND(${amount} / ${sourceRate} * ${baseRate}, 2)`;
+}
+
 /** ECB reference rates are published around 16:00 CET on TARGET business days. */
 const ECB_PUBLICATION_HOUR = 16;
 const ECB_TIME_ZONE = 'Europe/Berlin';

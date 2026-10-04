@@ -9,17 +9,12 @@ import {Account} from '@modules/account/account.entity';
 import {AccountService} from '@modules/account/account.service';
 import {BankAccount} from '@modules/banking/bank-account.entity';
 import {BankConnection} from '@modules/banking/bank-connection.entity';
-import {
-	BANK_TRANSACTION_CASH_FLOW_TREATMENTS,
-	BANK_TRANSACTION_FINANCIAL_EVENT_RULE_VERSION,
-	BANK_TRANSACTION_FINANCIAL_EVENT_SOURCES,
-	BANK_TRANSACTION_FINANCIAL_EVENT_TYPES,
-} from '@modules/banking/bank-transaction-financial-event';
+import {BANK_TRANSACTION_CASH_FLOW_TREATMENTS} from '@modules/banking/bank-transaction-financial-event';
 import {BankTransaction} from '@modules/banking/bank-transaction.entity';
 import {OpenAiBankTransactionCategorizationProvider} from '@modules/banking/categorization/providers/openai-bank-transaction-categorization.provider';
 import {OwnTransferService} from '@modules/banking/services/own-transfer.service';
 
-import {BankingFixtures} from '../../../scripts/seed-data/banking-fixtures';
+import {BankingFixtures, CURRENCY_EXCHANGE_EVENT, bookedRow} from '../../../scripts/seed-data/banking-fixtures';
 import {
 	SESSION_TEST_ACCOUNT_EMAIL,
 	SESSION_TEST_ACCOUNT_PASSWORD,
@@ -530,12 +525,7 @@ describe('BankTransactionController', () => {
 	});
 
 	it('exposes and filters currency exchange events without treating them as uncategorized', async () => {
-		const currencyExchange = {
-			counterpartyName: null,
-			financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
-			financialEventSource: BANK_TRANSACTION_FINANCIAL_EVENT_SOURCES.RULE,
-			financialEventRuleVersion: BANK_TRANSACTION_FINANCIAL_EVENT_RULE_VERSION,
-		};
+		const currencyExchange = {counterpartyName: null, ...CURRENCY_EXCHANGE_EVENT};
 		const [ruleExchange, manualExchange] = await fixtures.createTransactions(fixtureBankAccount, [
 			{
 				...currencyExchange,
@@ -569,9 +559,7 @@ describe('BankTransactionController', () => {
 				expect.arrayContaining([
 					expect.objectContaining({
 						id: ruleExchange.id,
-						financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
-						financialEventSource: BANK_TRANSACTION_FINANCIAL_EVENT_SOURCES.RULE,
-						financialEventRuleVersion: BANK_TRANSACTION_FINANCIAL_EVENT_RULE_VERSION,
+						...CURRENCY_EXCHANGE_EVENT,
 						cashFlowTreatment: BANK_TRANSACTION_CASH_FLOW_TREATMENTS.INTERNAL,
 						category: null,
 						categoryStatus: 'NOT_APPLICABLE',
@@ -726,76 +714,39 @@ describe('BankTransactionController', () => {
 
 	it('filters by cash flow, base amount and categorization status', async () => {
 		const june = (day: number) => `2026-06-${String(day).padStart(2, '0')}`;
-		const completed = {categoryStatus: 'COMPLETED', categorySource: 'AI'} as const;
-		const exchange = {
-			financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
-			financialEventSource: BANK_TRANSACTION_FINANCIAL_EVENT_SOURCES.RULE,
-			financialEventRuleVersion: BANK_TRANSACTION_FINANCIAL_EVENT_RULE_VERSION,
-		};
 		const rows = await fixtures.createTransactions(fixtureBankAccount, [
-			{
-				bookingDate: june(1),
-				amount: '-10.00',
-				amountInBaseCurrency: '-10.00',
-				category: 'SHOPPING',
-				...completed,
-			},
-			{
-				bookingDate: june(2),
-				amount: '-20.00',
-				amountInBaseCurrency: '-20.00',
-				category: 'TRANSFER_OUT',
-				...completed,
-			},
-			{
-				bookingDate: june(3),
-				amount: '5.00',
-				amountInBaseCurrency: '5.00',
+			bookedRow(june(1), '-10.00', {valueDate: null}),
+			bookedRow(june(2), '-20.00', {valueDate: null, category: 'TRANSFER_OUT'}),
+			bookedRow(june(3), '5.00', {valueDate: null, category: 'REFUND'}),
+			bookedRow(june(4), '1000.00', {valueDate: null, category: 'INCOME'}),
+			bookedRow(june(5), '-50.00', {valueDate: null, category: null, ownTransferEvidence: 'IBAN'}),
+			bookedRow(june(6), '50.00', {
+				valueDate: null,
 				creditDebitIndicator: 'CRDT',
-				category: 'REFUND',
-				...completed,
-			},
-			{
-				bookingDate: june(4),
-				amount: '1000.00',
-				amountInBaseCurrency: '1000.00',
-				creditDebitIndicator: 'CRDT',
-				category: 'INCOME',
-				...completed,
-			},
-			{
-				bookingDate: june(5),
-				amount: '-50.00',
-				amountInBaseCurrency: '-50.00',
+				category: null,
 				ownTransferEvidence: 'IBAN',
-				...completed,
-			},
-			{
-				bookingDate: june(6),
-				amount: '50.00',
-				amountInBaseCurrency: '50.00',
-				creditDebitIndicator: 'crdt',
-				ownTransferEvidence: 'IBAN',
-				...completed,
-			},
-			{
-				bookingDate: june(7),
-				amount: '-30.00',
-				amountInBaseCurrency: '-30.00',
+			}),
+			bookedRow(june(7), '-30.00', {
+				valueDate: null,
+				category: null,
 				categoryStatus: 'NOT_APPLICABLE',
-				...exchange,
-			},
-			{
-				bookingDate: june(8),
-				amount: '-1.00',
-				amountInBaseCurrency: '-1.00',
-				creditDebitIndicator: null,
-				category: 'SHOPPING',
-				...completed,
-			},
-			{bookingDate: june(9), amount: '-7.00', amountInBaseCurrency: null, category: 'SHOPPING', ...completed},
-			{bookingDate: june(10), amount: '-3.00', amountInBaseCurrency: '-3.00', categoryStatus: 'FAILED'},
-			{bookingDate: june(11), amount: '-4.00', amountInBaseCurrency: '-4.00', categoryStatus: 'PENDING'},
+				categorySource: null,
+				...CURRENCY_EXCHANGE_EVENT,
+			}),
+			bookedRow(june(8), '-1.00', {valueDate: null, creditDebitIndicator: null}),
+			bookedRow(june(9), '-7.00', {valueDate: null, amountInBaseCurrency: null}),
+			bookedRow(june(10), '-3.00', {
+				valueDate: null,
+				category: null,
+				categoryStatus: 'FAILED',
+				categorySource: null,
+			}),
+			bookedRow(june(11), '-4.00', {
+				valueDate: null,
+				category: null,
+				categoryStatus: 'PENDING',
+				categorySource: null,
+			}),
 		]);
 		const [
 			expense,

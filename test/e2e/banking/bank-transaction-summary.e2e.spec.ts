@@ -1,21 +1,15 @@
 import {INestApplication} from '@nestjs/common';
 import {getRepositoryToken} from '@nestjs/typeorm';
 import TestAgent from 'supertest/lib/agent';
-import {DeepPartial, Repository} from 'typeorm';
+import {Repository} from 'typeorm';
 
 import {Account} from '@modules/account/account.entity';
 import {AccountService} from '@modules/account/account.service';
 import {BANKING_TRANSACTION_SUMMARY_FUTURE_MONTH} from '@modules/banking/api/constants/banking-messages.constants';
 import {BankAccount} from '@modules/banking/bank-account.entity';
-import {
-	BANK_TRANSACTION_FINANCIAL_EVENT_RULE_VERSION,
-	BANK_TRANSACTION_FINANCIAL_EVENT_SOURCES,
-	BANK_TRANSACTION_FINANCIAL_EVENT_TYPES,
-} from '@modules/banking/bank-transaction-financial-event';
-import {BankTransaction} from '@modules/banking/bank-transaction.entity';
 import {formatCents, parseCents} from '@modules/banking/summary/bank-transaction-summary';
 
-import {BankingFixtures} from '../../../scripts/seed-data/banking-fixtures';
+import {BankingFixtures, CURRENCY_EXCHANGE_EVENT, bookedRow} from '../../../scripts/seed-data/banking-fixtures';
 import {
 	SESSION_TEST_ACCOUNT_EMAIL,
 	SESSION_TEST_ACCOUNT_PASSWORD,
@@ -26,21 +20,6 @@ import {getApp, loginAgent} from '../../setup/e2e.setup';
 
 const SUMMARY = '/bank-transactions/summary';
 const OCTOBER = {month: '2026-10', asOf: '2026-10-18'};
-
-/** A categorized, booked debit in EUR unless overridden. */
-function row(bookingDate: string | null, amount: string, overrides: DeepPartial<BankTransaction> = {}) {
-	return {
-		bookingDate,
-		valueDate: bookingDate,
-		amount,
-		amountInBaseCurrency: amount,
-		creditDebitIndicator: amount.startsWith('-') ? 'DBIT' : 'CRDT',
-		category: 'SHOPPING',
-		categoryStatus: 'COMPLETED',
-		categorySource: 'AI',
-		...overrides,
-	} satisfies DeepPartial<BankTransaction>;
-}
 
 describe('BankTransactionSummary', () => {
 	let app: INestApplication;
@@ -82,42 +61,44 @@ describe('BankTransactionSummary', () => {
 		const exchange = {
 			category: null,
 			categoryStatus: 'NOT_APPLICABLE',
-			financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
-			financialEventSource: BANK_TRANSACTION_FINANCIAL_EVENT_SOURCES.RULE,
-			financialEventRuleVersion: BANK_TRANSACTION_FINANCIAL_EVENT_RULE_VERSION,
+			...CURRENCY_EXCHANGE_EVENT,
 		};
 
 		await fixtures.createTransactions(ownerBankAccount, [
 			// Baseline months.
-			row('2026-07-05', '-20.00', {category: 'FOOD_AND_DRINK'}),
-			row('2026-07-10', '1000.00', {category: 'INCOME'}),
-			row('2026-07-20', '-100.00', {category: 'FOOD_AND_DRINK'}),
-			row('2026-08-18', '-30.00', {category: 'FOOD_AND_DRINK'}),
-			row('2026-08-31', '-300.00'),
-			row('2026-09-01', '-60.00', {category: 'TRANSFER_OUT'}),
-			row('2026-09-30', '-15.00', {category: 'FOOD_AND_DRINK'}),
+			bookedRow('2026-07-05', '-20.00', {category: 'FOOD_AND_DRINK'}),
+			bookedRow('2026-07-10', '1000.00', {category: 'INCOME'}),
+			bookedRow('2026-07-20', '-100.00', {category: 'FOOD_AND_DRINK'}),
+			bookedRow('2026-08-18', '-30.00', {category: 'FOOD_AND_DRINK'}),
+			bookedRow('2026-08-31', '-300.00'),
+			bookedRow('2026-09-01', '-60.00', {category: 'TRANSFER_OUT'}),
+			bookedRow('2026-09-30', '-15.00', {category: 'FOOD_AND_DRINK'}),
 			// Viewed month.
-			row('2026-10-01', '-12.30', {category: 'FOOD_AND_DRINK'}),
-			row('2026-10-03', '-7.70', {category: 'FOOD_AND_DRINK'}),
-			row('2026-10-05', '-50.00', {category: 'TRANSFER_OUT'}),
-			row('2026-10-06', '5.00', {category: 'REFUND'}),
-			row('2026-10-07', '-3.00', {category: null}),
-			row('2026-10-08', '2000.00', {category: 'INCOME'}),
-			row('2026-10-09', '-100.00', {category: null, ownTransferEvidence: 'IBAN'}),
-			row('2026-10-09', '100.00', {category: null, ownTransferEvidence: 'IBAN'}),
-			row('2026-10-10', '-40.00', exchange),
-			row('2026-10-11', '-1.00', {creditDebitIndicator: null}),
-			row('2026-10-12', '-9.99', {amountInBaseCurrency: null}),
+			bookedRow('2026-10-01', '-12.30', {category: 'FOOD_AND_DRINK'}),
+			bookedRow('2026-10-03', '-7.70', {category: 'FOOD_AND_DRINK'}),
+			bookedRow('2026-10-05', '-50.00', {category: 'TRANSFER_OUT'}),
+			bookedRow('2026-10-06', '5.00', {category: 'REFUND'}),
+			bookedRow('2026-10-07', '-3.00', {category: null}),
+			bookedRow('2026-10-08', '2000.00', {category: 'INCOME'}),
+			bookedRow('2026-10-09', '-100.00', {category: null, ownTransferEvidence: 'IBAN'}),
+			bookedRow('2026-10-09', '100.00', {category: null, ownTransferEvidence: 'IBAN'}),
+			bookedRow('2026-10-10', '-40.00', exchange),
+			bookedRow('2026-10-11', '-1.00', {creditDebitIndicator: null}),
+			bookedRow('2026-10-12', '-9.99', {amountInBaseCurrency: null}),
 			// After the cut-off day, and not booked yet.
-			row('2026-10-19', '-1000.00', {category: 'FOOD_AND_DRINK'}),
-			row(null, '-20.00', {transactionStatus: 'PDNG'}),
+			bookedRow('2026-10-19', '-1000.00', {category: 'FOOD_AND_DRINK'}),
+			bookedRow(null, '-20.00', {transactionStatus: 'PDNG'}),
 		]);
 		await fixtures.createTransactions(ownerGbpAccount, [
-			row('2026-10-02', '-10.00', {currency: 'GBP', amountInBaseCurrency: '-11.60', category: 'FOOD_AND_DRINK'}),
+			bookedRow('2026-10-02', '-10.00', {
+				currency: 'GBP',
+				amountInBaseCurrency: '-11.60',
+				category: 'FOOD_AND_DRINK',
+			}),
 		]);
 		await fixtures.createTransactions(otherBankAccount, [
-			row('2026-09-10', '-40.00', {category: 'FOOD_AND_DRINK'}),
-			row('2026-10-02', '-999.00', {category: 'FOOD_AND_DRINK'}),
+			bookedRow('2026-09-10', '-40.00', {category: 'FOOD_AND_DRINK'}),
+			bookedRow('2026-10-02', '-999.00', {category: 'FOOD_AND_DRINK'}),
 		]);
 	});
 
@@ -216,13 +197,13 @@ describe('BankTransactionSummary', () => {
 		await expectCategoriesReconcile(summary, from);
 	});
 
-	it('keys review, refund debits and lowercase indicators like the list on the first of a month', async () => {
+	it('keys review, refund debits and canonical indicators like the list on the first of a month', async () => {
 		const extra = await fixtures.createTransactions(ownerBankAccount, [
-			row('2026-11-01', '-4.00', {category: 'NEEDS_REVIEW'}),
-			row('2026-11-01', '-2.00', {category: 'REFUND'}),
-			row('2026-11-01', '-1.50', {creditDebitIndicator: 'dbit'}),
-			row('2026-11-01', '10.00', {creditDebitIndicator: 'crdt', category: 'INCOME'}),
-			row('2026-11-02', '-99.00'),
+			bookedRow('2026-11-01', '-4.00', {category: 'NEEDS_REVIEW'}),
+			bookedRow('2026-11-01', '-2.00', {category: 'REFUND'}),
+			bookedRow('2026-11-01', '-1.50', {creditDebitIndicator: 'DBIT'}),
+			bookedRow('2026-11-01', '10.00', {creditDebitIndicator: 'CRDT', category: 'INCOME'}),
+			bookedRow('2026-11-02', '-99.00'),
 		]);
 
 		try {
@@ -296,13 +277,13 @@ describe('BankTransactionSummary', () => {
 
 	it('counts transactions that need attention across all months', async () => {
 		const extra = await fixtures.createTransactions(ownerBankAccount, [
-			row('2026-07-15', '-5.00', {category: 'NEEDS_REVIEW'}),
-			row(null, '-6.00', {category: null, categoryStatus: 'FAILED', amountInBaseCurrency: null}),
-			row('2026-08-03', '-7.00', {category: null, categoryStatus: 'PROCESSING'}),
+			bookedRow('2026-07-15', '-5.00', {category: 'NEEDS_REVIEW'}),
+			bookedRow(null, '-6.00', {category: null, categoryStatus: 'FAILED', amountInBaseCurrency: null}),
+			bookedRow('2026-08-03', '-7.00', {category: null, categoryStatus: 'PROCESSING'}),
 		]);
 		const otherExtra = await fixtures.createTransaction(
 			otherBankAccount,
-			row('2026-08-03', '-8.00', {category: 'NEEDS_REVIEW'}),
+			bookedRow('2026-08-03', '-8.00', {category: 'NEEDS_REVIEW'}),
 		);
 
 		try {

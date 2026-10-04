@@ -1,14 +1,12 @@
 import {Transform, Type} from 'class-transformer';
 import {
 	IsArray,
-	IsDateString,
 	IsEnum,
 	IsIn,
 	IsInt,
 	IsOptional,
 	IsString,
 	IsUUID,
-	Matches,
 	MaxLength,
 	Min,
 	ValidateNested,
@@ -16,6 +14,7 @@ import {
 
 import {DEFAULT_PAGE_INDEX, DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS} from '@core/pagination/pagination.constants';
 import {transformStrictDecimalInteger} from '@core/pagination/pagination.transform';
+import {IsCalendarDate} from '@core/validation/is-calendar-date';
 
 import {
 	BANK_TRANSACTION_BASE_AMOUNT_FILTER_VALUES,
@@ -77,13 +76,11 @@ export class BankTransactionSortQueryDto {
 
 export class BankTransactionBookingDateFilterDto {
 	@IsOptional()
-	@IsDateString({strict: true})
-	@Matches(/^\d{4}-\d{2}-\d{2}$/)
+	@IsCalendarDate()
 	from?: string;
 
 	@IsOptional()
-	@IsDateString({strict: true})
-	@Matches(/^\d{4}-\d{2}-\d{2}$/)
+	@IsCalendarDate()
 	to?: string;
 }
 

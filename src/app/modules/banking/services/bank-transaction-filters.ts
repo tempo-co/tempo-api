@@ -10,7 +10,8 @@ import type {BankTransaction} from '../bank-transaction.entity';
 import type {BankTransactionCategoryStatusFilterValue} from '../categorization/bank-transaction-categorization.types';
 import {BANK_TRANSACTION_UNCATEGORIZED} from '../categorization/bank-transaction-category';
 
-const INDICATOR_SQL = `UPPER("transaction"."creditDebitIndicator")`;
+// Provider writes persist canonical currency and direction codes.
+const INDICATOR_SQL = '"transaction"."creditDebitIndicator"';
 /** Own transfers and currency exchanges move money between the owner's accounts. */
 // Null-safe on purpose: these predicates are negated, and `NOT (NULL OR FALSE)` would drop ordinary rows.
 export const SQL_INTERNAL = `("transaction"."financialEventType" IS NOT DISTINCT FROM '${BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE}' OR "transaction"."ownTransferEvidence" IS NOT NULL)`;

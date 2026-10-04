@@ -37,11 +37,11 @@ import {BankAccountBalance} from './bank-account-balance.entity';
 import {BankAccount} from './bank-account.entity';
 import {BankConnectionCallbackResult} from './bank-connection-callback-result';
 import {BankConnection} from './bank-connection.entity';
-import {getBalancePreference, truncate} from './banking.utils';
+import {getBalancePreference, normalizeBankCode, truncate} from './banking.utils';
 import {EnableBankingAccount, EnableBankingSession} from './enable-banking.types';
 import {BankingAuthorizationStateError} from './errors/banking-authorization-state.error';
 import {BankingEncryptionError} from './errors/banking-encryption.error';
-import {normalizeCurrency} from './services/bank-transaction-amount-conversion.utils';
+import {convertEcbAmountSql, ecbRateSql} from './services/bank-transaction-amount-conversion.utils';
 import {BankingAuthorizationStateService} from './services/banking-authorization-state.service';
 import {type BankingConnectionLock, BankingConnectionLockService} from './services/banking-connection-lock.service';
 import {BankingEncryptionService} from './services/banking-encryption.service';
@@ -210,7 +210,7 @@ export class BankingService {
 			.where('bankConnection.id IN (:...connectionIds)', {connectionIds: connections.map(({id}) => id)})
 			.orderBy('bankAccount.createdAt', 'ASC')
 			.getMany();
-		const baseCurrency = normalizeCurrency(storedBaseCurrency);
+		const baseCurrency = storedBaseCurrency;
 		const [latestBalancesByAccountId, convertedBalances] = await Promise.all([
 			this.findLatestBalancesByAccountId(bankAccounts.map(({id}) => id)),
 			this.convertBalances(bankAccounts, baseCurrency),
@@ -623,7 +623,7 @@ export class BankingService {
 			...(account.iban ? {iban: account.iban} : {}),
 			name: truncate(account.name, 255),
 			details: truncate(account.details, 255),
-			currency: account.currency.toUpperCase(),
+			currency: normalizeBankCode(account.currency),
 			cashAccountType: truncate(account.cashAccountType, 32),
 			usage: truncate(account.usage, 16),
 		};
@@ -670,14 +670,14 @@ export class BankingService {
 			SELECT input."id",
 				CASE
 					WHEN input."currency" = $4 THEN ROUND(input."amount", 2)
-					ELSE ROUND(input."amount" / rate."source" * rate."base", 2)
+					ELSE ${convertEcbAmountSql('input."amount"', 'rate."source"', 'rate."base"')}
 				END::text AS "amount",
 				CASE WHEN input."currency" <> $4 THEN to_char(rate."rateDate", 'YYYY-MM-DD') END AS "rateDate"
 			FROM unnest($1::uuid[], $2::varchar[], $3::numeric[]) AS input("id", "currency", "amount")
 			LEFT JOIN LATERAL (
 				SELECT dates."rateDate",
-					CASE WHEN input."currency" = 'EUR' THEN 1 ELSE source."rateToEur" END AS "source",
-					CASE WHEN $4 = 'EUR' THEN 1 ELSE base."rateToEur" END AS "base"
+					${ecbRateSql('input."currency"', 'source."rateToEur"')} AS "source",
+					${ecbRateSql('$4', 'base."rateToEur"')} AS "base"
 				FROM "bank_transaction_fx_rates" dates
 				LEFT JOIN "bank_transaction_fx_rates" source
 					ON source."currency" = input."currency" AND source."rateDate" = dates."rateDate"
@@ -693,7 +693,7 @@ export class BankingService {
 			) rate ON TRUE`,
 			[
 				balances.map(({id}) => id),
-				balances.map(({currency}) => normalizeCurrency(currency)),
+				balances.map(({currency}) => currency),
 				balances.map(({currentBalanceAmount}) => currentBalanceAmount),
 				baseCurrency,
 			],
