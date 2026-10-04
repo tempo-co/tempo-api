@@ -21,6 +21,7 @@ export async function seedBankingData(
 	const account = await app
 		.get<Repository<Account>>(getRepositoryToken(Account))
 		.findOneByOrFail({email: accountEmail});
+	await app.get<Repository<Account>>(getRepositoryToken(Account)).update(account.id, {baseCurrency: 'EUR'});
 	const fixtures = new BankingFixtures(app);
 
 	const bankConnection = await fixtures.createConnection(account, {
@@ -157,6 +158,10 @@ function createSeedTransactions() {
 
 	return transactions.map((transaction) => ({
 		...transaction,
+		// These fixtures are all EUR: seed the completed same-currency conversion explicitly.
+		amountInBaseCurrency: Number(transaction.amount).toFixed(2),
+		baseAmountMethod: 'SAME' as const,
+		baseAmountRateDate: null,
 		dedupeKey: `seed-${transaction.id}`,
 		providerTransactionId: transaction.id,
 		entryReference: transaction.id,
