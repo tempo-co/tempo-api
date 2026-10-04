@@ -22,6 +22,10 @@ const emailTemplates: Array<{name: string; context: Record<string, string>}> = [
 		context: {name: 'Example User'},
 	},
 	{
+		name: 'email-changed',
+		context: {name: 'Example User', oldEmail: 'old@example.test', newEmail: 'new@example.test'},
+	},
+	{
 		name: 'reset-password',
 		context: resetPasswordContext,
 	},

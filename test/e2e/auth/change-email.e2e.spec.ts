@@ -10,9 +10,11 @@ import {
 	EMAIL_INVALID_TOKEN,
 	EMAIL_VERIFICATION_SENT,
 } from '@modules/auth/api/constants/api-messages.constants';
+import {EMAIL_CHANGED_SUBJECT, EMAIL_CHANGE_VERIFICATION_SUBJECT} from '@modules/auth/services/email-verifier.service';
 
 import {
 	EMAIL_CHANGE_ACCOUNT_EMAIL,
+	EMAIL_CHANGE_ACCOUNT_NAME,
 	EMAIL_CHANGE_ACCOUNT_PASSWORD,
 	VERIFIED_ACCOUNT_EMAIL,
 	VERIFIED_ACCOUNT_PASSWORD,
@@ -121,7 +123,7 @@ describe('AuthController - Change email', () => {
 			const token = EmailUtils.extractToken(body);
 
 			expect(verificationEmail?.To[0].Address).toEqual(newEmail);
-			expect(verificationEmail?.Subject).toBe('Verify your new email with Tempo');
+			expect(verificationEmail?.Subject).toBe(EMAIL_CHANGE_VERIFICATION_SUBJECT);
 			expect(body).toBe(EmailUtils.getVerifyNewEmailBody(newEmail, webUrl, token, emailVerificationExpiration));
 			expect(token).toMatch(UUID_REGEX);
 		});
@@ -185,11 +187,25 @@ describe('AuthController - Change email', () => {
 		}
 
 		it('should change the email with a valid token for an authenticated, verified account', async () => {
+			const previousEmail = accountEmail;
 			const response = await verifyChange(agent, {token, email: newEmailAddress}).expect(200);
 			expect(response.body.message).toBe(EMAIL_CHANGE_SUCCESS);
 
 			await expectAccountEmail(newEmailAddress);
 			accountEmail = newEmailAddress;
+
+			const notice = await EmailUtils.findEmailByRecipient(previousEmail, mailpitApiUrl, EMAIL_CHANGED_SUBJECT);
+			expect(EmailUtils.normalizeEmailText(notice?.Text)).toBe(
+				EmailUtils.getEmailChangedBody(EMAIL_CHANGE_ACCOUNT_NAME, previousEmail, newEmailAddress),
+			);
+		});
+
+		it('should not notify the old address when verification fails', async () => {
+			await verifyChange(agent, {token: faker.string.uuid(), email: newEmailAddress}).expect(400);
+
+			expect(
+				await EmailUtils.findEmailByRecipient(accountEmail, mailpitApiUrl, EMAIL_CHANGED_SUBJECT),
+			).toBeUndefined();
 		});
 
 		it.each(REJECTED_ORIGINS)(

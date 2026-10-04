@@ -20,6 +20,9 @@ import {
 
 type PendingEmailChange = {token: string; email: Account['email']};
 
+export const EMAIL_CHANGE_VERIFICATION_SUBJECT = 'Confirm your new Tempo email';
+export const EMAIL_CHANGED_SUBJECT = 'Your Tempo email was changed';
+
 @Injectable()
 export class EmailVerifierService {
 	private readonly EXPIRATION_MS: number;
@@ -95,7 +98,7 @@ export class EmailVerifierService {
 		await this.emailService.send(
 			{
 				to: newEmail,
-				subject: 'Verify your new email with Tempo',
+				subject: EMAIL_CHANGE_VERIFICATION_SUBJECT,
 				template: 'verify-new-email',
 				context: {name: account.name, verificationUrl, expiration},
 			},
@@ -115,6 +118,15 @@ export class EmailVerifierService {
 		await this.accountService.updateFields(account.id, {email: newEmail});
 
 		await this.redisClient.del(key);
+		await this.emailService.send(
+			{
+				to: account.email,
+				subject: EMAIL_CHANGED_SUBJECT,
+				template: 'email-changed',
+				context: {name: account.name, oldEmail: account.email, newEmail},
+			},
+			account.id,
+		);
 		return {message: EMAIL_CHANGE_SUCCESS};
 	}
 

@@ -106,11 +106,17 @@ If you did not request this, please disregard this email.`;
 	static getVerifyNewEmailBody(email: Account['email'], webUrl: string, token: string, expiration: string) {
 		const ex = ms(ms(expiration as ms.StringValue), {long: true});
 
-		return `Verify your new email with Tempo
-You requested to change the the email address associated with your Tempo account. Please confirm this change by clicking the button below.
-Verify email ( ${webUrl}/verify-email-change?email=${encodeURIComponent(email)}&token=${token} )
-This link will expire in ${ex}.
-If you did not request this, please disregard this email.`;
+		return `Confirm your new email
+You asked to use this address for your Tempo account. Confirm it to finish the change.
+Confirm email ( ${webUrl}/verify-email-change?email=${encodeURIComponent(email)}&token=${token} )
+This link expires in ${ex}. Your current email keeps working until you confirm.
+If you didn't ask for this, you can ignore this email.`;
+	}
+
+	static getEmailChangedBody(name: Account['name'], oldEmail: Account['email'], newEmail: Account['email']) {
+		return `Your Tempo email was changed, ${name}
+You now sign in with ${newEmail} instead of ${oldEmail}.
+If you didn't make this change, reset your password and contact us right away.`;
 	}
 
 	private static _sleep(ms: number = 250) {
