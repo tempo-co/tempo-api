@@ -1,4 +1,4 @@
-import {addDays} from '../banking.utils';
+import {addDays, normalizeBankCode} from '../banking.utils';
 
 /** The longest span between consecutive ECB publications: Easter, or Christmas next to a weekend. */
 export const MAX_ECB_PUBLICATION_GAP_DAYS = 5;
@@ -25,6 +25,16 @@ export const BASE_AMOUNT_INPUT_COLUMNS = [
 /** `ROW(...)` of the base amount inputs of the given table alias, for comparing them as one value. */
 export function baseAmountInputsSql(alias: string): string {
 	return `ROW(${BASE_AMOUNT_INPUT_COLUMNS.map(([column]) => `${alias}."${column}"`).join(', ')})`;
+}
+
+/** SQL expressions supplied by our queries, never user input. ECB rates use EUR as their unit. */
+export function ecbRateSql(currency: string, rate: string): string {
+	return `CASE WHEN ${currency} = 'EUR' THEN 1 ELSE ${rate} END`;
+}
+
+/** Exact base-currency cents, pivoting through EUR with Postgres numeric arithmetic. */
+export function convertEcbAmountSql(amount: string, sourceRate: string, baseRate: string): string {
+	return `ROUND(${amount} / ${sourceRate} * ${baseRate}, 2)`;
 }
 
 /** ECB reference rates are published around 16:00 CET on TARGET business days. */
@@ -64,6 +74,6 @@ function isBusinessDay(date: string): boolean {
 }
 
 export function normalizeCurrency(value: string | null | undefined): string | null {
-	const normalized = value?.trim().toUpperCase();
+	const normalized = value == null ? null : normalizeBankCode(value);
 	return normalized && /^[A-Z]{3}$/.test(normalized) ? normalized : null;
 }

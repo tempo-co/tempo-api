@@ -20,3 +20,4 @@ export const BANKING_PERSISTENCE_SYNC_ERROR = 'Bank synchronization could not be
 export const BANKING_SYNC_ALREADY_IN_PROGRESS = 'A bank synchronization is already in progress.';
 
 export const BANKING_TRANSACTION_NOT_FOUND = 'Bank transaction not found.';
+export const BANKING_TRANSACTION_SUMMARY_FUTURE_MONTH = 'The summary month cannot start after the given date.';

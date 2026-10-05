@@ -1,6 +1,6 @@
 import {Injectable, NotFoundException} from '@nestjs/common';
 import {InjectRepository} from '@nestjs/typeorm';
-import {Brackets, Repository} from 'typeorm';
+import {Repository} from 'typeorm';
 
 import {Account} from '@modules/account/account.entity';
 
@@ -21,19 +21,14 @@ import {
 } from '../api/dtos/bank-transaction-response.dto';
 import {BankConnection} from '../bank-connection.entity';
 import {toBankTransactionDirection} from '../bank-transaction-direction';
-import {
-	BANK_TRANSACTION_OWN_TRANSFER_FILTER,
-	getBankTransactionCashFlowTreatment,
-} from '../bank-transaction-financial-event';
+import {getBankTransactionCashFlowTreatment} from '../bank-transaction-financial-event';
 import {BANK_TRANSACTION_TYPES} from '../bank-transaction-type';
 import {BankTransaction} from '../bank-transaction.entity';
 import {createBankTransactionCategorizationInputHash} from '../categorization/bank-transaction-categorization-input';
 import {BANK_TRANSACTION_CATEGORIZATION_RESET_VALUES} from '../categorization/bank-transaction-categorization.constants';
-import {
-	BANK_TRANSACTION_UNCATEGORIZED,
-	type BankTransactionCategory,
-} from '../categorization/bank-transaction-category';
+import type {BankTransactionCategory} from '../categorization/bank-transaction-category';
 import type {OwnTransferOverride} from '../own-transfer/own-transfer-detection';
+import {applyBankTransactionFilters} from './bank-transaction-filters';
 import {OwnTransferService} from './own-transfer.service';
 
 @Injectable()
@@ -54,71 +49,7 @@ export class BankTransactionService {
 		const pageSize = queryParams.pagination?.pageSize ?? DEFAULT_BANK_TRANSACTION_PAGE_SIZE;
 		const query = this.createOwnerScopedQuery(accountId);
 
-		const filter = queryParams.filter;
-		const bookingDate = filter?.bookingDate;
-		if (bookingDate?.from) {
-			query.andWhere('transaction.bookingDate >= :bookingDateFrom', {bookingDateFrom: bookingDate.from});
-		}
-		if (bookingDate?.to) {
-			query.andWhere('transaction.bookingDate <= :bookingDateTo', {bookingDateTo: bookingDate.to});
-		}
-		if (filter?.bankAccountIds && filter.bankAccountIds.length > 0) {
-			query.andWhere('bankAccount.id IN (:...bankAccountIds)', {
-				bankAccountIds: filter.bankAccountIds,
-			});
-		}
-		const categoryFilters = filter?.categories;
-		if (categoryFilters && categoryFilters.length > 0) {
-			const categorizedCategories = categoryFilters.filter(
-				(category) => category !== BANK_TRANSACTION_UNCATEGORIZED,
-			);
-			const includesUncategorized = categoryFilters.includes(BANK_TRANSACTION_UNCATEGORIZED);
-
-			query.andWhere(
-				new Brackets((categoryQuery) => {
-					if (categorizedCategories.length > 0) {
-						categoryQuery.where('transaction.category IN (:...categories)', {
-							categories: categorizedCategories,
-						});
-					}
-					if (includesUncategorized) {
-						const uncategorizedCondition =
-							'transaction.category IS NULL AND transaction.financialEventType IS NULL';
-						if (categorizedCategories.length > 0) categoryQuery.orWhere(uncategorizedCondition);
-						else categoryQuery.where(uncategorizedCondition);
-					}
-				}),
-			);
-		}
-		if (filter?.categorySources && filter.categorySources.length > 0) {
-			query.andWhere('transaction.categorySource IN (:...categorySources)', {
-				categorySources: filter.categorySources,
-			});
-		}
-
-		const eventFilters = filter?.financialEventTypes ?? [];
-		const financialEventTypes = eventFilters.filter((value) => value !== BANK_TRANSACTION_OWN_TRANSFER_FILTER);
-		const activityConditions = [
-			...(financialEventTypes.length > 0 ? ['transaction.financialEventType IN (:...financialEventTypes)'] : []),
-			...(eventFilters.includes(BANK_TRANSACTION_OWN_TRANSFER_FILTER)
-				? ['transaction.ownTransferEvidence IS NOT NULL']
-				: []),
-		];
-		if (activityConditions.length > 0) {
-			query.andWhere(`(${activityConditions.join(' OR ')})`, {financialEventTypes});
-		}
-
-		const search = filter?.search?.trim();
-		if (search) {
-			query.andWhere(
-				new Brackets((searchQuery) => {
-					searchQuery
-						.where('transaction.description ILIKE :search', {search: `%${search}%`})
-						.orWhere('transaction.counterpartyName ILIKE :search', {search: `%${search}%`})
-						.orWhere('transaction.remittanceInformation ILIKE :search', {search: `%${search}%`});
-				}),
-			);
-		}
+		applyBankTransactionFilters(query, queryParams.filter);
 
 		const sortField = queryParams.sort?.by ?? BankTransactionSortField.BOOKING_DATE;
 		const sortOrder = queryParams.sort?.order ?? BankTransactionSortOrder.DESC;
@@ -258,6 +189,7 @@ export class BankTransactionService {
 			exchangeRate: transaction.exchangeRate,
 			exchangeRateUnitCurrency: transaction.exchangeRateUnitCurrency,
 			exchangeRateType: transaction.exchangeRateType,
+			amountInBaseCurrency: transaction.amountInBaseCurrency,
 			baseAmountMethod: transaction.baseAmountMethod,
 			baseAmountRateDate: transaction.baseAmountRateDate,
 			referenceNumber: transaction.referenceNumber,

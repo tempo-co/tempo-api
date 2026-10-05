@@ -10,6 +10,8 @@ import {addDays} from '../banking.utils';
 import {
 	FX_RATE_MAX_AGE_DAYS,
 	baseAmountInputsSql,
+	convertEcbAmountSql,
+	ecbRateSql,
 	latestExpectedEcbRateDate,
 	normalizeCurrency,
 } from './bank-transaction-amount-conversion.utils';
@@ -30,8 +32,7 @@ type PendingOwner = {baseCurrency: string | null; currencies: PendingCurrency[]}
 
 /** Rate date of a transaction, as used by the conversion. */
 const RATE_DATE_SQL = `COALESCE(t."transactionDate", t."bookingDate")`;
-const normalizedCurrencySql = (column: string) => `UPPER(BTRIM(${column}))`;
-const CURRENCY_SQL = normalizedCurrencySql('t."currency"');
+const CURRENCY_SQL = 't."currency"';
 /** Rows without a conversion method are (re)converted, including amounts stored before methods were recorded. */
 const PENDING_SQL = `t."baseAmountMethod" IS NULL`;
 
@@ -71,7 +72,7 @@ const CONVERT_OWNER_SQL = `
 			t."id",
 			t."amount",
 			${CURRENCY_SQL} AS "currency",
-			${normalizedCurrencySql('t."instructedCurrency"')} AS "instructedCurrency",
+			t."instructedCurrency",
 			t."instructedAmount",
 			${RATE_DATE_SQL} AS "rateDate",
 			-- Weekends use Friday's publication; toWeekday in the utils applies the same rule to fetch ranges.
@@ -86,8 +87,8 @@ const CONVERT_OWNER_SQL = `
 	priced AS (
 		SELECT
 			candidate.*,
-			CASE WHEN candidate."currency" = 'EUR' THEN 1 ELSE source."rateToEur" END AS "sourceRate",
-			CASE WHEN $2 = 'EUR' THEN 1 ELSE base."rateToEur" END AS "baseRate",
+			${ecbRateSql('candidate."currency"', 'source."rateToEur"')} AS "sourceRate",
+			${ecbRateSql('$2', 'base."rateToEur"')} AS "baseRate",
 			GREATEST(source."rateDate", base."rateDate") AS "usedRateDate"
 		FROM candidate
 		${rateLateral('source', 'candidate."currency"')}
@@ -111,7 +112,7 @@ const CONVERT_OWNER_SQL = `
 			CASE method."baseAmountMethod"
 				WHEN 'SAME' THEN ROUND(method."amount", 2)
 				WHEN 'INSTRUCTED' THEN ROUND(SIGN(method."amount") * ABS(method."instructedAmount"), 2)
-				WHEN 'ECB' THEN ROUND(method."amount" / method."sourceRate" * method."baseRate", 2)
+				WHEN 'ECB' THEN ${convertEcbAmountSql('method."amount"', 'method."sourceRate"', 'method."baseRate"')}
 			END AS "amountInBaseCurrency",
 			CASE WHEN method."baseAmountMethod" = 'ECB' THEN method."usedRateDate" END AS "baseAmountRateDate"
 		FROM method
@@ -178,9 +179,9 @@ export class BankTransactionAmountConversionService {
 	 */
 	private async refreshAccountCurrencyRates(latestExpectedDate: string): Promise<void> {
 		const rows = (await this.bankAccountRepository.query(
-			`SELECT ${normalizedCurrencySql('"currency"')} AS "currency" FROM "bank_accounts" WHERE "isActive" = TRUE
+			`SELECT "currency" FROM "bank_accounts" WHERE "isActive" = TRUE
 			UNION
-			SELECT ${normalizedCurrencySql('"baseCurrency"')} FROM "accounts" WHERE "baseCurrency" IS NOT NULL`,
+			SELECT "baseCurrency" FROM "accounts" WHERE "baseCurrency" IS NOT NULL`,
 		)) as Array<{currency: string}>;
 		await this.fxRateService.ensureLatestRates(
 			rows.map(({currency}) => currency),
@@ -241,8 +242,7 @@ export class BankTransactionAmountConversionService {
 	}
 
 	private async resolveBaseCurrency(accountId: string, storedBaseCurrency: string | null): Promise<string> {
-		const existingCurrency = normalizeCurrency(storedBaseCurrency);
-		if (existingCurrency) return existingCurrency;
+		if (storedBaseCurrency) return storedBaseCurrency;
 
 		const preferredAccount = await this.bankAccountRepository
 			.createQueryBuilder('bankAccount')

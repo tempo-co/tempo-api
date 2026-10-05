@@ -9,17 +9,12 @@ import {Account} from '@modules/account/account.entity';
 import {AccountService} from '@modules/account/account.service';
 import {BankAccount} from '@modules/banking/bank-account.entity';
 import {BankConnection} from '@modules/banking/bank-connection.entity';
-import {
-	BANK_TRANSACTION_CASH_FLOW_TREATMENTS,
-	BANK_TRANSACTION_FINANCIAL_EVENT_RULE_VERSION,
-	BANK_TRANSACTION_FINANCIAL_EVENT_SOURCES,
-	BANK_TRANSACTION_FINANCIAL_EVENT_TYPES,
-} from '@modules/banking/bank-transaction-financial-event';
+import {BANK_TRANSACTION_CASH_FLOW_TREATMENTS} from '@modules/banking/bank-transaction-financial-event';
 import {BankTransaction} from '@modules/banking/bank-transaction.entity';
 import {OpenAiBankTransactionCategorizationProvider} from '@modules/banking/categorization/providers/openai-bank-transaction-categorization.provider';
 import {OwnTransferService} from '@modules/banking/services/own-transfer.service';
 
-import {BankingFixtures} from '../../../scripts/seed-data/banking-fixtures';
+import {BankingFixtures, CURRENCY_EXCHANGE_EVENT, bookedRow} from '../../../scripts/seed-data/banking-fixtures';
 import {
 	SESSION_TEST_ACCOUNT_EMAIL,
 	SESSION_TEST_ACCOUNT_PASSWORD,
@@ -530,12 +525,7 @@ describe('BankTransactionController', () => {
 	});
 
 	it('exposes and filters currency exchange events without treating them as uncategorized', async () => {
-		const currencyExchange = {
-			counterpartyName: null,
-			financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
-			financialEventSource: BANK_TRANSACTION_FINANCIAL_EVENT_SOURCES.RULE,
-			financialEventRuleVersion: BANK_TRANSACTION_FINANCIAL_EVENT_RULE_VERSION,
-		};
+		const currencyExchange = {counterpartyName: null, ...CURRENCY_EXCHANGE_EVENT};
 		const [ruleExchange, manualExchange] = await fixtures.createTransactions(fixtureBankAccount, [
 			{
 				...currencyExchange,
@@ -569,9 +559,7 @@ describe('BankTransactionController', () => {
 				expect.arrayContaining([
 					expect.objectContaining({
 						id: ruleExchange.id,
-						financialEventType: BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
-						financialEventSource: BANK_TRANSACTION_FINANCIAL_EVENT_SOURCES.RULE,
-						financialEventRuleVersion: BANK_TRANSACTION_FINANCIAL_EVENT_RULE_VERSION,
+						...CURRENCY_EXCHANGE_EVENT,
 						cashFlowTreatment: BANK_TRANSACTION_CASH_FLOW_TREATMENTS.INTERNAL,
 						category: null,
 						categoryStatus: 'NOT_APPLICABLE',
@@ -724,6 +712,91 @@ describe('BankTransactionController', () => {
 		}
 	});
 
+	it('filters by cash flow, base amount and categorization status', async () => {
+		const june = (day: number) => `2026-06-${String(day).padStart(2, '0')}`;
+		const rows = await fixtures.createTransactions(fixtureBankAccount, [
+			bookedRow(june(1), '-10.00', {valueDate: null}),
+			bookedRow(june(2), '-20.00', {valueDate: null, category: 'TRANSFER_OUT'}),
+			bookedRow(june(3), '5.00', {valueDate: null, category: 'REFUND'}),
+			bookedRow(june(4), '1000.00', {valueDate: null, category: 'INCOME'}),
+			bookedRow(june(5), '-50.00', {valueDate: null, category: null, ownTransferEvidence: 'IBAN'}),
+			bookedRow(june(6), '50.00', {
+				valueDate: null,
+				creditDebitIndicator: 'CRDT',
+				category: null,
+				ownTransferEvidence: 'IBAN',
+			}),
+			bookedRow(june(7), '-30.00', {
+				valueDate: null,
+				category: null,
+				categoryStatus: 'NOT_APPLICABLE',
+				categorySource: null,
+				...CURRENCY_EXCHANGE_EVENT,
+			}),
+			bookedRow(june(8), '-1.00', {valueDate: null, creditDebitIndicator: null}),
+			bookedRow(june(9), '-7.00', {valueDate: null, amountInBaseCurrency: null}),
+			bookedRow(june(10), '-3.00', {
+				valueDate: null,
+				category: null,
+				categoryStatus: 'FAILED',
+				categorySource: null,
+			}),
+			bookedRow(june(11), '-4.00', {
+				valueDate: null,
+				category: null,
+				categoryStatus: 'PENDING',
+				categorySource: null,
+			}),
+		]);
+		const [
+			expense,
+			transferOut,
+			refund,
+			salary,
+			ownOut,
+			ownIn,
+			currencyExchange,
+			unknown,
+			unconverted,
+			failed,
+			pending,
+		] = rows.map(({id}) => id);
+		const idsFor = async (filter: Record<string, string | string[]>) => {
+			const response = await verifiedAgent
+				.get('/bank-transactions')
+				.query({
+					'filter[bookingDate][from]': june(1),
+					'filter[bookingDate][to]': june(30),
+					'pagination[pageSize]': '100',
+					...filter,
+				})
+				.expect(200);
+			return response.body.transactions.map(({id}: {id: string}) => id).sort();
+		};
+		const sorted = (...ids: string[]) => [...ids].sort();
+
+		try {
+			expect(await idsFor({'filter[cashFlows][]': 'SPENDING'})).toEqual(
+				sorted(expense, transferOut, refund, unconverted, failed, pending),
+			);
+			expect(await idsFor({'filter[cashFlows][]': 'INCOME'})).toEqual([salary]);
+			expect(await idsFor({'filter[cashFlows][]': 'INTERNAL'})).toEqual(sorted(ownOut, ownIn, currencyExchange));
+			expect(await idsFor({'filter[cashFlows][]': 'UNKNOWN'})).toEqual([unknown]);
+			expect(await idsFor({'filter[cashFlows][]': ['INCOME', 'UNKNOWN']})).toEqual(sorted(salary, unknown));
+			expect(await idsFor({'filter[cashFlows][]': 'SPENDING', 'filter[baseAmount]': 'PRESENT'})).toEqual(
+				sorted(expense, transferOut, refund, failed, pending),
+			);
+			expect(await idsFor({'filter[baseAmount]': 'MISSING'})).toEqual([unconverted]);
+			expect(await idsFor({'filter[categoryStatuses][]': 'FAILED'})).toEqual([failed]);
+			expect(await idsFor({'filter[categoryStatuses][]': 'CATEGORIZING'})).toEqual([pending]);
+			expect(await idsFor({'filter[categoryStatuses][]': ['FAILED', 'CATEGORIZING']})).toEqual(
+				sorted(failed, pending),
+			);
+		} finally {
+			await bankTransactionRepository.delete(rows.map(({id}) => id));
+		}
+	});
+
 	it.each([
 		['a positive page index', 'pagination[pageIndex]', '1', 200],
 		['an existing allowed page size', 'pagination[pageSize]', '50', 200],
@@ -747,6 +820,9 @@ describe('BankTransactionController', () => {
 		['an unsupported category', {'filter[categories][]': 'NOT_A_CATEGORY'}],
 		['an unsupported categorization source', {'filter[categorySources][]': 'RULE'}],
 		['an unsupported financial event', {'filter[financialEventTypes][]': 'TRANSFER'}],
+		['an unsupported cash flow', {'filter[cashFlows][]': 'EXPENSE'}],
+		['an unsupported base amount state', {'filter[baseAmount]': 'ANY'}],
+		['an unsupported categorization status', {'filter[categoryStatuses][]': 'PENDING'}],
 	])('rejects %s', async (_case, query) => {
 		await verifiedAgent.get('/bank-transactions').query(query).expect(400);
 	});

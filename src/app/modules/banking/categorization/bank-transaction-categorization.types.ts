@@ -72,3 +72,7 @@ export type BankTransactionCategoryDefinition = {
 	label: string;
 	description: string;
 };
+
+/** Categorization states a list can be filtered by: failed, or still waiting to be categorized. */
+export const BANK_TRANSACTION_CATEGORY_STATUS_FILTER_VALUES = ['FAILED', 'CATEGORIZING'] as const;
+export type BankTransactionCategoryStatusFilterValue = (typeof BANK_TRANSACTION_CATEGORY_STATUS_FILTER_VALUES)[number];

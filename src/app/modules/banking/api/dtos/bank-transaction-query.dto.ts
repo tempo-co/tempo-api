@@ -1,14 +1,12 @@
 import {Transform, Type} from 'class-transformer';
 import {
 	IsArray,
-	IsDateString,
 	IsEnum,
 	IsIn,
 	IsInt,
 	IsOptional,
 	IsString,
 	IsUUID,
-	Matches,
 	MaxLength,
 	Min,
 	ValidateNested,
@@ -16,14 +14,21 @@ import {
 
 import {DEFAULT_PAGE_INDEX, DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS} from '@core/pagination/pagination.constants';
 import {transformStrictDecimalInteger} from '@core/pagination/pagination.transform';
+import {IsCalendarDate} from '@core/validation/is-calendar-date';
 
 import {
+	BANK_TRANSACTION_BASE_AMOUNT_FILTER_VALUES,
+	BANK_TRANSACTION_CASH_FLOW_FILTER_VALUES,
 	BANK_TRANSACTION_FINANCIAL_EVENT_FILTER_VALUES,
+	type BankTransactionBaseAmountFilterValue,
+	type BankTransactionCashFlowFilterValue,
 	type BankTransactionFinancialEventFilterValue,
 } from '../../bank-transaction-financial-event';
 import {
 	BANK_TRANSACTION_CATEGORIZATION_SOURCES,
+	BANK_TRANSACTION_CATEGORY_STATUS_FILTER_VALUES,
 	type BankTransactionCategorizationSource,
+	type BankTransactionCategoryStatusFilterValue,
 } from '../../categorization/bank-transaction-categorization.types';
 import {
 	BANK_TRANSACTION_CATEGORY_FILTER_VALUES,
@@ -71,13 +76,11 @@ export class BankTransactionSortQueryDto {
 
 export class BankTransactionBookingDateFilterDto {
 	@IsOptional()
-	@IsDateString({strict: true})
-	@Matches(/^\d{4}-\d{2}-\d{2}$/)
+	@IsCalendarDate()
 	from?: string;
 
 	@IsOptional()
-	@IsDateString({strict: true})
-	@Matches(/^\d{4}-\d{2}-\d{2}$/)
+	@IsCalendarDate()
 	to?: string;
 }
 
@@ -111,6 +114,20 @@ export class BankTransactionFilterQueryDto {
 	@IsArray()
 	@IsIn(BANK_TRANSACTION_FINANCIAL_EVENT_FILTER_VALUES, {each: true})
 	financialEventTypes?: BankTransactionFinancialEventFilterValue[];
+
+	@IsOptional()
+	@IsArray()
+	@IsIn(BANK_TRANSACTION_CASH_FLOW_FILTER_VALUES, {each: true})
+	cashFlows?: BankTransactionCashFlowFilterValue[];
+
+	@IsOptional()
+	@IsIn(BANK_TRANSACTION_BASE_AMOUNT_FILTER_VALUES)
+	baseAmount?: BankTransactionBaseAmountFilterValue;
+
+	@IsOptional()
+	@IsArray()
+	@IsIn(BANK_TRANSACTION_CATEGORY_STATUS_FILTER_VALUES, {each: true})
+	categoryStatuses?: BankTransactionCategoryStatusFilterValue[];
 }
 
 export class BankTransactionQueryDto {

@@ -39,7 +39,7 @@ export class BankConnectionController {
 
 	@Get()
 	async getConnections(@CurrentAccount() account: Account) {
-		return this.bankingService.findAll(account.id);
+		return this.bankingService.findAll(account);
 	}
 
 	@Delete(':connectionId')

@@ -5,7 +5,7 @@ import Redis from 'ioredis';
 import {Server} from 'node:net';
 import request from 'supertest';
 import TestAgent from 'supertest/lib/agent';
-import {Repository} from 'typeorm';
+import {DataSource, In, Repository} from 'typeorm';
 
 import {REDIS} from '@core/redis/redis.constants';
 import {Account} from '@modules/account/account.entity';
@@ -19,6 +19,7 @@ import {
 	BANK_TRANSACTION_FINANCIAL_EVENT_SOURCES,
 	BANK_TRANSACTION_FINANCIAL_EVENT_TYPES,
 } from '@modules/banking/bank-transaction-financial-event';
+import {BankTransactionFxRate} from '@modules/banking/bank-transaction-fx-rate.entity';
 import {BankTransaction} from '@modules/banking/bank-transaction.entity';
 import {EnableBankingBalance, EnableBankingTransaction} from '@modules/banking/enable-banking.types';
 import {BankingEncryptionService} from '@modules/banking/services/banking-encryption.service';
@@ -320,7 +321,7 @@ describe('BankConnectionController', () => {
 					identificationHash: 'stable-account-hash-success',
 					name: 'Joe',
 					details: 'Main account',
-					currency: 'eur',
+					currency: ' eUr ',
 					cashAccountType: 'CACC',
 					usage: 'PRIV',
 				},
@@ -613,6 +614,90 @@ describe('BankConnectionController', () => {
 		expect(response.body).toEqual([]);
 	});
 
+	it('returns balances in the owner’s base currency from stored ECB rates', async () => {
+		const fxRates = app.get(DataSource).getRepository(BankTransactionFxRate);
+		const accounts = app.get(DataSource).getRepository(Account);
+		const connection = await fixtures.createConnection(account);
+		const [euro, dollar, pound, franc, unknown] = await fixtures.createBankAccounts(connection, [
+			{currency: 'EUR', currentBalanceAmount: '123.45000000'},
+			{currency: 'USD', currentBalanceAmount: '-100.00500000'},
+			{currency: 'GBP', currentBalanceAmount: '-100.00000000'},
+			{currency: 'CHF', currentBalanceAmount: '50.00000000'},
+			{currency: 'USD', currentBalanceAmount: null},
+		]);
+		// Other suites may leave stored rates behind.
+		await fxRates.delete({currency: In(['USD', 'GBP', 'CHF'])});
+		// GBP and USD dates differ, so a cross rate must use the newest date both were published.
+		const rates = await fxRates.save([
+			{currency: 'USD', rateDate: '2026-09-01', rateToEur: '1.2', provider: 'ECB'},
+			{currency: 'USD', rateDate: '2026-09-02', rateToEur: '1.25', provider: 'ECB'},
+			{currency: 'USD', rateDate: '2999-01-01', rateToEur: '9', provider: 'ECB'},
+			{currency: 'GBP', rateDate: '2026-09-01', rateToEur: '0.8', provider: 'ECB'},
+			{currency: 'GBP', rateDate: '2026-09-03', rateToEur: '0.85', provider: 'ECB'},
+		]);
+		const balancesOf = async () => {
+			const response = await verifiedAgent.get('/bank-connections').expect(200);
+			const listed = response.body.find(({id}: {id: string}) => id === connection.id);
+			return {
+				baseCurrency: listed.baseCurrency,
+				accounts: Object.fromEntries(
+					listed.bankAccounts.map(
+						(bankAccount: {
+							id: string;
+							currentBalanceInBaseCurrency: string;
+							baseCurrencyRateDate: string;
+						}) => [
+							bankAccount.id,
+							[bankAccount.currentBalanceInBaseCurrency, bankAccount.baseCurrencyRateDate],
+						],
+					),
+				),
+			};
+		};
+
+		try {
+			await accounts.update({id: account.id}, {baseCurrency: null});
+			expect(await balancesOf()).toEqual({
+				baseCurrency: null,
+				accounts: {
+					[euro.id]: [null, null],
+					[dollar.id]: [null, null],
+					[pound.id]: [null, null],
+					[franc.id]: [null, null],
+					[unknown.id]: [null, null],
+				},
+			});
+
+			await accounts.update({id: account.id}, {baseCurrency: 'EUR'});
+			expect(await balancesOf()).toEqual({
+				baseCurrency: 'EUR',
+				accounts: {
+					[euro.id]: ['123.45', null],
+					[dollar.id]: ['-80.00', '2026-09-02'],
+					[pound.id]: ['-117.65', '2026-09-03'],
+					[franc.id]: [null, null],
+					[unknown.id]: [null, null],
+				},
+			});
+
+			await accounts.update({id: account.id}, {baseCurrency: 'USD'});
+			expect(await balancesOf()).toEqual({
+				baseCurrency: 'USD',
+				accounts: {
+					[euro.id]: ['154.31', '2026-09-02'],
+					[dollar.id]: ['-100.01', null],
+					[pound.id]: ['-150.00', '2026-09-01'],
+					[franc.id]: [null, null],
+					[unknown.id]: [null, null],
+				},
+			});
+		} finally {
+			await accounts.update({id: account.id}, {baseCurrency: null});
+			await fxRates.delete(rates.map(({id}) => id));
+			await bankConnectionRepository.delete({id: connection.id});
+		}
+	});
+
 	it('enforces ownership and UUID validation for transaction reads', async () => {
 		const {connection} = await createAuthorizedConnection('transaction-access-check');
 		const transactionPath = `/bank-connections/${connection.id}/transactions`;
@@ -781,6 +866,50 @@ describe('BankConnectionController', () => {
 				.map(({id}) => id)
 				.sort(),
 		).toEqual(stored.map(({id}) => id).sort());
+	});
+
+	it('normalizes incoming currency and direction codes before persisting a sync', async () => {
+		const {connection, bankAccount} = await createAuthorizedConnection('canonical-codes-session');
+		getAccountBalances.mockResolvedValueOnce(makeBalances().map((balance) => ({...balance, currency: ' eUr '})));
+		getAccountTransactions.mockResolvedValueOnce([
+			{
+				...makeTransactions('canonical-codes')[0],
+				amount: '12.50',
+				currency: ' eUr ',
+				creditDebitIndicator: ' dbit ',
+				balanceAfterCurrency: ' eUr ',
+				instructedCurrency: ' uSd ',
+				exchangeRateUnitCurrency: ' uSd ',
+			},
+		]);
+
+		try {
+			expect(await app.get(BankingSyncService).synchronize(account.id, connection.id)).toMatchObject({
+				status: 'SUCCEEDED',
+				transactionsAdded: 1,
+			});
+			expect(await bankTransactionRepository.findOneByOrFail({bankAccountId: bankAccount.id})).toMatchObject({
+				amount: '-12.50000000',
+				currency: 'EUR',
+				creditDebitIndicator: 'DBIT',
+				balanceAfterCurrency: 'EUR',
+				instructedCurrency: 'USD',
+				exchangeRateUnitCurrency: 'USD',
+			});
+			const balances = await bankAccountBalanceRepository.findBy({bankAccountId: bankAccount.id});
+			expect(balances).toHaveLength(2);
+			expect(balances.map(({currency}) => currency)).toEqual(['EUR', 'EUR']);
+			const response = await verifiedAgent
+				.get('/bank-transactions')
+				.query({
+					'filter[bankAccountIds][]': bankAccount.id,
+					'filter[cashFlows][]': 'SPENDING',
+				})
+				.expect(200);
+			expect(response.body.total).toBe(1);
+		} finally {
+			await bankConnectionRepository.delete(connection.id);
+		}
 	});
 
 	it('synchronizes balances and transactions without exposing provider identifiers', async () => {

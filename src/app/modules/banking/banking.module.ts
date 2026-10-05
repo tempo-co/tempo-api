@@ -20,6 +20,7 @@ import {BankTransactionCategorizationModule} from './categorization/bank-transac
 import {BankTransactionAmountConversionProcessor} from './services/bank-transaction-amount-conversion.processor';
 import {BankTransactionAmountConversionQueueService} from './services/bank-transaction-amount-conversion.queue.service';
 import {BankTransactionAmountConversionService} from './services/bank-transaction-amount-conversion.service';
+import {BankTransactionSummaryService} from './services/bank-transaction-summary.service';
 import {BankTransactionService} from './services/bank-transaction.service';
 import {BankingAuthorizationStateModule} from './services/banking-authorization-state.module';
 import {BankingConnectionLockService} from './services/banking-connection-lock.service';
@@ -57,6 +58,7 @@ import {OwnTransferService} from './services/own-transfer.service';
 		BankingSyncQueueService,
 		BankingSyncProcessor,
 		BankTransactionService,
+		BankTransactionSummaryService,
 		BankTransactionAmountConversionService,
 		BankTransactionAmountConversionQueueService,
 		BankTransactionAmountConversionProcessor,

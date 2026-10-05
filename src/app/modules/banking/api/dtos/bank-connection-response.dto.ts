@@ -26,6 +26,10 @@ export class BankAccountResponseDto {
 	maskedIdentifier: string | null;
 	currentBalanceAmount: string | null;
 	currentBalanceType: string | null;
+	/** Approximate: the current balance converted at {@link baseCurrencyRateDate}'s ECB rate, to the cent. */
+	currentBalanceInBaseCurrency: string | null;
+	/** The ECB rate date used; null when no conversion was needed or possible. */
+	baseCurrencyRateDate: string | null;
 	balanceUpdatedAt: Date | null;
 	isActive: boolean;
 	latestBalances: BankAccountBalanceResponseDto[];
@@ -53,6 +57,8 @@ export class BankConnectionResponseDto {
 	lastSyncError: string | null;
 	nextSyncAt: Date | null;
 	syncStatus: string;
+	/** The owner's base currency; null until the first conversion run has picked one. */
+	baseCurrency: string | null;
 	bankAccounts: BankAccountResponseDto[];
 }
 

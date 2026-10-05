@@ -51,6 +51,7 @@ import {
 	addDays,
 	buildPostgresValuesList,
 	chunkArray,
+	normalizeBankCode,
 	safeErrorName,
 	selectPreferredBalance,
 	truncate,
@@ -1006,7 +1007,7 @@ export class BankingSyncService {
 			name: truncate(balance.name, 255),
 			balanceType: truncate(balance.balanceType, 32) ?? 'UNKNOWN',
 			amount: balance.amount,
-			currency: balance.currency.toUpperCase(),
+			currency: normalizeBankCode(balance.currency),
 			lastChangeDateTime: this.toDateTime(balance.lastChangeDateTime),
 			referenceDate: this.toDateOnly(balance.referenceDate),
 			lastCommittedTransaction: truncate(balance.lastCommittedTransaction, 255),
@@ -1020,8 +1021,9 @@ export class BankingSyncService {
 		aspspName: string,
 		provider: string,
 	) {
-		const amount = this.toSignedAmount(transaction.amount, transaction.creditDebitIndicator);
-		const currency = transaction.currency.toUpperCase();
+		const creditDebitIndicator = truncate(normalizeBankCode(transaction.creditDebitIndicator ?? ''), 8);
+		const amount = this.toSignedAmount(transaction.amount, creditDebitIndicator);
+		const currency = normalizeBankCode(transaction.currency);
 		const description = truncate(transaction.description, 500);
 		const counterpartyName = truncate(transaction.counterpartyName, 255);
 		const counterpartyIban = transaction.counterpartyIban ?? null;
@@ -1032,7 +1034,6 @@ export class BankingSyncService {
 		const valueDate = this.toDateOnly(transaction.valueDate);
 		const providerTransactionId = truncate(transaction.providerTransactionId, 255);
 		const entryReference = truncate(transaction.entryReference, 255);
-		const creditDebitIndicator = truncate(transaction.creditDebitIndicator, 8)?.toUpperCase() ?? null;
 		const bankTransactionCode = truncate(transaction.bankTransactionCode, 64);
 		const bankTransactionSubCode = truncate(transaction.bankTransactionSubCode, 64);
 		const bankTransactionDescription = truncate(transaction.bankTransactionDescription, 255);
@@ -1055,10 +1056,10 @@ export class BankingSyncService {
 		const hasInstructedAmount = Boolean(transaction.instructedAmount && transaction.instructedCurrency);
 		const hasExchangeRate = Boolean(transaction.exchangeRate && transaction.exchangeRateUnitCurrency);
 		const instructedAmount = hasInstructedAmount ? (transaction.instructedAmount ?? null) : null;
-		const instructedCurrency = hasInstructedAmount ? (transaction.instructedCurrency?.toUpperCase() ?? null) : null;
+		const instructedCurrency = hasInstructedAmount ? normalizeBankCode(transaction.instructedCurrency!) : null;
 		const exchangeRate = hasExchangeRate ? (transaction.exchangeRate ?? null) : null;
 		const exchangeRateUnitCurrency = hasExchangeRate
-			? (transaction.exchangeRateUnitCurrency?.toUpperCase() ?? null)
+			? normalizeBankCode(transaction.exchangeRateUnitCurrency!)
 			: null;
 		const exchangeRateType = truncate(transaction.exchangeRateType, 16);
 		const referenceNumber = truncate(transaction.referenceNumber, 255);
@@ -1155,7 +1156,7 @@ export class BankingSyncService {
 			financialEventSource: financialEvent?.source ?? null,
 			financialEventRuleVersion: financialEvent?.ruleVersion ?? null,
 			balanceAfterAmount: hasBalanceAfter ? transaction.balanceAfterAmount : null,
-			balanceAfterCurrency: hasBalanceAfter ? transaction.balanceAfterCurrency?.toUpperCase() : null,
+			balanceAfterCurrency: hasBalanceAfter ? normalizeBankCode(transaction.balanceAfterCurrency!) : null,
 			instructedAmount,
 			instructedCurrency,
 			exchangeRate,
@@ -1245,14 +1246,13 @@ export class BankingSyncService {
 		return createHash('sha256').update(identity).digest('hex');
 	}
 
-	private toSignedAmount(amount: string, creditDebitIndicator?: string): string {
+	private toSignedAmount(amount: string, creditDebitIndicator: string | null): string {
 		const normalizedAmount = amount.trim();
-		const normalizedIndicator = creditDebitIndicator?.trim().toUpperCase();
 		const isNegative = normalizedAmount.startsWith('-');
 		const unsignedAmount = normalizedAmount.replace(/^[+-]/, '');
 
-		if (normalizedIndicator === 'DBIT' && !isNegative) return `-${unsignedAmount}`;
-		if (normalizedIndicator === 'CRDT' && isNegative) return unsignedAmount;
+		if (creditDebitIndicator === 'DBIT' && !isNegative) return `-${unsignedAmount}`;
+		if (creditDebitIndicator === 'CRDT' && isNegative) return unsignedAmount;
 		return normalizedAmount;
 	}
 

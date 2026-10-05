@@ -23,6 +23,9 @@ const BANKING_SERVICE_DEPENDENCIES = [
 	'ownTransferService',
 ] as const;
 
+/** An owner whose base currency is not chosen yet, so balances are not converted. */
+const OWNER = {id: 'owner-account-id', baseCurrency: null};
+
 const DEFAULT_DEPENDENCIES: Partial<Record<string, unknown>> = {
 	ownTransferService: {recomputeForOwnerSafely: jest.fn().mockResolvedValue(undefined)},
 };
@@ -472,7 +475,7 @@ describe('BankingService findAll', () => {
 			bankAccountBalanceRepository,
 		});
 
-		const result = await service.findAll('owner-account-id');
+		const result = await service.findAll(OWNER);
 
 		expect(bankAccountRepository.createQueryBuilder).toHaveBeenCalledTimes(1);
 		expect(bankAccountBalanceRepository.createQueryBuilder).toHaveBeenCalledTimes(1);
@@ -517,7 +520,7 @@ describe('BankingService findAll', () => {
 			bankAccountBalanceRepository,
 		});
 
-		await expect(service.findAll('owner-account-id')).resolves.toEqual([]);
+		await expect(service.findAll(OWNER)).resolves.toEqual([]);
 		expect(bankAccountRepository.createQueryBuilder).not.toHaveBeenCalled();
 		expect(bankAccountBalanceRepository.createQueryBuilder).not.toHaveBeenCalled();
 	});
@@ -532,7 +535,7 @@ describe('BankingService findAll', () => {
 			bankAccountBalanceRepository,
 		});
 
-		const result = await service.findAll('owner-account-id');
+		const result = await service.findAll(OWNER);
 
 		expect(result).toEqual([expect.objectContaining({id: 'connection-id', bankAccounts: []})]);
 		expect(bankAccountBalanceRepository.createQueryBuilder).not.toHaveBeenCalled();
