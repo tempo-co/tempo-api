@@ -37,7 +37,15 @@ export type BankTransactionCashFlowTreatment =
  * List and summary cash flows. Unlike the per-row treatment, refunds count as (negative) spending and payments to
  * other people count as spending, so totals reconcile with the Home dashboard.
  */
-export const BANK_TRANSACTION_CASH_FLOW_FILTER_VALUES = ['SPENDING', 'INCOME', 'INTERNAL', 'UNKNOWN'] as const;
+export const BANK_TRANSACTION_CASH_FLOW_FILTER_VALUES = [
+	'SPENDING',
+	'INCOME',
+	'INTERNAL',
+	// The two kinds of internal movement, for narrowing `INTERNAL`.
+	BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE,
+	BANK_TRANSACTION_OWN_TRANSFER_FILTER,
+	'UNKNOWN',
+] as const;
 export type BankTransactionCashFlowFilterValue = (typeof BANK_TRANSACTION_CASH_FLOW_FILTER_VALUES)[number];
 
 export const BANK_TRANSACTION_BASE_AMOUNT_FILTER_VALUES = ['PRESENT', 'MISSING'] as const;

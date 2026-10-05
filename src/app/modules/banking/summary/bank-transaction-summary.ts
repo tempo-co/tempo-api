@@ -16,7 +16,8 @@ export type SpendingPaceInput = {
 };
 
 export type SpendingPaceDay = {day: number; spending: string; cumulative: string};
-export type BaselineDay = {day: number; average: string; low: string | null; high: string | null};
+export type BaselineTotal = {average: string; low: string | null; high: string | null};
+export type BaselineDay = {day: number} & BaselineTotal;
 
 export function buildSpendingPace(input: SpendingPaceInput): {daily: SpendingPaceDay[]; baseline: BaselineDay[]} {
 	let cumulative = 0n;
@@ -30,15 +31,19 @@ export function buildSpendingPace(input: SpendingPaceInput): {daily: SpendingPac
 	const cumulativeByMonth = input.baseline.map((month) => cumulativeSeries(month.daily, month.days));
 	const baseline = days(input.daysInMonth).map((day) => {
 		const totals = cumulativeByMonth.map((series) => series[Math.min(day, series.length) - 1]);
-		const hasBand = totals.length > 1;
-		return {
-			day,
-			average: formatCents(averageCents(totals)),
-			low: hasBand ? formatCents(totals.reduce((min, value) => (value < min ? value : min))) : null,
-			high: hasBand ? formatCents(totals.reduce((max, value) => (value > max ? value : max))) : null,
-		};
+		return {day, ...summarizeBaseline(totals)};
 	});
 	return {daily, baseline};
+}
+
+/** Average and observed low-high band; callers supply at least one baseline month. */
+export function summarizeBaseline(totals: readonly bigint[]): BaselineTotal {
+	const hasBand = totals.length > 1;
+	return {
+		average: formatCents(averageCents(totals)),
+		low: hasBand ? formatCents(totals.reduce((min, value) => (value < min ? value : min))) : null,
+		high: hasBand ? formatCents(totals.reduce((max, value) => (value > max ? value : max))) : null,
+	};
 }
 
 /** The `count` calendar months before `month` (`YYYY-MM`), oldest first. */

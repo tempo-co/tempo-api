@@ -744,6 +744,34 @@ describe('BankConnectionController', () => {
 		expect(response.body.transactions[0].id).toBe(stored.id);
 	});
 
+	it('stores amounts already in the base currency when a sync saves them', async () => {
+		const {connection, bankAccount} = await createAuthorizedConnection('same-currency-base-amount-session');
+		const [euro, dollar] = makeTransactions('same-currency-base-amount');
+		const foreign = {...dollar, currency: 'USD', instructedAmount: undefined, instructedCurrency: undefined};
+		const accounts = app.get(DataSource).getRepository(Account);
+		await accounts.update({id: account.id}, {baseCurrency: 'EUR'});
+		try {
+			expect(await synchronizeQueued(connection.id, [euro, foreign])).toMatchObject({
+				status: 'SUCCEEDED',
+				transactionsAdded: 2,
+			});
+		} finally {
+			await accounts.update({id: account.id}, {baseCurrency: null});
+		}
+
+		const rows = await bankTransactionRepository.findBy({bankAccountId: bankAccount.id});
+		expect(rows.find(({currency}) => currency === 'EUR')).toMatchObject({
+			amountInBaseCurrency: '-12.50',
+			baseAmountMethod: 'SAME',
+			baseAmountRateDate: null,
+		});
+		// Foreign amounts still wait for their ECB rate.
+		expect(rows.find(({currency}) => currency === 'USD')).toMatchObject({
+			amountInBaseCurrency: null,
+			baseAmountMethod: null,
+		});
+	});
+
 	it('clears a stored base amount when a re-sync changes its conversion inputs', async () => {
 		const {connection, bankAccount} = await createAuthorizedConnection('conversion-input-change-session');
 		const [changing, unchanged] = makeTransactions('conversion-input-change');

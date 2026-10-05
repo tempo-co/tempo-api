@@ -23,6 +23,7 @@ import {
 	formatCents,
 	parseCents,
 	previousMonths,
+	summarizeBaseline,
 } from '../summary/bank-transaction-summary';
 import {
 	SQL_CATEGORIZATION_FAILED,
@@ -70,6 +71,7 @@ export class BankTransactionSummaryService {
 		if (asOf < monthStart) throw new BadRequestException(BANKING_TRANSACTION_SUMMARY_FUTURE_MONTH);
 		const through = asOf < monthEnd ? asOf : monthEnd;
 		const throughDay = Number(through.slice(8));
+		const isPastMonth = month < asOf.slice(0, 7);
 
 		const candidateMonths = previousMonths(month, BASELINE_MONTHS);
 		// Flows cover every candidate month; months before the first booking simply have no rows.
@@ -98,7 +100,7 @@ export class BankTransactionSummaryService {
 			const viewed = row.month === month;
 			if (row.flow === 'INCOME') {
 				if (viewed) income += cents;
-				else if (row.day <= throughDay) addTo(baselineIncome, row.month, cents);
+				else if (isPastMonth || row.day <= throughDay) addTo(baselineIncome, row.month, cents);
 				continue;
 			}
 			const spending = -cents;
@@ -112,7 +114,7 @@ export class BankTransactionSummaryService {
 			// A sync between the queries may add rows before the first booking date read above.
 			if (!monthDaily) continue;
 			addTo(monthDaily, row.day, spending);
-			if (row.day <= throughDay) {
+			if (isPastMonth || row.day <= throughDay) {
 				const byMonth = baselineCategories.get(row.category) ?? new Map<string, bigint>();
 				baselineCategories.set(row.category, addTo(byMonth, row.month, spending));
 			}
@@ -131,6 +133,15 @@ export class BankTransactionSummaryService {
 		const baselineAverage = (byMonth: ReadonlyMap<string, bigint> | undefined) =>
 			formatCents(averageCents(baselineMonths.map((baselineMonth) => byMonth?.get(baselineMonth) ?? 0n)));
 		const hasBaseline = baselineMonths.length > 0;
+		const usual = !hasBaseline
+			? null
+			: isPastMonth
+				? summarizeBaseline(
+						baselineMonths.map((baselineMonth) =>
+							[...baselineDaily.get(baselineMonth)!.values()].reduce((sum, value) => sum + value, 0n),
+						),
+					)
+				: pace.baseline[throughDay - 1];
 
 		return {
 			month,
@@ -148,7 +159,9 @@ export class BankTransactionSummaryService {
 			baseline: {
 				months: baselineMonths,
 				daily: pace.baseline,
-				spendingByThrough: hasBaseline ? pace.baseline[throughDay - 1].average : null,
+				spendingByThrough: usual?.average ?? null,
+				spendingRangeByThrough:
+					usual?.low != null && usual.high != null ? {low: usual.low, high: usual.high} : null,
 				incomeByThrough: hasBaseline ? baselineAverage(baselineIncome) : null,
 			},
 			categories: [...categories.entries()]

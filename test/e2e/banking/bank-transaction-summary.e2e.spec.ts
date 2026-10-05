@@ -133,6 +133,7 @@ describe('BankTransactionSummary', () => {
 		expect(body.baseline).toMatchObject({
 			months: ['2026-07', '2026-08', '2026-09'],
 			spendingByThrough: '36.67',
+			spendingRangeByThrough: {low: '20.00', high: '60.00'},
 			incomeByThrough: '333.33',
 		});
 		expect(body.baseline.daily).toHaveLength(31);
@@ -234,25 +235,75 @@ describe('BankTransactionSummary', () => {
 		const {body} = await otherAgent.get(SUMMARY).query(OCTOBER).expect(200);
 
 		expect(body.totals.spending).toBe('999.00');
-		expect(body.baseline.months).toEqual(['2026-09']);
+		expect(body.baseline).toMatchObject({months: ['2026-09'], spendingRangeByThrough: null});
 		expect(body.baseline.daily[17]).toEqual({day: 18, average: '40.00', low: null, high: null});
 		expect(body.categories).toEqual([
 			{category: 'FOOD_AND_DRINK', spending: '999.00', count: 1, baselineAverage: '40.00'},
 		]);
 	});
 
-	it('summarizes a past month through its last day', async () => {
+	it('compares a past month with whole earlier months, including their 31st', async () => {
 		const {body} = await ownerAgent.get(SUMMARY).query({month: '2026-09', asOf: '2026-10-18'}).expect(200);
 
 		expect(body).toMatchObject({through: '2026-09-30', daysInMonth: 30, totals: {spending: '75.00'}});
 		expect(body.daily).toHaveLength(30);
-		expect(body.baseline.months).toEqual(['2026-07', '2026-08']);
+		// August's spending on the 31st counts: 120.00 in July, 330.00 in August.
+		expect(body.baseline).toMatchObject({
+			months: ['2026-07', '2026-08'],
+			spendingByThrough: '225.00',
+			spendingRangeByThrough: {low: '120.00', high: '330.00'},
+			incomeByThrough: '500.00',
+		});
+		// The pace chart still compares the same days; the headline uses whole months.
+		expect(body.baseline.daily[29]).toEqual({day: 30, average: '75.00', low: '30.00', high: '120.00'});
+		expect(body.categories).toEqual([
+			{category: 'TRANSFER_OUT', spending: '60.00', count: 1, baselineAverage: '0.00'},
+			{category: 'FOOD_AND_DRINK', spending: '15.00', count: 1, baselineAverage: '75.00'},
+		]);
+	});
+
+	it('keeps same-day comparisons on the last day of the current month', async () => {
+		const {body} = await ownerAgent.get(SUMMARY).query({month: '2026-09', asOf: '2026-09-30'}).expect(200);
+		expect(body.baseline).toMatchObject({
+			spendingByThrough: '75.00',
+			spendingRangeByThrough: {low: '30.00', high: '120.00'},
+		});
+	});
+
+	it('includes every day of longer baseline months when viewing completed February', async () => {
+		const extra = await fixtures.createTransactions(ownerBankAccount, [
+			bookedRow('2027-01-28', '-10.00', {category: 'FOOD_AND_DRINK'}),
+			bookedRow('2027-01-31', '-90.00', {category: 'FOOD_AND_DRINK'}),
+			bookedRow('2027-01-31', '300.00', {category: 'INCOME'}),
+			bookedRow('2027-02-01', '-15.00', {category: 'FOOD_AND_DRINK'}),
+		]);
+		try {
+			const {body} = await ownerAgent.get(SUMMARY).query({month: '2027-02', asOf: '2027-03-01'}).expect(200);
+			expect(body.baseline).toMatchObject({
+				months: ['2026-11', '2026-12', '2027-01'],
+				spendingByThrough: '33.33',
+				spendingRangeByThrough: {low: '0.00', high: '100.00'},
+				incomeByThrough: '100.00',
+			});
+			expect(body.baseline.daily[27]).toEqual({day: 28, average: '3.33', low: '0.00', high: '10.00'});
+			expect(body.categories).toEqual([
+				{category: 'FOOD_AND_DRINK', spending: '15.00', count: 1, baselineAverage: '33.33'},
+			]);
+		} finally {
+			await fixtures.transactions.delete(extra.map(({id}) => id));
+		}
 	});
 
 	it('compares with nothing before the first booked transaction', async () => {
 		const {body} = await ownerAgent.get(SUMMARY).query({month: '2026-07', asOf: '2026-10-18'}).expect(200);
 
-		expect(body.baseline).toEqual({months: [], daily: [], spendingByThrough: null, incomeByThrough: null});
+		expect(body.baseline).toEqual({
+			months: [],
+			daily: [],
+			spendingByThrough: null,
+			spendingRangeByThrough: null,
+			incomeByThrough: null,
+		});
 		expect(body.categories).toEqual([
 			{category: 'FOOD_AND_DRINK', spending: '120.00', count: 2, baselineAverage: null},
 		]);

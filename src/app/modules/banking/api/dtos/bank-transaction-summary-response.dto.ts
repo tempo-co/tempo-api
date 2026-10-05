@@ -15,7 +15,11 @@ export class BankTransactionSummaryResponseDto {
 	baseline: {
 		months: string[];
 		daily: BaselineDay[];
+		/** Same-day average for the current month; whole-month average for a past month. */
 		spendingByThrough: string | null;
+		/** Same comparison period as spendingByThrough; null with fewer than two baseline months. */
+		spendingRangeByThrough: {low: string; high: string} | null;
+		/** Same-day average for the current month; whole-month average for a past month. */
 		incomeByThrough: string | null;
 	};
 	categories: BankTransactionSummaryCategoryDto[];
@@ -25,6 +29,7 @@ export class BankTransactionSummaryCategoryDto {
 	category: BankTransactionCategoryFilterValue;
 	spending: string;
 	count: number;
+	/** Same-day average for the current month; whole-month average for a past month. */
 	baselineAverage: string | null;
 }
 
