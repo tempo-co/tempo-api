@@ -37,6 +37,8 @@ const CASH_FLOW_SQL: Record<BankTransactionCashFlowFilterValue, string> = {
 	SPENDING: SQL_SPENDING,
 	INCOME: SQL_INCOME,
 	INTERNAL: SQL_INTERNAL,
+	CURRENCY_EXCHANGE: `("transaction"."financialEventType" = '${BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE}')`,
+	OWN_TRANSFER: '("transaction"."ownTransferEvidence" IS NOT NULL)',
 	UNKNOWN: SQL_UNKNOWN_DIRECTION,
 };
 

@@ -782,6 +782,12 @@ describe('BankTransactionController', () => {
 			expect(await idsFor({'filter[cashFlows][]': 'INCOME'})).toEqual([salary]);
 			expect(await idsFor({'filter[cashFlows][]': 'INTERNAL'})).toEqual(sorted(ownOut, ownIn, currencyExchange));
 			expect(await idsFor({'filter[cashFlows][]': 'UNKNOWN'})).toEqual([unknown]);
+			// The two kinds of internal movement, selectable on their own and alongside other cash flows.
+			expect(await idsFor({'filter[cashFlows][]': 'CURRENCY_EXCHANGE'})).toEqual([currencyExchange]);
+			expect(await idsFor({'filter[cashFlows][]': 'OWN_TRANSFER'})).toEqual(sorted(ownOut, ownIn));
+			expect(await idsFor({'filter[cashFlows][]': ['INCOME', 'CURRENCY_EXCHANGE']})).toEqual(
+				sorted(salary, currencyExchange),
+			);
 			expect(await idsFor({'filter[cashFlows][]': ['INCOME', 'UNKNOWN']})).toEqual(sorted(salary, unknown));
 			expect(await idsFor({'filter[cashFlows][]': 'SPENDING', 'filter[baseAmount]': 'PRESENT'})).toEqual(
 				sorted(expense, transferOut, refund, failed, pending),

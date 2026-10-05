@@ -232,6 +232,7 @@ describe('BankingSyncService synchronization lock', () => {
 	};
 	type TransactionRepository = {
 		find: jest.Mock;
+		query: jest.Mock;
 		insert: jest.Mock;
 		upsert: jest.Mock;
 		update: jest.Mock;
@@ -314,6 +315,7 @@ describe('BankingSyncService synchronization lock', () => {
 		transactionRepository = {
 			find: jest.fn().mockResolvedValue([]),
 			findOne: jest.fn().mockResolvedValue(connection),
+			query: jest.fn().mockResolvedValue([]),
 			insert: jest.fn().mockResolvedValue(undefined),
 			upsert: jest.fn().mockResolvedValue(undefined),
 			update: jest.fn().mockResolvedValue({affected: 1}),

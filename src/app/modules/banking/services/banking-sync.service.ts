@@ -852,6 +852,7 @@ export class BankingSyncService {
 			await repository.upsert(eventTransactionValues, conflictColumns);
 		}
 		await this.clearStaleBaseAmounts(repository, existingTransactions);
+		await this.copySameCurrencyBaseAmounts(repository, bankAccount.id);
 
 		const eventStableIdentityKeys = [
 			...new Set(eventTransactionValues.map(({stableIdentityKey}) => stableIdentityKey)),
@@ -924,6 +925,30 @@ export class BankingSyncService {
 				: this.getInsertedTransactionIds(insertResult.raw);
 
 		return {transactionsAdded, persistedTransactionIds};
+	}
+
+	/**
+	 * Stores amounts already in the owner's base currency right away, so they never wait for the conversion job
+	 * and count in totals as soon as they are synced. Matches the job's `SAME` method; other currencies still wait
+	 * for rates. Owners without a base currency yet (before their first conversion run) are left to the job.
+	 */
+	private async copySameCurrencyBaseAmounts(
+		repository: Repository<BankTransaction>,
+		bankAccountId: BankAccount['id'],
+	): Promise<void> {
+		await repository.query(
+			`UPDATE "bank_transactions" AS t
+			SET "amountInBaseCurrency" = ROUND(t."amount", 2), "baseAmountMethod" = 'SAME',
+				"baseAmountRateDate" = NULL, "updatedAt" = CURRENT_TIMESTAMP
+			FROM "bank_accounts" bank_account
+			INNER JOIN "bank_connections" connection ON connection."id" = bank_account."bankConnectionId"
+			INNER JOIN "accounts" account ON account."id" = connection."accountId"
+			WHERE bank_account."id" = $1
+				AND t."bankAccountId" = bank_account."id"
+				AND t."baseAmountMethod" IS NULL
+				AND t."currency" = account."baseCurrency"`,
+			[bankAccountId],
+		);
 	}
 
 	/**
