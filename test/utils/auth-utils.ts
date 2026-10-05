@@ -11,7 +11,7 @@ import {EmailUtils} from './email-utils';
 export function createAccountCredentials(): SignUpDto {
 	return {
 		name: faker.person.fullName(),
-		email: faker.internet.email(),
+		email: faker.internet.email().toLowerCase(),
 		password: faker.internet.password({length: 10}),
 	};
 }
