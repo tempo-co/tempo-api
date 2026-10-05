@@ -138,7 +138,7 @@ DELETE FROM bank_sync_runs;
 UPDATE bank_connections
 SET "providerSessionId" = NULL,
     "authorizationStateHash" = NULL,
-    status = 'FAILED',
+    status = 'EXPIRED',
     "consentValidUntil" = NULL,
     "lastSyncedAt" = NULL,
     "lastSyncError" = NULL,
