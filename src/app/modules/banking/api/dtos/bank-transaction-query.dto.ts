@@ -37,7 +37,8 @@ import {
 
 export const DEFAULT_BANK_TRANSACTION_PAGE_INDEX = DEFAULT_PAGE_INDEX;
 export const DEFAULT_BANK_TRANSACTION_PAGE_SIZE = DEFAULT_PAGE_SIZE;
-export const BANK_TRANSACTION_PAGE_SIZE_OPTIONS = PAGE_SIZE_OPTIONS;
+// The Home dashboard shows its five most recent transactions.
+export const BANK_TRANSACTION_PAGE_SIZE_OPTIONS = [5, ...PAGE_SIZE_OPTIONS];
 
 export enum BankTransactionSortField {
 	BOOKING_DATE = 'bookingDate',

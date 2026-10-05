@@ -799,6 +799,7 @@ describe('BankTransactionController', () => {
 
 	it.each([
 		['a positive page index', 'pagination[pageIndex]', '1', 200],
+		['the dashboard page size', 'pagination[pageSize]', '5', 200],
 		['an existing allowed page size', 'pagination[pageSize]', '50', 200],
 		['the maximum page size', 'pagination[pageSize]', '100', 200],
 		['a suffix in the page index', 'pagination[pageIndex]', '1oops', 400],
