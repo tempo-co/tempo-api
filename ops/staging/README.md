@@ -19,4 +19,6 @@ The Compose file hard-codes `BANKING_INTEGRATION_ENABLED=false`, `AI_CATEGORIZAT
 
 After a deploy changes an image, `tempo-staging-refresh.sh` restores the newest `~/backups/tempo/tempo-YYYYMMDD-HHMMSS.dump` into a temporary staging database, applies the current schema, clears provider sessions and sync state, swaps it in, flushes staging Redis and health-checks the stack. If staging is unhealthy after the swap, the previous database is put back. It never connects to production. `tempo-staging-refresh.sh seed --confirm-seeded-reset` does the same with seed data instead.
 
+Restored bank connections are marked `EXPIRED` with provider sessions, consent and sync scheduling cleared. Retained accounts, balances and transactions stay visible in Home with a reconnect warning.
+
 The restored data keeps your production login (email and password hash), which is why staging must stay on loopback. Production sessions are not copied, so sign in again after a refresh.
