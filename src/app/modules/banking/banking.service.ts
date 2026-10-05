@@ -191,7 +191,7 @@ export class BankingService {
 
 	async findAll({
 		id: accountId,
-		baseCurrency: storedBaseCurrency,
+		baseCurrency,
 	}: Pick<Account, 'id' | 'baseCurrency'>): Promise<BankConnectionResponseDto[]> {
 		const connections = await this.bankConnectionRepository
 			.createQueryBuilder('connection')
@@ -210,7 +210,6 @@ export class BankingService {
 			.where('bankConnection.id IN (:...connectionIds)', {connectionIds: connections.map(({id}) => id)})
 			.orderBy('bankAccount.createdAt', 'ASC')
 			.getMany();
-		const baseCurrency = storedBaseCurrency;
 		const [latestBalancesByAccountId, convertedBalances] = await Promise.all([
 			this.findLatestBalancesByAccountId(bankAccounts.map(({id}) => id)),
 			this.convertBalances(bankAccounts, baseCurrency),

@@ -7,8 +7,19 @@ import {
 	type BankTransactionCashFlowFilterValue,
 } from '../bank-transaction-financial-event';
 import type {BankTransaction} from '../bank-transaction.entity';
-import type {BankTransactionCategoryStatusFilterValue} from '../categorization/bank-transaction-categorization.types';
-import {BANK_TRANSACTION_UNCATEGORIZED} from '../categorization/bank-transaction-category';
+import type {
+	BankTransactionCategorizationStatus,
+	BankTransactionCategoryStatusFilterValue,
+} from '../categorization/bank-transaction-categorization.types';
+import {
+	BANK_TRANSACTION_UNCATEGORIZED,
+	type BankTransactionCategory,
+} from '../categorization/bank-transaction-category';
+
+const REFUND = 'REFUND' satisfies BankTransactionCategory;
+const FAILED = 'FAILED' satisfies BankTransactionCategorizationStatus;
+const PENDING = 'PENDING' satisfies BankTransactionCategorizationStatus;
+const PROCESSING = 'PROCESSING' satisfies BankTransactionCategorizationStatus;
 
 // Provider writes persist canonical currency and direction codes.
 const INDICATOR_SQL = '"transaction"."creditDebitIndicator"';
@@ -16,8 +27,8 @@ const INDICATOR_SQL = '"transaction"."creditDebitIndicator"';
 // Null-safe on purpose: these predicates are negated, and `NOT (NULL OR FALSE)` would drop ordinary rows.
 export const SQL_INTERNAL = `("transaction"."financialEventType" IS NOT DISTINCT FROM '${BANK_TRANSACTION_FINANCIAL_EVENT_TYPES.CURRENCY_EXCHANGE}' OR "transaction"."ownTransferEvidence" IS NOT NULL)`;
 /** Debits, including payments to other people, plus refund credits, which reduce spending. */
-export const SQL_SPENDING = `(NOT ${SQL_INTERNAL} AND (${INDICATOR_SQL} = 'DBIT' OR (${INDICATOR_SQL} = 'CRDT' AND "transaction"."category" = 'REFUND')))`;
-export const SQL_INCOME = `(NOT ${SQL_INTERNAL} AND ${INDICATOR_SQL} = 'CRDT' AND "transaction"."category" IS DISTINCT FROM 'REFUND')`;
+export const SQL_SPENDING = `(NOT ${SQL_INTERNAL} AND (${INDICATOR_SQL} = 'DBIT' OR (${INDICATOR_SQL} = 'CRDT' AND "transaction"."category" = '${REFUND}')))`;
+export const SQL_INCOME = `(NOT ${SQL_INTERNAL} AND ${INDICATOR_SQL} = 'CRDT' AND "transaction"."category" IS DISTINCT FROM '${REFUND}')`;
 export const SQL_UNKNOWN_DIRECTION = `(NOT ${SQL_INTERNAL} AND COALESCE(${INDICATOR_SQL}, '') NOT IN ('CRDT', 'DBIT'))`;
 export const SQL_OWN_TRANSFER_DEBIT = `("transaction"."ownTransferEvidence" IS NOT NULL AND ${INDICATOR_SQL} = 'DBIT')`;
 export const SQL_MISSING_BASE_AMOUNT = `(NOT ${SQL_INTERNAL} AND "transaction"."amountInBaseCurrency" IS NULL)`;
@@ -29,8 +40,8 @@ const CASH_FLOW_SQL: Record<BankTransactionCashFlowFilterValue, string> = {
 	UNKNOWN: SQL_UNKNOWN_DIRECTION,
 };
 
-export const SQL_CATEGORIZATION_FAILED = `("transaction"."categoryStatus" = 'FAILED' AND "transaction"."category" IS NULL)`;
-export const SQL_CATEGORIZING = `("transaction"."categoryStatus" IN ('PENDING', 'PROCESSING') AND "transaction"."category" IS NULL AND "transaction"."financialEventType" IS NULL)`;
+export const SQL_CATEGORIZATION_FAILED = `("transaction"."categoryStatus" = '${FAILED}' AND "transaction"."category" IS NULL)`;
+export const SQL_CATEGORIZING = `("transaction"."categoryStatus" IN ('${PENDING}', '${PROCESSING}') AND "transaction"."category" IS NULL AND "transaction"."financialEventType" IS NULL)`;
 
 const CATEGORY_STATUS_SQL: Record<BankTransactionCategoryStatusFilterValue, string> = {
 	FAILED: SQL_CATEGORIZATION_FAILED,

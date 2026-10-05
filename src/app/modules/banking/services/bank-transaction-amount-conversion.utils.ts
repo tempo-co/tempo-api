@@ -1,4 +1,4 @@
-import {addDays} from '../banking.utils';
+import {addDays, normalizeBankCode} from '../banking.utils';
 
 /** The longest span between consecutive ECB publications: Easter, or Christmas next to a weekend. */
 export const MAX_ECB_PUBLICATION_GAP_DAYS = 5;
@@ -74,6 +74,6 @@ function isBusinessDay(date: string): boolean {
 }
 
 export function normalizeCurrency(value: string | null | undefined): string | null {
-	const normalized = value?.trim().toUpperCase();
+	const normalized = value == null ? null : normalizeBankCode(value);
 	return normalized && /^[A-Z]{3}$/.test(normalized) ? normalized : null;
 }
