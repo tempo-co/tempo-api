@@ -1,5 +1,6 @@
 import {Body, Controller, Get, Param, ParseUUIDPipe, Patch, Query} from '@nestjs/common';
 import {ApiTags} from '@nestjs/swagger';
+import {Throttle, minutes} from '@nestjs/throttler';
 
 import {Account} from '@modules/account/account.entity';
 import {CurrentAccount} from '@modules/auth/decorators/current-user.decorator';
@@ -11,6 +12,12 @@ import {BankTransactionOwnTransferUpdateDto} from './dtos/bank-transaction-own-t
 import {BankTransactionQueryDto} from './dtos/bank-transaction-query.dto';
 import {BankTransactionSummaryQueryDto} from './dtos/bank-transaction-summary-query.dto';
 
+/**
+ * Browsing months or paging through results sends one request per view, and every month or page
+ * shares one per-route allowance, so these reads need more than the global default.
+ */
+const BROWSING_THROTTLE = {default: {limit: 300, ttl: minutes(1)}};
+
 @ApiTags('Bank transactions')
 @Controller('bank-transactions')
 export class BankTransactionController {
@@ -20,12 +27,14 @@ export class BankTransactionController {
 	) {}
 
 	@Get()
+	@Throttle(BROWSING_THROTTLE)
 	findAll(@CurrentAccount() account: Account, @Query() query: BankTransactionQueryDto) {
 		return this.bankTransactionService.findAll(account.id, query);
 	}
 
 	// Declared before `:id` so these paths are not parsed as transaction ids.
 	@Get('summary')
+	@Throttle(BROWSING_THROTTLE)
 	getSummary(@CurrentAccount() account: Account, @Query() query: BankTransactionSummaryQueryDto) {
 		return this.bankTransactionSummaryService.getSummary(account, query);
 	}
