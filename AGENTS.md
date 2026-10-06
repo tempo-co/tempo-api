@@ -31,6 +31,8 @@ This repository and everything attached to it (commits, PRs, comments, issues, C
 
 ## Build, lint, format, and test
 
+- Size local verification to the change: run relevant static checks and focused tests, including regression proof where appropriate. Let PR CI run the full suite on fresh services. Run the full suite locally for cross-cutting changes, gaps in CI, or failures requiring reproduction. A complete passing CI run on the current head is the delivery gate.
+
 - Build: `npm run build` (clears `dist`, then runs `nest build`).
 - CI-equivalent checks: `npm run lint:check` and `npm run format:check`.
 - Auto-fixing variants: `npm run lint` and `npm run format` modify files.
