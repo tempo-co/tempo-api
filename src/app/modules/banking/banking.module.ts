@@ -29,6 +29,7 @@ import {RecurringContinuationUnlink} from './recurring/recurring-continuation-un
 import {RecurringSeriesHide} from './recurring/recurring-series-hide.entity';
 import {RecurringSeriesService} from './recurring/recurring-series.service';
 import {RecurringSnapshot} from './recurring/recurring-snapshot.entity';
+import {MerchantLogoModule} from './merchant-logos/merchant-logo.module';
 import {BankTransactionAmountConversionProcessor} from './services/bank-transaction-amount-conversion.processor';
 import {BankTransactionAmountConversionQueueService} from './services/bank-transaction-amount-conversion.queue.service';
 import {BankTransactionAmountConversionService} from './services/bank-transaction-amount-conversion.service';
@@ -67,6 +68,7 @@ import {OwnTransferService} from './services/own-transfer.service';
 		RedisModule,
 		BankingAuthorizationStateModule,
 		BankTransactionCategorizationModule,
+		MerchantLogoModule,
 	],
 	providers: [
 		BankingService,
