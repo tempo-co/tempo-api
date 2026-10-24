@@ -70,6 +70,7 @@ import {
 	EnableBankingTransactionFetchOptions,
 } from '../enable-banking.types';
 import {BankingEncryptionError} from '../errors/banking-encryption.error';
+import {MerchantLogoService} from '../merchant-logos/merchant-logo.service';
 import {BASE_AMOUNT_INPUT_COLUMNS, baseAmountInputsSql} from './bank-transaction-amount-conversion.utils';
 import {BankingConnectionLock, BankingConnectionLockService} from './banking-connection-lock.service';
 import {BankingEncryptionService} from './banking-encryption.service';
@@ -181,6 +182,7 @@ export class BankingSyncService {
 		private readonly configurationService: ConfigurationService,
 		private readonly ownTransferService: OwnTransferService,
 		private readonly currencyExchangeService: CurrencyExchangeService,
+		private readonly merchantLogoService: MerchantLogoService,
 	) {
 		this.bankingIntegrationEnabled = configurationService.get('BANKING_INTEGRATION_ENABLED') !== false;
 	}
@@ -283,6 +285,8 @@ export class BankingSyncService {
 				await this.ownTransferService.recomputeForOwnerSafely(accountId);
 				await this.currencyExchangeService.recomputeForOwnerSafely(accountId);
 				await this.enqueuePersistedTransactions(persistenceResult.persistedTransactionIds);
+				if (persistenceResult.persistedTransactionIds.length)
+					await this.merchantLogoService.enqueueForOwnerSafely(accountId);
 				lockLease.assertHealthy();
 
 				const completedRun = await this.bankSyncRunRepository.findOneBy({id: run.id});

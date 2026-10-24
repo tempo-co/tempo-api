@@ -42,11 +42,13 @@ const BANKING_SYNC_SERVICE_DEPENDENCIES = [
 	'configurationService',
 	'ownTransferService',
 	'currencyExchangeService',
+	'merchantLogoService',
 ] as const;
 
 const DEFAULT_DEPENDENCIES: Partial<Record<string, unknown>> = {
 	ownTransferService: {recomputeForOwnerSafely: jest.fn().mockResolvedValue(undefined)},
 	currencyExchangeService: {recomputeForOwnerSafely: jest.fn().mockResolvedValue(undefined)},
+	merchantLogoService: {enqueueForOwnerSafely: jest.fn().mockResolvedValue(undefined)},
 };
 
 /** Builds the service with named test doubles; unspecified dependencies are empty objects. */
@@ -138,6 +140,7 @@ describe('BankingSyncService synchronization lock', () => {
 	let transactionRepository: TransactionRepository & {findOne: jest.Mock};
 	let bankAccountRepository: {find: jest.Mock; update: jest.Mock};
 	let configurationService: {get: jest.Mock};
+	let merchantLogoService: {enqueueForOwnerSafely: jest.Mock};
 
 	beforeEach(() => {
 		jest.useFakeTimers();
@@ -238,6 +241,7 @@ describe('BankingSyncService synchronization lock', () => {
 		const categorizationService = {
 			enqueueForTransactions: jest.fn().mockResolvedValue(undefined),
 		};
+		merchantLogoService = {enqueueForOwnerSafely: jest.fn().mockResolvedValue(undefined)};
 
 		configurationService = {get: jest.fn().mockReturnValue('6h')};
 		service = createBankingSyncService({
@@ -250,6 +254,7 @@ describe('BankingSyncService synchronization lock', () => {
 			connectionLockService: new BankingConnectionLockService(redis as unknown as Redis),
 			categorizationService,
 			configurationService,
+			merchantLogoService,
 		});
 	});
 
@@ -337,6 +342,8 @@ describe('BankingSyncService synchronization lock', () => {
 				nextSyncAt: expect.any(Date),
 			}),
 		);
+		// New rows bring their owner's new merchants to logo identification.
+		expect(merchantLogoService.enqueueForOwnerSafely).toHaveBeenCalledWith('account-id');
 	});
 
 	it('persists the provider Retry-After as the next automatic synchronization gate', async () => {
